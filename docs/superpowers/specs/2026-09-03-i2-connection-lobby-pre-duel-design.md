@@ -1,11 +1,13 @@
 # OCGForge-Ignis I2 Connection, Lobby, and Pre-Duel Design
 
 Status: DESIGN_APPROVED=YES
-Latest spec remediation: SPEC_REMEDIATION_02=APPLIED
+Latest spec remediation: SPEC_REMEDIATION_03=APPLIED
 Independent spec review: SPEC_REVIEWED=NO
 Transport decision: I2_TRANSPORT_DECISION=ACCEPTED
 I2_RPS_WIN_TERMINAL_AFTER=CTOS_TP_RESULT_SENT
 I2_RPS_LOSS_TERMINAL_AFTER=NON_TIED_STOC_HAND_RESULT
+DUEL_RELAY_FLAG=0x00000080
+BEST_OF_REQUIRED=1
 Client contract ID: ocgforge-ignis.client.preduel.v1
 Accepted main base: fff3269918f7f9120e815b900d8cc2e14e1bc52d
 Expected server handshake: EXPECTED_SERVER_HANDSHAKE=4043399681
@@ -47,9 +49,15 @@ OBSERVER_ROLE=UNSUPPORTED
 ```
 
 After validated `STOC_JOIN_GAME`, the session rejects `HostInfo.team1 != 1`,
-`HostInfo.team2 != 1`, and any non-single/relay topology as
-`UNSUPPORTED_ROOM_TOPOLOGY`. A joiner that receives observer type `7` is also
-rejected; I2 does not operate an observer session.
+`HostInfo.team2 != 1`, `(HostInfo.DuelFlagLow & DUEL_RELAY_FLAG) != 0`, and
+`HostInfo.best_of != BEST_OF_REQUIRED` as `UNSUPPORTED_ROOM_TOPOLOGY`. A
+joiner that receives observer type `7` is also rejected; I2 does not operate
+an observer session. `HostInfo.mode` is not the current V1 relay detector.
+
+The pinned current EDOPro creator sets `HostInfo.mode=0` and represents relay
+through `duel_flag_low & DUEL_RELAY`. `MODE_SINGLE=0x0` and `MODE_RELAY=0x3`
+remain documented legacy mode constants only; I2 never uses either mode value
+as the modern relay gate.
 
 ## Architecture
 
@@ -162,7 +170,8 @@ WaitingForHandResult
   → HandedOff            [non-tied STOC_HAND_RESULT; this client loses]
 WaitingForTpRequest
   → WaitingForTpChoice   [validated STOC_SELECT_TP]
-  → HandedOff            [one CTOS_TP_RESULT successfully sent]
+WaitingForTpChoice
+  → HandedOff            [one CTOS_TP_RESULT write succeeds]
 ```
 
 `CTOS_HS_READY` changes the state to `ReadyRequested`, not `Ready`. The server
@@ -228,8 +237,6 @@ PlayerStatusChanged
 WatcherCountChanged
 DeckSubmitted
 ReadyRequested
-ReadySent
-NotReadySent
 NotReadyRequested
 DuelStartRequested
 DuelStarted
@@ -266,8 +273,10 @@ The validated handlers cover the accepted pre-duel control surface:
 - `STOC_ERROR_MSG` maps to structured join, version, deck, or unsupported-side
   failures;
 - `STOC_JOIN_GAME` first requires `HostInfo.handshake == 4043399681`,
-  `HostInfo.team1 == 1`, `HostInfo.team2 == 1`, and single-duel mode. A
-  mismatch fails closed as `SERVER_HANDSHAKE_MISMATCH` or
+  `HostInfo.team1 == 1`, `HostInfo.team2 == 1`,
+  `(HostInfo.DuelFlagLow & 0x00000080) == 0`, and
+  `HostInfo.best_of == 1`. A mismatch fails closed as
+  `SERVER_HANDSHAKE_MISMATCH` or
   `UNSUPPORTED_ROOM_TOPOLOGY` and never enables legacy compatibility mode or
   HostInfo reinterpretation. A matching packet records validated public
   `HostInfo` and enters the lobby;
@@ -282,6 +291,12 @@ The validated handlers cover the accepted pre-duel control surface:
 - `STOC_TP_RESULT` is not emitted by the pinned server path and is rejected as
   an unexpected packet if it appears before handoff rather than being guessed
   or treated as a required acknowledgement.
+
+A successful `CTOS_HS_READY` write emits exactly `ReadyRequested`. A successful
+`CTOS_HS_NOTREADY` write emits exactly `NotReadyRequested`; no separate sent
+event is emitted. The later own-position ready or not-ready packet is
+represented by `PlayerStatusChanged` and performs the authoritative state
+transition.
 
 For a tied `STOC_HAND_RESULT`, the session returns to the pre-request
 `DuelStarted` state and waits for the next `STOC_SELECT_HAND`. That request
@@ -298,11 +313,33 @@ turn preference  = {0, 1}
 ```
 
 The server's RPS result is interpreted only to determine whether this client
-must receive the TP request or may hand off after losing. I2 does not choose a
-strategy. It sends exactly one `CTOS_HAND_RESULT` or `CTOS_TP_RESULT` for one
-currently pending request. A duplicate, stale, wrong-kind, or out-of-domain
-choice returns `CHOICE_NOT_PENDING`, `STALE_CHOICE`, or a corresponding stable
-I2 error and emits no packet.
+must receive the TP request or may hand off after losing. The pinned server
+sends `STOC_HAND_RESULT(res1,res2)` in recipient-relative order: the opposing
+recipient receives the pair reversed, so `res1` is always this recipient's own
+RPS value and `res2` is the opponent's value. Both values must be in `{1, 2,
+3}`. The exact result table is:
+
+```text
+res1 == res2                         → tie
+(res1,res2) ∈ {(1,3), (2,1), (3,2)} → own win
+(res1,res2) ∈ {(1,2), (2,3), (3,1)} → own loss
+```
+
+An invalid result byte fails closed before publication. A tie returns to
+`DuelStarted` and waits for the next `STOC_SELECT_HAND`; that request creates a
+new token. An own win enters `WaitingForTpRequest`; an own loss emits the
+losing-path handoff. I2 does not choose a strategy. It sends exactly one
+`CTOS_HAND_RESULT` or `CTOS_TP_RESULT` for one currently pending request. A
+duplicate, stale, wrong-kind, or out-of-domain choice returns
+`CHOICE_NOT_PENDING`, `STALE_CHOICE`, or a corresponding stable I2 error and
+emits no packet.
+
+`PreDuelChoiceTokenV1` is a `uint64` request ordinal. The first published
+request has ordinal `0`; each newly published request increments the previous
+ordinal exactly once. A tie therefore receives the next ordinal, and the
+previous token remains stale. Overflow fails closed. Token construction never
+uses a GUID, RNG, timestamp, PID, thread/task ID, object identity, or transport
+identity.
 
 ## Receive buffering and failures
 
@@ -321,8 +358,17 @@ Transport errors map to stable I2 codes such as
 
 Cancellation closes the transport, stops pending read/write work, emits one
 deterministic `Closed` outcome, and leaves no receive loop alive. Cancellation
-does not become a remote error. A failed connection attempt is final for that
-session; a caller must create a new session explicitly.
+does not become a remote error. Every transition to `Failed`, for any I2
+failure, stops all further reads and writes, closes/disposes the owned
+transport exactly once, leaves no background mutation, and cannot retry or
+reconnect. A failed connection attempt is final for that session; a caller must
+create a new session explicitly.
+
+`HandedOff` is the only exception to transport closure: the live transport and
+exact pending-byte suffix transfer exactly once to
+`GameplayTransportHandoffV1`. After that transfer, all transport input belongs
+to the next layer and is never classified as I2 post-terminal input. After
+`Failed` or `Closed`, no transport input is processed.
 
 ## Terminal handoff
 
@@ -371,11 +417,21 @@ rejection, unexpected ordering, truncated stream, remote close, unsupported
 STOC, handshake mismatch, invalid commands, duplicate packets, stale choices,
 unsupported position moves, cancellation, post-terminal input, and a
 coalesced final pre-duel frame plus first `STOC_GAME_MSG` boundary.
-They explicitly include `team1 != 1`, `team2 != 1`, relay/single-mode mismatch,
-observer self-type `7`, duplicate `STOC_HAND_RESULT` while
+They explicitly include `team1 != 1`, `team2 != 1`, the `DUEL_RELAY` bit set
+with `mode=0`, `best_of != 1`, observer self-type `7`, duplicate
+`STOC_HAND_RESULT` while
 `WaitingForTpRequest`, `STOC_SELECT_HAND`/TP results in the wrong states,
 `CTOS_HS_NOTREADY` while `NotReadyRequested`, and host start while
 `NotReadyRequested`.
+
+RPS evidence enumerates all recipient-relative outcomes: ties `(1,1)`,
+`(2,2)`, `(3,3)`; wins `(1,3)`, `(2,1)`, `(3,2)`; losses `(1,2)`,
+`(2,3)`, `(3,1)`; and invalid values outside `1..3`. It also proves ordinal
+tokens `0, 1, 2` across a tie retry, stale-token rejection, exactly one
+increment per published request, and overflow failure. Failure tests prove
+that `Failed` closes/disposes the transport once and performs no later read or
+write. The successful TP path proves the explicit
+`WaitingForTpRequest → WaitingForTpChoice → HandedOff` transition.
 
 Tests assert that passwords never occur in state, events, exception messages,
 or test diagnostics; that deck order is byte-for-byte preserved; that no
@@ -393,11 +449,21 @@ ready confirmation, player/status/position-move encoding, RPS/TP behavior, and
 the `STOC_DUEL_START`/`STOC_SELECT_HAND` ordering. No external source
 implementation is copied.
 
-The topology lock specifically records `MODE_SINGLE=0x0`, `MODE_RELAY=0x3`,
-duelist positions `0..5`, observer position `7`, and the relay-specific
-first-duel readiness rule from `gframe/network.h` and
-`gframe/generic_duel.cpp`. These facts authorize I2 to reject non-1v1 rooms;
-they do not authorize team or relay implementation.
+The topology lock specifically records `DUEL_RELAY=0x80` from
+`gframe/ocgapi_constants.h`, the creator/server flag propagation from
+`gframe/duelclient.cpp` and `gframe/netserver.cpp`, duelist positions `0..5`,
+observer position `7`, and the relay-specific first-duel readiness rule from
+`gframe/generic_duel.cpp`. `MODE_SINGLE=0x0` and `MODE_RELAY=0x3` remain
+legacy constants and are not the modern relay detector. These facts authorize
+I2 to reject non-1v1 rooms; they do not authorize team or relay
+implementation.
+
+The same sources record that the creator sets `HostInfo.mode=0`, carries
+`best_of` independently of that mode, and passes the modern
+`duel_flag_low & DUEL_RELAY` bit into the server's `GenericDuel` construction.
+`gframe/generic_duel.cpp` emits recipient-relative hand results by reversing
+the pair for the opposing recipient and sends `STOC_SELECT_TP` only to the
+winner. These are provenance facts for the implementation, not copied source.
 
 The hosted workflow runs the accepted I1 build/tests and the I2 Client
 build/tests. It uses no EDOPro download, public network, Localhost server,
