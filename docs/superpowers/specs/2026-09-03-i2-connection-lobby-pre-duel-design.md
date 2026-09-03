@@ -5,6 +5,7 @@ Transport decision: I2_TRANSPORT_DECISION=ACCEPTED
 Terminal decision: I2_TERMINAL_AFTER=CTOS_TP_RESULT_SENT
 Client contract ID: ocgforge-ignis.client.preduel.v1
 Accepted main base: fff3269918f7f9120e815b900d8cc2e14e1bc52d
+Expected server handshake: EXPECTED_SERVER_HANDSHAKE=4043399681
 Date: 2026-09-03
 
 ## Goal
@@ -96,6 +97,7 @@ PlayerInfoSent
 JoinRequestSent
 LobbyJoined
 DeckSubmitted
+ReadyRequested
 Ready
 Starting
 DuelStarted
@@ -122,17 +124,28 @@ Created
   → JoinRequestSent      [CTOS_JOIN_GAME]
   → LobbyJoined          [validated STOC_JOIN_GAME]
   → DeckSubmitted        [CTOS_UPDATE_DECK]
-  → Ready                [CTOS_HS_READY]
-  ├─→ Starting            [host-only CTOS_HS_START]
+  → ReadyRequested       [CTOS_HS_READY]
+  → Ready                [own STOC_HS_PLAYER_CHANGE READY]
+  ├─→ Starting            [host-only CTOS_HS_START after all required slots are ready]
   │   └─→ DuelStarted     [validated STOC_DUEL_START]
   └─→ DuelStarted         [validated server start for non-host]
 
 DuelStarted
   → WaitingForHandChoice [validated STOC_SELECT_HAND]
   → WaitingForHandResult [one CTOS_HAND_RESULT]
+  → DuelStarted           [STOC_HAND_RESULT tie; await a new STOC_SELECT_HAND]
   → WaitingForTpChoice   [validated STOC_SELECT_TP when this client wins]
   → HandedOff            [one CTOS_TP_RESULT successfully sent]
 ```
+
+`CTOS_HS_READY` changes the state to `ReadyRequested`, not `Ready`. The server
+checks deck size and content after that request. Only the own-position
+`PLAYERCHANGE_READY` event establishes `Ready`. An own `PLAYERCHANGE_NOTREADY`
+returns to `DeckSubmitted` without ever passing through `Ready`; a deck error
+terminates the attempt as `DECK_REJECTED` and cannot be repaired implicitly.
+`CTOS_HS_START` is legal only for a proven host whose own status is `Ready` and
+whose required `HostInfo` player slots are all occupied and server-confirmed
+ready. A host cannot start merely because its own deck was accepted.
 
 If this client loses a non-tied RPS result, the opponent receives the TP
 request. In that branch I2 creates the same terminal handoff immediately after
@@ -150,10 +163,12 @@ The Client API exposes narrow operations rather than a generic packet sender:
 
 - start one configured session, which connects and sends player info then join;
 - submit one `PrevalidatedProtocolDeck` only in `LobbyJoined`;
-- send ready only after deck submission;
+- send ready only after deck submission, entering `ReadyRequested` until the
+  server confirms the own position as ready;
 - send not-ready only from `Ready`;
 - request duel start only when the validated type-change state proves this
-  client is host and the session is `Ready`;
+  client is host, the session is `Ready`, every required slot is occupied, and
+  every required duelist is server-confirmed ready;
 - submit a caller-provided pre-duel choice only while its matching request is
   pending;
 - leave explicitly before handoff;
@@ -178,10 +193,12 @@ PlayerEntered
 PlayerStatusChanged
 WatcherCountChanged
 DeckSubmitted
+ReadyRequested
 ReadySent
 NotReadySent
 DuelStartRequested
 DuelStarted
+PlayerMoved
 RpsRequested
 RpsChoiceSent
 RpsResultReceived
@@ -194,17 +211,25 @@ Closed
 
 Lobby occupants use the protocol-visible position as identity. Names are
 display metadata and may repeat. Type-change data is decoded as the own
-position plus the host flag carried by the protocol byte. Player-change data
-uses the encoded position/status values verified from the pinned upstream.
+pre-duel lobby position plus the host flag carried by the protocol byte.
+Player-change data uses the encoded position/status values verified from the
+pinned upstream.
 Dictionary or object insertion order is never an identity or ordering source.
 The pinned lobby status values are `OBSERVE=0x8`, `READY=0x9`,
 `NOTREADY=0xa`, and `LEAVE=0xb`; other status values fail closed.
+Low-nibble values `0x0` through `0x5` are valid upstream-defined duelist
+destination positions and produce `PlayerMoved`, not malformed-packet errors.
+An unrepresentable or out-of-scope position move returns the explicit
+`UNSUPPORTED_LOBBY_POSITION_MOVE` failure.
 
 The validated handlers cover the accepted pre-duel control surface:
 
 - `STOC_ERROR_MSG` maps to structured join, version, deck, or unsupported-side
   failures;
-- `STOC_JOIN_GAME` records validated public `HostInfo` and enters the lobby;
+- `STOC_JOIN_GAME` first requires `HostInfo.handshake == 4043399681`; a mismatch
+  fails closed as `SERVER_HANDSHAKE_MISMATCH` and never enables legacy
+  compatibility mode or HostInfo reinterpretation. A matching packet records
+  validated public `HostInfo` and enters the lobby;
 - `STOC_TYPE_CHANGE`, `STOC_HS_PLAYER_ENTER`,
   `STOC_HS_PLAYER_CHANGE`, and `STOC_HS_WATCH_CHANGE` update lobby facts;
 - `STOC_DUEL_START` enters the nonterminal `DuelStarted` marker state;
@@ -216,6 +241,10 @@ The validated handlers cover the accepted pre-duel control surface:
 - `STOC_TP_RESULT` is not emitted by the pinned server path and is rejected as
   an unexpected packet if it appears before handoff rather than being guessed
   or treated as a required acknowledgement.
+
+For a tied `STOC_HAND_RESULT`, the session returns to the pre-request
+`DuelStarted` state and waits for the next `STOC_SELECT_HAND`. That request
+creates a new deterministic choice token; the previous token remains stale.
 
 ## Pre-duel choices
 
@@ -257,16 +286,26 @@ session; a caller must create a new session explicitly.
 ## Terminal handoff
 
 `PreDuelSessionV1` is immutable and contains only validated public pre-duel
-facts needed by the next layer: `HostInfo`, own protocol position, host flag,
-the public lobby/pre-duel outcome, and the deterministic event sequence. It
-contains no raw hidden gameplay state, card zones, model state, candidate data,
-password, socket object, or transport identity.
+facts needed by the next layer: `HostInfo`, own `pre_duel_lobby_position`, host
+flag, the public lobby/pre-duel outcome, and the deterministic event sequence.
+`FINAL_GAMEPLAY_PERSPECTIVE=UNRESOLVED_AT_I2_HANDOFF`; I2 never treats the
+pre-duel lobby position as the final gameplay perspective. I3 must establish
+that perspective from the first `MSG_START`.
+
+`PreDuelSessionV1` itself contains no raw hidden gameplay state, card zones,
+model state, candidate data, password, socket object, or transport identity.
+
+The public handoff is paired with an internal, one-time
+`GameplayTransportHandoffV1` owned by the session runner. The internal value
+contains the same live `IByteTransport`, the immutable `PreDuelSessionV1`, and
+an exact owned copy of every unread receive-buffer byte. On handoff, I2 stops
+parsing immediately, transfers transport ownership exactly once, and neither
+consumes, rejects, nor discards a trailing `STOC_GAME_MSG`. The first
+`STOC_GAME_MSG` belongs to the future gameplay consumer; I2 never parses it.
 
 The handoff is emitted exactly once. The winning-RPS path emits it only after
 the single `CTOS_TP_RESULT` write succeeds. The losing-RPS path emits it after
-the non-tied `STOC_HAND_RESULT` proves that the peer owns the TP choice. The
-first `STOC_GAME_MSG` belongs to the future gameplay consumer; I2 never parses
-it.
+the non-tied `STOC_HAND_RESULT` proves that the peer owns the TP choice.
 
 ## Test design
 
@@ -282,24 +321,31 @@ Every pattern must produce identical semantic state/event sequences, CTOS
 frame bytes, and terminal result.
 
 The successful transcript covers connect, player-info, join, validated host
-info, type/lobby events, deck upload, ready, server start, duel-start marker,
-RPS, hand result, TP choice or loss handoff, and exactly one terminal handoff.
+info with the expected server handshake, type/lobby events, deck upload,
+ready request, server-confirmed ready, server start, duel-start marker, RPS,
+hand result, tie-loop coverage, TP choice or loss handoff, and exactly one
+terminal handoff.
 Failure transcripts cover password rejection, version rejection, deck
 rejection, unexpected ordering, truncated stream, remote close, unsupported
-STOC, invalid commands, duplicate packets, stale choices, cancellation, and
-post-terminal input.
+STOC, handshake mismatch, invalid commands, duplicate packets, stale choices,
+unsupported position moves, cancellation, post-terminal input, and a
+coalesced final pre-duel frame plus first `STOC_GAME_MSG` boundary.
 
 Tests assert that passwords never occur in state, events, exception messages,
 or test diagnostics; that deck order is byte-for-byte preserved; that no
-retry/reconnect occurs; and that no inner duel message is parsed.
+retry/reconnect occurs; that position moves are either represented or rejected
+with `UNSUPPORTED_LOBBY_POSITION_MOVE`; that the public handoff contains
+`pre_duel_lobby_position` only; that the internal handoff retains the exact
+unconsumed suffix and live transport; and that no inner duel message is parsed.
 
 ## Provenance and CI
 
 The implementation updates `PROTOCOL_PROVENANCE.md` only for facts used by
 I2, including the pinned EDOPro `duelclient.cpp`, `generic_duel.cpp`, and
-`network.h` paths for connection order, lobby control, player/status encoding,
-RPS/TP behavior, and the `STOC_DUEL_START`/`STOC_SELECT_HAND` ordering. No
-external source implementation is copied.
+`network.h` paths for connection order, server-handshake compatibility, lobby
+ready confirmation, player/status/position-move encoding, RPS/TP behavior, and
+the `STOC_DUEL_START`/`STOC_SELECT_HAND` ordering. No external source
+implementation is copied.
 
 The hosted workflow runs the accepted I1 build/tests and the I2 Client
 build/tests. It uses no EDOPro download, public network, Localhost server,
