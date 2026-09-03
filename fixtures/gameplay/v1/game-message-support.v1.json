@@ -1,0 +1,2582 @@
+{
+  "schema_id": "ocgforge-ignis.game_message_support.v1",
+  "schema_version": 1,
+  "contract_id": "ocgforge-ignis.gameplay.perspective-privacy.v1",
+  "canonical_order": {
+    "entries": "ascending message_id",
+    "uniqueness": "message_id and symbolic_name are unique",
+    "semantics": "all effect and layout fields are enum tokens"
+  },
+  "scope": {
+    "runtime": "EDOPro 41.0.2 Bagooska; ocgcore API 11.0",
+    "room": "local/private pre-created 1v1 single duel",
+    "legacy_compatibility": "forbidden",
+    "implementation_status": "inventory_only",
+    "public_server": "forbidden"
+  },
+  "upstream_pins": {
+    "edopro_repository": "https://github.com/edo9300/edopro",
+    "edopro_commit": "30935e847165a9ef0e547fb51a43f36168fab7c7",
+    "ocgcore_repository": "https://github.com/edo9300/ygopro-core",
+    "ocgcore_commit": "46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57",
+    "windbot_repository": "https://github.com/ProjectIgnis/windbot",
+    "windbot_commit": "bffe6b62679c8b2fafea8f59740e03a132517da4"
+  },
+  "wire_primitives": {
+    "modern_loc_info": {
+      "fields": [
+        "u8 controller",
+        "u8 location",
+        "u32_le sequence",
+        "u32_le position"
+      ],
+      "byte_length": 10,
+      "encoding": "EXPLICIT_LITTLE_ENDIAN"
+    },
+    "ModernQueryV1": {
+      "record_prefix": [
+        "u16_le item_size"
+      ],
+      "zero_size_record": {
+        "item_size": 0,
+        "meaning": "ONFIELD_SKIPPED",
+        "query_flag_follows": false,
+        "terminates_current_query": true
+      },
+      "nonzero_record": {
+        "minimum_item_size": 4,
+        "fields": [
+          "u32_le query_flag",
+          "byte[item_size-4] flag_specific_payload"
+        ],
+        "size_rule": "ITEM_SIZE_EQUALS_QUERY_FLAG_AND_PAYLOAD_BYTES"
+      },
+      "query_end_record": {
+        "item_size": 4,
+        "query_flag": "QUERY_END",
+        "flag_specific_payload_bytes": 0,
+        "terminates_current_query": true
+      },
+      "flag_specific_union_status": "UNFROZEN"
+    },
+    "ModernQueryStreamV1": {
+      "prefix_fields": [
+        "u32_le total_query_bytes"
+      ],
+      "repeated_item": "ModernQueryV1",
+      "body": {
+        "byte_count_field": "total_query_bytes",
+        "byte_count_includes_prefix": false,
+        "boundary": "EXACT_TOTAL_QUERY_BYTES"
+      },
+      "count_rule": "ZERO_OR_MORE_COMPLETE_QUERY_VALUES",
+      "length_rule": "TOTAL_EXCLUDES_OWN_PREFIX",
+      "flag_specific_union_status": "UNFROZEN"
+    }
+  },
+  "query_codec_contract": {
+    "owner": "I3B0",
+    "scope": "FLAG_SPECIFIC_UNION_ONLY",
+    "status": "NOT_FROZEN_REQUIRES_I3B0",
+    "implementation_dependency": "I3B",
+    "outer_grammar_owner": "I3A0",
+    "outer_grammar_status": "FROZEN",
+    "frozen_outer_grammar_elements": [
+      "MODERN_QUERY_V1",
+      "ITEM_SIZE_SEMANTICS",
+      "ONFIELD_SKIPPED_ZERO_SIZE",
+      "QUERY_END_ITEM_SIZE_FOUR",
+      "MODERN_QUERY_STREAM_V1",
+      "STREAM_TOTAL_QUERY_BYTES_EXCLUDES_PREFIX"
+    ],
+    "required_freeze_elements": [
+      "QUERY_FLAG_ENUM",
+      "FLAG_PAYLOAD_TYPES",
+      "FLAG_PAYLOAD_WIDTHS",
+      "FLAG_BOUNDS",
+      "FLAG_OVERFLOW_RULES",
+      "UNKNOWN_FLAG_POLICY",
+      "MALFORMED_NEGATIVE_VECTORS"
+    ]
+  },
+  "audited_wire_prefixes": {
+    "MSG_UPDATE_DATA": {
+      "fields": [
+        "u8 player",
+        "u8 location"
+      ],
+      "suffix": "ModernQueryStreamV1",
+      "status": "PREFIX_PROVEN_FULL_LAYOUT_UNFROZEN"
+    },
+    "MSG_UPDATE_CARD": {
+      "fields": [
+        "u8 player",
+        "u8 location",
+        "u8 sequence"
+      ],
+      "suffix": "ModernQueryV1",
+      "status": "PREFIX_PROVEN_FULL_LAYOUT_UNFROZEN"
+    }
+  },
+  "provenance_sources": {
+    "CORE_MESSAGE_IDS": {
+      "repository": "https://github.com/edo9300/ygopro-core",
+      "commit": "46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57",
+      "source_paths": [
+        "ocgapi_constants.h"
+      ],
+      "classification": "numeric constant"
+    },
+    "CORE_MESSAGE_WRITERS": {
+      "repository": "https://github.com/edo9300/ygopro-core",
+      "commit": "46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57",
+      "source_paths": [
+        "operations.cpp",
+        "processor.cpp",
+        "field.cpp",
+        "card.cpp",
+        "playerop.cpp"
+      ],
+      "classification": "wire layout"
+    },
+    "EDOPRO_CLIENT_LAYOUTS": {
+      "repository": "https://github.com/edo9300/edopro",
+      "commit": "30935e847165a9ef0e547fb51a43f36168fab7c7",
+      "source_paths": [
+        "gframe/duelclient.cpp",
+        "gframe/generic_duel.cpp"
+      ],
+      "classification": "wire layout and observed behavior"
+    },
+    "EDOPRO_LOC_QUERY": {
+      "repository": "https://github.com/edo9300/edopro",
+      "commit": "30935e847165a9ef0e547fb51a43f36168fab7c7",
+      "source_paths": [
+        "gframe/core_utils.h",
+        "gframe/core_utils.cpp"
+      ],
+      "classification": "wire layout"
+    }
+  },
+  "effect_vocabulary": {
+    "layout_status": [
+      "FROZEN",
+      "UNFROZEN"
+    ],
+    "perspective_effect": [
+      "NONE",
+      "ESTABLISHES",
+      "PLAYER_MAPPED",
+      "LOCATOR_MAPPED",
+      "PROMPT_ONLY",
+      "UI_ONLY"
+    ],
+    "state_effect": [
+      "STATE_MUTATING",
+      "KNOWLEDGE_MUTATING",
+      "STATE_AND_KNOWLEDGE_MUTATING",
+      "MUST_CONSUME_NO_STATE",
+      "PROMPT_BOUNDARY",
+      "UNSUPPORTED_FAIL_CLOSED"
+    ],
+    "knowledge_effect": [
+      "NONE",
+      "PRESERVE",
+      "REVEAL",
+      "DESTROY_HIDDEN_CONTINUITY",
+      "DESTROY_IF_AMBIGUOUS",
+      "DEFERRED",
+      "UNSUPPORTED"
+    ],
+    "locator_effect": [
+      "NONE",
+      "CREATE_OR_UPDATE",
+      "MOVE",
+      "RETAIN_OR_INVALIDATE",
+      "INVALIDATE_HIDDEN",
+      "INVALIDATE_OR_REBIND",
+      "CREATE_RELATION",
+      "RETAIN_RELATION",
+      "RELEASE_RELATION",
+      "REFERENCE",
+      "DESTROY",
+      "DEFERRED",
+      "UNSUPPORTED"
+    ],
+    "boundary_kind": [
+      "GAMEPLAY_STATE",
+      "KNOWLEDGE_BOUNDARY",
+      "PRESENTATION_ONLY",
+      "PROMPT_BOUNDARY",
+      "OUT_OF_SCOPE",
+      "UNSUPPORTED_FAIL_CLOSED"
+    ],
+    "pairing_rule": [
+      "NONE",
+      "PREVIOUS_I_TO_CURRENT_I_PROTOCOL"
+    ],
+    "terminal_field_encoding": [
+      "RAW_U8_PRESERVED"
+    ],
+    "invalid_value_behavior": [
+      "FAIL_CLOSED"
+    ]
+  },
+  "layout_catalog": {
+    "MSG_HINT_V1": {
+      "payload_fields": [
+        "u8 hint_type",
+        "u8 player",
+        "u64_le data"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 10,
+      "total_message_bytes": 11
+    },
+    "MSG_WAITING_V1": {
+      "payload_fields": [],
+      "length_rule": "FIXED",
+      "payload_bytes": 0,
+      "total_message_bytes": 1
+    },
+    "MSG_START_V1": {
+      "payload_fields": [
+        "u8 playertype",
+        "u32_le lp[0]",
+        "u32_le lp[1]",
+        "u16_le deck_count[0]",
+        "u16_le extra_count[0]",
+        "u16_le deck_count[1]",
+        "u16_le extra_count[1]"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 17,
+      "total_message_bytes": 18
+    },
+    "MSG_WIN_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u8 win_type"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 2,
+      "total_message_bytes": 3,
+      "valid_player_values": [
+        0,
+        1,
+        2
+      ],
+      "invalid_player_behavior": "FAIL_CLOSED",
+      "win_type_encoding": "RAW_U8_PRESERVED"
+    },
+    "MSG_SHUFFLE_DECK_V1": {
+      "payload_fields": [
+        "u8 player"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 1,
+      "total_message_bytes": 2
+    },
+    "MSG_SHUFFLE_HAND_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le count",
+        "u32_le card_code[count]"
+      ],
+      "length_rule": "COUNTED"
+    },
+    "MSG_REFRESH_DECK_V1": {
+      "payload_fields": [],
+      "length_rule": "FIXED",
+      "payload_bytes": 0,
+      "total_message_bytes": 1
+    },
+    "MSG_SHUFFLE_SET_CARD_V1": {
+      "payload_fields": [
+        "u8 location",
+        "u8 count",
+        "loc_info previous[count]",
+        "loc_info current[count]"
+      ],
+      "length_rule": "COUNTED",
+      "pairing_rule": "PREVIOUS_I_TO_CURRENT_I_PROTOCOL"
+    },
+    "MSG_REVERSE_DECK_V1": {
+      "payload_fields": [],
+      "length_rule": "FIXED",
+      "payload_bytes": 0,
+      "total_message_bytes": 1
+    },
+    "MSG_DECK_TOP_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le sequence",
+        "u32_le card_code",
+        "u32_le position"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 13,
+      "total_message_bytes": 14
+    },
+    "MSG_SHUFFLE_EXTRA_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le count",
+        "u32_le card_code[count]"
+      ],
+      "length_rule": "COUNTED"
+    },
+    "MSG_NEW_TURN_V1": {
+      "payload_fields": [
+        "u8 player"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 1,
+      "total_message_bytes": 2
+    },
+    "MSG_NEW_PHASE_V1": {
+      "payload_fields": [
+        "u16_le phase"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 2,
+      "total_message_bytes": 3
+    },
+    "MSG_MOVE_V1": {
+      "payload_fields": [
+        "u32_le card_code",
+        "loc_info previous",
+        "loc_info current",
+        "u32_le reason"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 28,
+      "total_message_bytes": 29
+    },
+    "MSG_POS_CHANGE_V1": {
+      "payload_fields": [
+        "u32_le card_code",
+        "u8 controller",
+        "u8 location",
+        "u8 sequence",
+        "u8 previous_position",
+        "u8 current_position"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 9,
+      "total_message_bytes": 10
+    },
+    "MSG_SET_V1": {
+      "payload_fields": [
+        "u32_le card_code",
+        "loc_info"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 14,
+      "total_message_bytes": 15
+    },
+    "MSG_SWAP_V1": {
+      "payload_fields": [
+        "u32_le card_code[0]",
+        "loc_info[0]",
+        "u32_le card_code[1]",
+        "loc_info[1]"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 28,
+      "total_message_bytes": 29
+    },
+    "MSG_FIELD_DISABLED_V1": {
+      "payload_fields": [
+        "u32_le disabled_mask"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 4,
+      "total_message_bytes": 5
+    },
+    "MSG_SUMMONING_V1": {
+      "payload_fields": [
+        "u32_le card_code",
+        "loc_info"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 14,
+      "total_message_bytes": 15
+    },
+    "MSG_SUMMONED_V1": {
+      "payload_fields": [],
+      "length_rule": "FIXED",
+      "payload_bytes": 0,
+      "total_message_bytes": 1
+    },
+    "MSG_SPSUMMONING_V1": {
+      "payload_fields": [
+        "u32_le card_code",
+        "loc_info"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 14,
+      "total_message_bytes": 15
+    },
+    "MSG_SPSUMMONED_V1": {
+      "payload_fields": [],
+      "length_rule": "FIXED",
+      "payload_bytes": 0,
+      "total_message_bytes": 1
+    },
+    "MSG_FLIPSUMMONING_V1": {
+      "payload_fields": [
+        "u32_le card_code",
+        "loc_info"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 14,
+      "total_message_bytes": 15
+    },
+    "MSG_FLIPSUMMONED_V1": {
+      "payload_fields": [],
+      "length_rule": "FIXED",
+      "payload_bytes": 0,
+      "total_message_bytes": 1
+    },
+    "MSG_CHAINING_V1": {
+      "payload_fields": [
+        "u32_le card_code",
+        "loc_info",
+        "u8 triggering_controller",
+        "u8 triggering_location",
+        "u32_le triggering_sequence",
+        "u64_le description",
+        "u32_le chain_size"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 32,
+      "total_message_bytes": 33
+    },
+    "MSG_CHAINED_V1": {
+      "payload_fields": [
+        "u8 chain_size"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 1,
+      "total_message_bytes": 2
+    },
+    "MSG_CHAIN_SOLVING_V1": {
+      "payload_fields": [
+        "u8 chain_size"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 1,
+      "total_message_bytes": 2
+    },
+    "MSG_CHAIN_SOLVED_V1": {
+      "payload_fields": [
+        "u8 chain_size"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 1,
+      "total_message_bytes": 2
+    },
+    "MSG_CHAIN_END_V1": {
+      "payload_fields": [],
+      "length_rule": "FIXED",
+      "payload_bytes": 0,
+      "total_message_bytes": 1
+    },
+    "MSG_CHAIN_NEGATED_V1": {
+      "payload_fields": [
+        "u8 chain_size"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 1,
+      "total_message_bytes": 2
+    },
+    "MSG_CHAIN_DISABLED_V1": {
+      "payload_fields": [
+        "u8 chain_size"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 1,
+      "total_message_bytes": 2
+    },
+    "MSG_CARD_SELECTED_V1": {
+      "payload_fields": [
+        "u32_le count",
+        "loc_info[count]"
+      ],
+      "length_rule": "COUNTED"
+    },
+    "MSG_BECOME_TARGET_V1": {
+      "payload_fields": [
+        "u32_le count",
+        "loc_info[count]"
+      ],
+      "length_rule": "COUNTED"
+    },
+    "MSG_DRAW_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le count",
+        "repeated u32_le card_code",
+        "u32_le position"
+      ],
+      "length_rule": "COUNTED"
+    },
+    "MSG_DAMAGE_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le amount"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 5,
+      "total_message_bytes": 6
+    },
+    "MSG_RECOVER_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le amount"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 5,
+      "total_message_bytes": 6
+    },
+    "MSG_EQUIP_V1": {
+      "payload_fields": [
+        "loc_info card",
+        "loc_info equip"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 20,
+      "total_message_bytes": 21
+    },
+    "MSG_LPUPDATE_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le lp"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 5,
+      "total_message_bytes": 6
+    },
+    "MSG_UNEQUIP_V1": {
+      "payload_fields": [
+        "loc_info"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 10,
+      "total_message_bytes": 11
+    },
+    "MSG_CARD_TARGET_V1": {
+      "payload_fields": [
+        "loc_info source",
+        "loc_info target"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 20,
+      "total_message_bytes": 21
+    },
+    "MSG_CANCEL_TARGET_V1": {
+      "payload_fields": [
+        "loc_info source",
+        "loc_info target"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 20,
+      "total_message_bytes": 21
+    },
+    "MSG_PAY_LPCOST_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le cost"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 5,
+      "total_message_bytes": 6
+    },
+    "MSG_ADD_COUNTER_V1": {
+      "payload_fields": [
+        "u16_le counter_type",
+        "u8 controller",
+        "u8 location",
+        "u8 sequence",
+        "u16_le count"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 7,
+      "total_message_bytes": 8
+    },
+    "MSG_REMOVE_COUNTER_V1": {
+      "payload_fields": [
+        "u16_le counter_type",
+        "u8 controller",
+        "u8 location",
+        "u8 sequence",
+        "u16_le count"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 7,
+      "total_message_bytes": 8
+    },
+    "MSG_ATTACK_V1": {
+      "payload_fields": [
+        "loc_info attacker",
+        "loc_info target"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 20,
+      "total_message_bytes": 21
+    },
+    "MSG_BATTLE_V1": {
+      "payload_fields": [
+        "loc_info attacker",
+        "u32_le attack[0]",
+        "u32_le defense[0]",
+        "u8 flags[0]",
+        "loc_info target",
+        "u32_le attack[1]",
+        "u32_le defense[1]",
+        "u8 flags[1]"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 38,
+      "total_message_bytes": 39
+    },
+    "MSG_ATTACK_DISABLED_V1": {
+      "payload_fields": [],
+      "length_rule": "FIXED",
+      "payload_bytes": 0,
+      "total_message_bytes": 1
+    },
+    "MSG_DAMAGE_STEP_START_V1": {
+      "payload_fields": [],
+      "length_rule": "FIXED",
+      "payload_bytes": 0,
+      "total_message_bytes": 1
+    },
+    "MSG_DAMAGE_STEP_END_V1": {
+      "payload_fields": [],
+      "length_rule": "FIXED",
+      "payload_bytes": 0,
+      "total_message_bytes": 1
+    },
+    "MSG_MISSED_EFFECT_V1": {
+      "payload_fields": [
+        "loc_info",
+        "u32_le card_code"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 14,
+      "total_message_bytes": 15
+    },
+    "MSG_TOSS_COIN_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u8 count",
+        "u8 result[count]"
+      ],
+      "length_rule": "COUNTED"
+    },
+    "MSG_TOSS_DICE_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u8 count",
+        "u8 result[count]"
+      ],
+      "length_rule": "COUNTED"
+    },
+    "MSG_CARD_HINT_V1": {
+      "payload_fields": [
+        "loc_info",
+        "u8 hint_type",
+        "u64_le value"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 19,
+      "total_message_bytes": 20
+    },
+    "MSG_PLAYER_HINT_V1": {
+      "payload_fields": [
+        "u8 hint_type",
+        "u8 player",
+        "u64_le data"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 10,
+      "total_message_bytes": 11
+    },
+    "MSG_MATCH_KILL_V1": {
+      "payload_fields": [
+        "u32_le reason"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 4,
+      "total_message_bytes": 5
+    },
+    "MSG_REMOVE_CARDS_V1": {
+      "payload_fields": [
+        "u32_le count",
+        "loc_info[count]"
+      ],
+      "length_rule": "COUNTED"
+    }
+  },
+  "entries": [
+    {
+      "message_id": 1,
+      "symbolic_name": "MSG_RETRY",
+      "support_status": "UNSUPPORTED_FAIL_CLOSED",
+      "semantic_category": "CONTROL_RETRY",
+      "planned_slice": "I3A",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "NONE",
+      "state_effect": "UNSUPPORTED_FAIL_CLOSED",
+      "knowledge_effect": "UNSUPPORTED",
+      "locator_effect": "UNSUPPORTED",
+      "boundary_kind": "UNSUPPORTED_FAIL_CLOSED",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 2,
+      "symbolic_name": "MSG_HINT",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_HINT",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_HINT_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 3,
+      "symbolic_name": "MSG_WAITING",
+      "support_status": "OPTIONAL",
+      "semantic_category": "CONTROL_WAITING",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_WAITING_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 4,
+      "symbolic_name": "MSG_START",
+      "support_status": "REQUIRED",
+      "semantic_category": "STATE_ESTABLISHING",
+      "planned_slice": "I3A",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_START_V1",
+      "perspective_effect": "ESTABLISHES",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "PRESERVE",
+      "locator_effect": "CREATE_OR_UPDATE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 5,
+      "symbolic_name": "MSG_WIN",
+      "support_status": "REQUIRED",
+      "semantic_category": "DUEL_TERMINAL",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_WIN_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "PRESERVE",
+      "locator_effect": "NONE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 6,
+      "symbolic_name": "MSG_UPDATE_DATA",
+      "support_status": "REQUIRED",
+      "semantic_category": "CARD_VISIBILITY_QUERY",
+      "planned_slice": "I3B/I3C",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "REVEAL",
+      "locator_effect": "CREATE_OR_UPDATE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 7,
+      "symbolic_name": "MSG_UPDATE_CARD",
+      "support_status": "REQUIRED",
+      "semantic_category": "CARD_VISIBILITY_QUERY",
+      "planned_slice": "I3B/I3C",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "REVEAL",
+      "locator_effect": "CREATE_OR_UPDATE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 8,
+      "symbolic_name": "MSG_REQUEST_DECK",
+      "support_status": "UNSUPPORTED_FAIL_CLOSED",
+      "semantic_category": "CONTROL_DECK_REQUEST",
+      "planned_slice": "I3A",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "NONE",
+      "state_effect": "UNSUPPORTED_FAIL_CLOSED",
+      "knowledge_effect": "UNSUPPORTED",
+      "locator_effect": "UNSUPPORTED",
+      "boundary_kind": "UNSUPPORTED_FAIL_CLOSED",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 10,
+      "symbolic_name": "MSG_SELECT_BATTLECMD",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I4",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 11,
+      "symbolic_name": "MSG_SELECT_IDLECMD",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I4",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 12,
+      "symbolic_name": "MSG_SELECT_EFFECTYN",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I4",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 13,
+      "symbolic_name": "MSG_SELECT_YESNO",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I4",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 14,
+      "symbolic_name": "MSG_SELECT_OPTION",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I4",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 15,
+      "symbolic_name": "MSG_SELECT_CARD",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 16,
+      "symbolic_name": "MSG_SELECT_CHAIN",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I4",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 18,
+      "symbolic_name": "MSG_SELECT_PLACE",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 19,
+      "symbolic_name": "MSG_SELECT_POSITION",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I4",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 20,
+      "symbolic_name": "MSG_SELECT_TRIBUTE",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 21,
+      "symbolic_name": "MSG_SORT_CHAIN",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 22,
+      "symbolic_name": "MSG_SELECT_COUNTER",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 23,
+      "symbolic_name": "MSG_SELECT_SUM",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 24,
+      "symbolic_name": "MSG_SELECT_DISFIELD",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 25,
+      "symbolic_name": "MSG_SORT_CARD",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 26,
+      "symbolic_name": "MSG_SELECT_UNSELECT_CARD",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 30,
+      "symbolic_name": "MSG_CONFIRM_DECKTOP",
+      "support_status": "OPTIONAL",
+      "semantic_category": "CARD_REVEAL_CONFIRM",
+      "planned_slice": "I3C",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "REVEAL",
+      "locator_effect": "CREATE_OR_UPDATE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 31,
+      "symbolic_name": "MSG_CONFIRM_CARDS",
+      "support_status": "OPTIONAL",
+      "semantic_category": "CARD_REVEAL_CONFIRM",
+      "planned_slice": "I3C",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "REVEAL",
+      "locator_effect": "CREATE_OR_UPDATE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 32,
+      "symbolic_name": "MSG_SHUFFLE_DECK",
+      "support_status": "REQUIRED",
+      "semantic_category": "KNOWLEDGE_DESTRUCTION",
+      "planned_slice": "I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SHUFFLE_DECK_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_HIDDEN_CONTINUITY",
+      "locator_effect": "INVALIDATE_HIDDEN",
+      "boundary_kind": "KNOWLEDGE_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 33,
+      "symbolic_name": "MSG_SHUFFLE_HAND",
+      "support_status": "REQUIRED",
+      "semantic_category": "KNOWLEDGE_DESTRUCTION",
+      "planned_slice": "I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SHUFFLE_HAND_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_HIDDEN_CONTINUITY",
+      "locator_effect": "INVALIDATE_HIDDEN",
+      "boundary_kind": "KNOWLEDGE_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 34,
+      "symbolic_name": "MSG_REFRESH_DECK",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PRESENTATION_ONLY",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_REFRESH_DECK_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 35,
+      "symbolic_name": "MSG_SWAP_GRAVE_DECK",
+      "support_status": "OPTIONAL",
+      "semantic_category": "ZONE_REPLACEMENT",
+      "planned_slice": "I3B/I3C",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "NONE",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_IF_AMBIGUOUS",
+      "locator_effect": "INVALIDATE_OR_REBIND",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 36,
+      "symbolic_name": "MSG_SHUFFLE_SET_CARD",
+      "support_status": "REQUIRED",
+      "semantic_category": "KNOWLEDGE_DESTRUCTION",
+      "planned_slice": "I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SHUFFLE_SET_CARD_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_HIDDEN_CONTINUITY",
+      "locator_effect": "INVALIDATE_OR_REBIND",
+      "boundary_kind": "KNOWLEDGE_BOUNDARY",
+      "pairing_rule": "PREVIOUS_I_TO_CURRENT_I_PROTOCOL",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 37,
+      "symbolic_name": "MSG_REVERSE_DECK",
+      "support_status": "REQUIRED",
+      "semantic_category": "HIDDEN_REORDER",
+      "planned_slice": "I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_REVERSE_DECK_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_HIDDEN_CONTINUITY",
+      "locator_effect": "INVALIDATE_HIDDEN",
+      "boundary_kind": "KNOWLEDGE_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 38,
+      "symbolic_name": "MSG_DECK_TOP",
+      "support_status": "OPTIONAL",
+      "semantic_category": "CARD_REVEAL_CONFIRM",
+      "planned_slice": "I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_DECK_TOP_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "REVEAL",
+      "locator_effect": "CREATE_OR_UPDATE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 39,
+      "symbolic_name": "MSG_SHUFFLE_EXTRA",
+      "support_status": "REQUIRED",
+      "semantic_category": "KNOWLEDGE_DESTRUCTION",
+      "planned_slice": "I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SHUFFLE_EXTRA_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_HIDDEN_CONTINUITY",
+      "locator_effect": "INVALIDATE_HIDDEN",
+      "boundary_kind": "KNOWLEDGE_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 40,
+      "symbolic_name": "MSG_NEW_TURN",
+      "support_status": "REQUIRED",
+      "semantic_category": "TURN_PHASE",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_NEW_TURN_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "PRESERVE",
+      "locator_effect": "NONE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 41,
+      "symbolic_name": "MSG_NEW_PHASE",
+      "support_status": "REQUIRED",
+      "semantic_category": "TURN_PHASE",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_NEW_PHASE_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "PRESERVE",
+      "locator_effect": "NONE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 42,
+      "symbolic_name": "MSG_CONFIRM_EXTRATOP",
+      "support_status": "OPTIONAL",
+      "semantic_category": "CARD_REVEAL_CONFIRM",
+      "planned_slice": "I3C",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "REVEAL",
+      "locator_effect": "CREATE_OR_UPDATE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 50,
+      "symbolic_name": "MSG_MOVE",
+      "support_status": "REQUIRED",
+      "semantic_category": "CARD_MOVEMENT",
+      "planned_slice": "I3B/I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_MOVE_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_IF_AMBIGUOUS",
+      "locator_effect": "MOVE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 53,
+      "symbolic_name": "MSG_POS_CHANGE",
+      "support_status": "REQUIRED",
+      "semantic_category": "POSITION_CHANGE",
+      "planned_slice": "I3B/I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_POS_CHANGE_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_IF_AMBIGUOUS",
+      "locator_effect": "RETAIN_OR_INVALIDATE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 54,
+      "symbolic_name": "MSG_SET",
+      "support_status": "REQUIRED",
+      "semantic_category": "POSITION_CONTROL",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SET_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 55,
+      "symbolic_name": "MSG_SWAP",
+      "support_status": "REQUIRED",
+      "semantic_category": "CARD_MOVEMENT",
+      "planned_slice": "I3B/I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SWAP_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_IF_AMBIGUOUS",
+      "locator_effect": "MOVE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 56,
+      "symbolic_name": "MSG_FIELD_DISABLED",
+      "support_status": "OPTIONAL",
+      "semantic_category": "FIELD_RULE_STATE",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_FIELD_DISABLED_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 60,
+      "symbolic_name": "MSG_SUMMONING",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_EVENT",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SUMMONING_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 61,
+      "symbolic_name": "MSG_SUMMONED",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_EVENT",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SUMMONED_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 62,
+      "symbolic_name": "MSG_SPSUMMONING",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_EVENT",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SPSUMMONING_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 63,
+      "symbolic_name": "MSG_SPSUMMONED",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_EVENT",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SPSUMMONED_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 64,
+      "symbolic_name": "MSG_FLIPSUMMONING",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_EVENT",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_FLIPSUMMONING_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 65,
+      "symbolic_name": "MSG_FLIPSUMMONED",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_EVENT",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_FLIPSUMMONED_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 70,
+      "symbolic_name": "MSG_CHAINING",
+      "support_status": "REQUIRED",
+      "semantic_category": "CHAIN_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_CHAINING_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "CREATE_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 71,
+      "symbolic_name": "MSG_CHAINED",
+      "support_status": "REQUIRED",
+      "semantic_category": "CHAIN_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_CHAINED_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "RETAIN_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 72,
+      "symbolic_name": "MSG_CHAIN_SOLVING",
+      "support_status": "REQUIRED",
+      "semantic_category": "CHAIN_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_CHAIN_SOLVING_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "RETAIN_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 73,
+      "symbolic_name": "MSG_CHAIN_SOLVED",
+      "support_status": "REQUIRED",
+      "semantic_category": "CHAIN_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_CHAIN_SOLVED_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "RETAIN_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 74,
+      "symbolic_name": "MSG_CHAIN_END",
+      "support_status": "REQUIRED",
+      "semantic_category": "CHAIN_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_CHAIN_END_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "RELEASE_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 75,
+      "symbolic_name": "MSG_CHAIN_NEGATED",
+      "support_status": "REQUIRED",
+      "semantic_category": "CHAIN_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_CHAIN_NEGATED_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "RETAIN_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 76,
+      "symbolic_name": "MSG_CHAIN_DISABLED",
+      "support_status": "REQUIRED",
+      "semantic_category": "CHAIN_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_CHAIN_DISABLED_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "RETAIN_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 80,
+      "symbolic_name": "MSG_CARD_SELECTED",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_EVENT",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_CARD_SELECTED_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 81,
+      "symbolic_name": "MSG_RANDOM_SELECTED",
+      "support_status": "OPTIONAL",
+      "semantic_category": "RANDOMIZATION",
+      "planned_slice": "I3C",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_IF_AMBIGUOUS",
+      "locator_effect": "INVALIDATE_OR_REBIND",
+      "boundary_kind": "KNOWLEDGE_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 83,
+      "symbolic_name": "MSG_BECOME_TARGET",
+      "support_status": "REQUIRED",
+      "semantic_category": "TARGET_RELATION",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_BECOME_TARGET_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "CREATE_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 90,
+      "symbolic_name": "MSG_DRAW",
+      "support_status": "REQUIRED",
+      "semantic_category": "CARD_MOVEMENT",
+      "planned_slice": "I3B/I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_DRAW_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "REVEAL",
+      "locator_effect": "CREATE_OR_UPDATE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 91,
+      "symbolic_name": "MSG_DAMAGE",
+      "support_status": "REQUIRED",
+      "semantic_category": "LP_CHANGE",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_DAMAGE_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 92,
+      "symbolic_name": "MSG_RECOVER",
+      "support_status": "REQUIRED",
+      "semantic_category": "LP_CHANGE",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_RECOVER_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 93,
+      "symbolic_name": "MSG_EQUIP",
+      "support_status": "REQUIRED",
+      "semantic_category": "EQUIPMENT_RELATION",
+      "planned_slice": "I3B/I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_EQUIP_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "CREATE_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 94,
+      "symbolic_name": "MSG_LPUPDATE",
+      "support_status": "REQUIRED",
+      "semantic_category": "LP_CHANGE",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_LPUPDATE_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 95,
+      "symbolic_name": "MSG_UNEQUIP",
+      "support_status": "REQUIRED",
+      "semantic_category": "EQUIPMENT_RELATION",
+      "planned_slice": "I3B/I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_UNEQUIP_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "RELEASE_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 96,
+      "symbolic_name": "MSG_CARD_TARGET",
+      "support_status": "REQUIRED",
+      "semantic_category": "TARGET_RELATION",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_CARD_TARGET_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "CREATE_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 97,
+      "symbolic_name": "MSG_CANCEL_TARGET",
+      "support_status": "REQUIRED",
+      "semantic_category": "TARGET_RELATION",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_CANCEL_TARGET_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "RELEASE_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 100,
+      "symbolic_name": "MSG_PAY_LPCOST",
+      "support_status": "REQUIRED",
+      "semantic_category": "LP_CHANGE",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_PAY_LPCOST_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 101,
+      "symbolic_name": "MSG_ADD_COUNTER",
+      "support_status": "OPTIONAL",
+      "semantic_category": "CARD_PROPERTY",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_ADD_COUNTER_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 102,
+      "symbolic_name": "MSG_REMOVE_COUNTER",
+      "support_status": "OPTIONAL",
+      "semantic_category": "CARD_PROPERTY",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_REMOVE_COUNTER_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 110,
+      "symbolic_name": "MSG_ATTACK",
+      "support_status": "OPTIONAL",
+      "semantic_category": "BATTLE_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_ATTACK_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 111,
+      "symbolic_name": "MSG_BATTLE",
+      "support_status": "OPTIONAL",
+      "semantic_category": "BATTLE_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_BATTLE_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 112,
+      "symbolic_name": "MSG_ATTACK_DISABLED",
+      "support_status": "OPTIONAL",
+      "semantic_category": "BATTLE_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_ATTACK_DISABLED_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 113,
+      "symbolic_name": "MSG_DAMAGE_STEP_START",
+      "support_status": "OPTIONAL",
+      "semantic_category": "BATTLE_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_DAMAGE_STEP_START_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 114,
+      "symbolic_name": "MSG_DAMAGE_STEP_END",
+      "support_status": "OPTIONAL",
+      "semantic_category": "BATTLE_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_DAMAGE_STEP_END_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 120,
+      "symbolic_name": "MSG_MISSED_EFFECT",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_EVENT",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_MISSED_EFFECT_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 121,
+      "symbolic_name": "MSG_BE_CHAIN_TARGET",
+      "support_status": "OPTIONAL",
+      "semantic_category": "CHAIN_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "CREATE_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 122,
+      "symbolic_name": "MSG_CREATE_RELATION",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_RELATION",
+      "planned_slice": "I3B",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "CREATE_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 123,
+      "symbolic_name": "MSG_RELEASE_RELATION",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_RELATION",
+      "planned_slice": "I3B",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_MUTATING",
+      "knowledge_effect": "NONE",
+      "locator_effect": "RELEASE_RELATION",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 130,
+      "symbolic_name": "MSG_TOSS_COIN",
+      "support_status": "OPTIONAL",
+      "semantic_category": "RANDOM_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_TOSS_COIN_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 131,
+      "symbolic_name": "MSG_TOSS_DICE",
+      "support_status": "OPTIONAL",
+      "semantic_category": "RANDOM_PUBLIC",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_TOSS_DICE_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 132,
+      "symbolic_name": "MSG_ROCK_PAPER_SCISSORS",
+      "support_status": "UNSUPPORTED_FAIL_CLOSED",
+      "semantic_category": "PRE_DUEL_OR_DECISION",
+      "planned_slice": "I3A",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "NONE",
+      "state_effect": "UNSUPPORTED_FAIL_CLOSED",
+      "knowledge_effect": "UNSUPPORTED",
+      "locator_effect": "UNSUPPORTED",
+      "boundary_kind": "UNSUPPORTED_FAIL_CLOSED",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 133,
+      "symbolic_name": "MSG_HAND_RES",
+      "support_status": "UNSUPPORTED_FAIL_CLOSED",
+      "semantic_category": "PRE_DUEL_OR_DECISION",
+      "planned_slice": "I3A",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "NONE",
+      "state_effect": "UNSUPPORTED_FAIL_CLOSED",
+      "knowledge_effect": "UNSUPPORTED",
+      "locator_effect": "UNSUPPORTED",
+      "boundary_kind": "UNSUPPORTED_FAIL_CLOSED",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 140,
+      "symbolic_name": "MSG_ANNOUNCE_RACE",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 141,
+      "symbolic_name": "MSG_ANNOUNCE_ATTRIB",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 142,
+      "symbolic_name": "MSG_ANNOUNCE_CARD",
+      "support_status": "UNSUPPORTED_FAIL_CLOSED",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I3A",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "NONE",
+      "state_effect": "UNSUPPORTED_FAIL_CLOSED",
+      "knowledge_effect": "UNSUPPORTED",
+      "locator_effect": "UNSUPPORTED",
+      "boundary_kind": "UNSUPPORTED_FAIL_CLOSED",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 143,
+      "symbolic_name": "MSG_ANNOUNCE_NUMBER",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "PROMPT",
+      "planned_slice": "I5",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "PROMPT_ONLY",
+      "state_effect": "PROMPT_BOUNDARY",
+      "knowledge_effect": "DEFERRED",
+      "locator_effect": "DEFERRED",
+      "boundary_kind": "PROMPT_BOUNDARY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 160,
+      "symbolic_name": "MSG_CARD_HINT",
+      "support_status": "OPTIONAL",
+      "semantic_category": "CARD_HINT",
+      "planned_slice": "I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_CARD_HINT_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    },
+    {
+      "message_id": 161,
+      "symbolic_name": "MSG_TAG_SWAP",
+      "support_status": "UNSUPPORTED_FAIL_CLOSED",
+      "semantic_category": "TAG_RELAY",
+      "planned_slice": "I3A",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "NONE",
+      "state_effect": "UNSUPPORTED_FAIL_CLOSED",
+      "knowledge_effect": "UNSUPPORTED",
+      "locator_effect": "UNSUPPORTED",
+      "boundary_kind": "UNSUPPORTED_FAIL_CLOSED",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 162,
+      "symbolic_name": "MSG_RELOAD_FIELD",
+      "support_status": "OPTIONAL",
+      "semantic_category": "STATE_RECONSTRUCTION",
+      "planned_slice": "I3B/I3C",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "NONE",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_IF_AMBIGUOUS",
+      "locator_effect": "INVALIDATE_OR_REBIND",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 163,
+      "symbolic_name": "MSG_AI_NAME",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "UI_ONLY",
+      "planned_slice": "UI_ONLY",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "UI_ONLY",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "OUT_OF_SCOPE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 164,
+      "symbolic_name": "MSG_SHOW_HINT",
+      "support_status": "OUT_OF_SCOPE",
+      "semantic_category": "UI_ONLY",
+      "planned_slice": "UI_ONLY",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "UI_ONLY",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "OUT_OF_SCOPE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 165,
+      "symbolic_name": "MSG_PLAYER_HINT",
+      "support_status": "OPTIONAL",
+      "semantic_category": "PUBLIC_HINT",
+      "planned_slice": "I3B",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_PLAYER_HINT_V1",
+      "perspective_effect": "PLAYER_MAPPED",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "REFERENCE",
+      "boundary_kind": "PRESENTATION_ONLY",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 170,
+      "symbolic_name": "MSG_MATCH_KILL",
+      "support_status": "UNSUPPORTED_FAIL_CLOSED",
+      "semantic_category": "MATCH_CONTROL",
+      "planned_slice": "I3A",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_MATCH_KILL_V1",
+      "perspective_effect": "NONE",
+      "state_effect": "UNSUPPORTED_FAIL_CLOSED",
+      "knowledge_effect": "UNSUPPORTED",
+      "locator_effect": "UNSUPPORTED",
+      "boundary_kind": "UNSUPPORTED_FAIL_CLOSED",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS"
+      ]
+    },
+    {
+      "message_id": 180,
+      "symbolic_name": "MSG_CUSTOM_MSG",
+      "support_status": "UNSUPPORTED_FAIL_CLOSED",
+      "semantic_category": "UNKNOWN_EXTENSION",
+      "planned_slice": "I3A",
+      "layout_status": "UNFROZEN",
+      "wire_layout_id": "UNFROZEN",
+      "perspective_effect": "NONE",
+      "state_effect": "UNSUPPORTED_FAIL_CLOSED",
+      "knowledge_effect": "UNSUPPORTED",
+      "locator_effect": "UNSUPPORTED",
+      "boundary_kind": "UNSUPPORTED_FAIL_CLOSED",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS"
+      ]
+    },
+    {
+      "message_id": 190,
+      "symbolic_name": "MSG_REMOVE_CARDS",
+      "support_status": "REQUIRED",
+      "semantic_category": "CARD_MOVEMENT",
+      "planned_slice": "I3C",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_REMOVE_CARDS_V1",
+      "perspective_effect": "LOCATOR_MAPPED",
+      "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
+      "knowledge_effect": "DESTROY_IF_AMBIGUOUS",
+      "locator_effect": "DESTROY",
+      "boundary_kind": "GAMEPLAY_STATE",
+      "pairing_rule": "NONE",
+      "upstream_reference_ids": [
+        "CORE_MESSAGE_IDS",
+        "CORE_MESSAGE_WRITERS",
+        "EDOPRO_CLIENT_LAYOUTS",
+        "EDOPRO_LOC_QUERY"
+      ]
+    }
+  ]
+}
