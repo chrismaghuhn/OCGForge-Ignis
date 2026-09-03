@@ -34,23 +34,60 @@
       "encoding": "EXPLICIT_LITTLE_ENDIAN"
     },
     "ModernQueryV1": {
-      "item_fields": [
-        "u16_le item_size",
-        "u32_le query_flag",
-        "flag_specific_data"
+      "record_prefix": [
+        "u16_le item_size"
       ],
-      "terminator": "QUERY_END",
-      "length_rule": "ITEM_TERMINATED",
-      "unknown_flag_behavior": "UNFROZEN_UNTIL_FLAG_CONTRACT"
+      "zero_size_record": {
+        "item_size": 0,
+        "meaning": "ONFIELD_SKIPPED",
+        "query_flag_follows": false,
+        "terminates_current_query": true
+      },
+      "nonzero_record": {
+        "minimum_item_size": 4,
+        "fields": [
+          "u32_le query_flag",
+          "byte[item_size-4] flag_specific_payload"
+        ],
+        "size_rule": "ITEM_SIZE_EQUALS_QUERY_FLAG_AND_PAYLOAD_BYTES"
+      },
+      "query_end_record": {
+        "item_size": 4,
+        "query_flag": "QUERY_END",
+        "flag_specific_payload_bytes": 0,
+        "terminates_current_query": true
+      },
+      "flag_specific_union_status": "UNFROZEN"
     },
     "ModernQueryStreamV1": {
       "prefix_fields": [
         "u32_le total_query_bytes"
       ],
       "repeated_item": "ModernQueryV1",
-      "length_rule": "TOTAL_BYTES_THEN_QUERY_RECORDS",
-      "unknown_flag_behavior": "UNFROZEN_UNTIL_FLAG_CONTRACT"
+      "body": {
+        "byte_count_field": "total_query_bytes",
+        "byte_count_includes_prefix": false,
+        "boundary": "EXACT_TOTAL_QUERY_BYTES"
+      },
+      "count_rule": "ZERO_OR_MORE_COMPLETE_QUERY_VALUES",
+      "length_rule": "TOTAL_EXCLUDES_OWN_PREFIX",
+      "flag_specific_union_status": "UNFROZEN"
     }
+  },
+  "query_codec_contract": {
+    "owner": "I3B0",
+    "status": "NOT_FROZEN_REQUIRES_I3B0",
+    "implementation_dependency": "I3B",
+    "required_freeze_elements": [
+      "QUERY_FLAG_ENUM",
+      "FLAG_PAYLOAD_TYPES",
+      "FLAG_PAYLOAD_WIDTHS",
+      "FLAG_BOUNDS",
+      "ZERO_SIZE_RECORD",
+      "QUERY_END_RECORD",
+      "STREAM_TOTAL_BYTE_BOUNDARY",
+      "MALFORMED_NEGATIVE_VECTORS"
+    ]
   },
   "audited_wire_prefixes": {
     "MSG_UPDATE_DATA": {
@@ -1203,7 +1240,7 @@
       "symbolic_name": "MSG_REFRESH_DECK",
       "support_status": "OPTIONAL",
       "semantic_category": "PRESENTATION_ONLY",
-      "planned_slice": "I3C",
+      "planned_slice": "I3B",
       "layout_status": "FROZEN",
       "wire_layout_id": "MSG_REFRESH_DECK_V1",
       "perspective_effect": "NONE",

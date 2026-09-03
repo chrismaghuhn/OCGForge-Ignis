@@ -155,12 +155,21 @@ The two modern query suffixes are distinct wire grammars:
 
 ```text
 ModernQueryV1:
-  repeated u16_le item_size; u32_le query_flag; flag-specific payload
-  terminated by QUERY_END
+  u16_le item_size
+  if item_size == 0:
+    ONFIELD_SKIPPED; no query_flag follows; end this query value
+  otherwise:
+    require item_size >= 4
+    u32_le query_flag
+    exactly item_size - 4 flag-specific payload bytes
+  QUERY_END is item_size == 4, query_flag == QUERY_END, payload bytes == 0
+  item_size counts query_flag plus payload, not its own u16 length field
 
 ModernQueryStreamV1:
   u32_le total_query_bytes
-  followed by ModernQueryV1 query records within that byte count
+  exactly total_query_bytes following bytes
+  containing zero or more complete ModernQueryV1 values
+  total_query_bytes excludes its own u32 prefix
 ```
 
 `MSG_UPDATE_CARD` uses `ModernQueryV1` after its proven
@@ -656,7 +665,7 @@ The following ledger is normative for agreement checking; entries are ordered by
 | 31 | MSG_CONFIRM_CARDS | OPTIONAL | UNFROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3C |
 | 32 | MSG_SHUFFLE_DECK | REQUIRED | FROZEN | PLAYER_MAPPED | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_HIDDEN | KNOWLEDGE_BOUNDARY | NONE | I3C |
 | 33 | MSG_SHUFFLE_HAND | REQUIRED | FROZEN | PLAYER_MAPPED | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_HIDDEN | KNOWLEDGE_BOUNDARY | NONE | I3C |
-| 34 | MSG_REFRESH_DECK | OPTIONAL | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | NONE | PRESENTATION_ONLY | NONE | I3C |
+| 34 | MSG_REFRESH_DECK | OPTIONAL | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | NONE | PRESENTATION_ONLY | NONE | I3B |
 | 35 | MSG_SWAP_GRAVE_DECK | OPTIONAL | UNFROZEN | NONE | STATE_AND_KNOWLEDGE_MUTATING | DESTROY_IF_AMBIGUOUS | INVALIDATE_OR_REBIND | GAMEPLAY_STATE | NONE | I3B/I3C |
 | 36 | MSG_SHUFFLE_SET_CARD | REQUIRED | FROZEN | LOCATOR_MAPPED | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_OR_REBIND | KNOWLEDGE_BOUNDARY | PREVIOUS_I_TO_CURRENT_I_PROTOCOL | I3C |
 | 37 | MSG_REVERSE_DECK | REQUIRED | FROZEN | NONE | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_HIDDEN | KNOWLEDGE_BOUNDARY | NONE | I3C |
@@ -732,7 +741,7 @@ The following are separate future tasks. I3A0 does not authorize any of them.
 The frozen order is:
 
 ```text
-I3A → I3B → I3C0 → I3C → I3D0 → I3D
+I3A → I3B0 → I3B → I3C0 → I3C → I3D0 → I3D
 ```
 
 ### I3A — GAME_MSG foundation and perspective establishment
@@ -765,12 +774,35 @@ projection, model input, and response selection.
 Stop condition: any unsupported or ambiguous state-relevant message fails the
 I3A session; no fallback parser or legacy mode is attempted.
 
+### I3B0 — query codec/union freeze (documentation only)
+
+Owner: I3 contract governance. This is a documentation-only prerequisite for
+I3B and does not implement query parsing or the state mirror.
+
+I3B0 must freeze the exact modern query contract for the pinned V1 path:
+
+- the complete `QUERY_FLAG` enum set admitted by the slice;
+- the exact payload type and width for every admitted flag;
+- per-flag size bounds and integer-overflow behavior;
+- the `ModernQueryV1` `item_size==0` `ONFIELD_SKIPPED` form;
+- the `QUERY_END` form with `item_size==4` and no flag payload;
+- the distinction between the single-query and `u32`-length-prefixed stream
+  grammars;
+- exact total-byte boundary and zero-query behavior for
+  `ModernQueryStreamV1`; and
+- positive, truncated, wrong-size, unknown-flag, trailing-byte, and overflow
+  golden fixtures.
+
+The flag-specific union is `NOT_FROZEN` in I3A0. I3B may not publish a typed
+query value until I3B0 is accepted. I3B0 adds no production code and leaves
+all I3 implementation gates `NOT_RUN`.
+
 ### I3B — deterministic PerspectiveStateMirror
 
 Owner: I3 state mirror.
 
-Inputs: I3A validated messages and immutable perspective; no raw transport
-address or external engine query.
+Inputs: I3A validated messages, the accepted I3B0 query codec/union contract,
+and immutable perspective; no raw transport address or external engine query.
 
 Outputs: canonical participant/zone/LP/turn/phase/field/chain/public-relation
 mirror values with explicit unknowns and deterministic state transitions.

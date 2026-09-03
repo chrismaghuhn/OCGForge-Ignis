@@ -11,7 +11,7 @@
 ---
 
 Execution status: CONTRACT_FREEZE_ONLY; all implementation tasks remain `NOT_RUN` and unauthorized.
-Frozen slice order: `I3A → I3B → I3C0 → I3C → I3D0 → I3D`.
+Frozen slice order: `I3A → I3B0 → I3B → I3C0 → I3C → I3D0 → I3D`.
 
 ## Frozen inputs and non-negotiable boundaries
 
@@ -19,7 +19,7 @@ Frozen slice order: `I3A → I3B → I3C0 → I3C → I3D0 → I3D`.
 - Inventory: `ocgforge-ignis.game_message_support.v1`.
 - Runtime: EDOPro `30935e847165a9ef0e547fb51a43f36168fab7c7`, ocgcore gitlink `46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57`.
 - I2 handoff: `FINAL_GAMEPLAY_PERSPECTIVE=UNRESOLVED_AT_I2_HANDOFF`.
-- I3 production is not authorized by this plan. The frozen sequence is `I3A → I3B → I3C0 → I3C → I3D0 → I3D`; each implementation or documentation-freeze slice requires a new explicit task, its own branch/commit/PR, focused gates, independent review, and a stop.
+- I3 production is not authorized by this plan. The frozen sequence is `I3A → I3B0 → I3B → I3C0 → I3C → I3D0 → I3D`; each implementation or documentation-freeze slice requires a new explicit task, its own branch/commit/PR, focused gates, independent review, and a stop.
 - EDOPro remains the sole rules/legal authority. I3 never recomputes legality, selects a prompt answer, creates candidates, scores a model, or binds a response.
 - `ANNOUNCE_CARD`, Tag/Relay, Match/Siding, observer gameplay, reconnect, public servers, IPC, WPF, and model integration remain fail-closed or out of scope.
 
@@ -85,7 +85,35 @@ host flag, RPS outcome, or TP choice.
 
 - [ ] **Step 6: Stop.** Do not add the PerspectiveStateMirror, card knowledge, semantic locators, public projection, prompt answer, or model input. Commit and review I3A as a separate task only after a new authorization.
 
-## Task 2: I3B deterministic PerspectiveStateMirror
+## Task 2: I3B0 query codec/union freeze (documentation only)
+
+This is a separate contract-freeze task between I3A and I3B. It creates no
+production project or runtime parser.
+
+**Files:**
+
+- Modify the owning I3 design/spec document only.
+- Add no C# source, project, or runtime dependency.
+
+- [ ] **Step 1: Freeze the two query grammars.** Define `ModernQueryV1` with
+  `item_size==0` as `ONFIELD_SKIPPED` with no following `query_flag`, and with
+  nonzero `item_size` requiring at least four bytes for the `u32_le query_flag`.
+  Define the `QUERY_END` record as `item_size==4` with zero flag-payload bytes.
+- [ ] **Step 2: Freeze the flag union.** Record the exact admitted query flags,
+  payload types, widths, per-flag bounds, overflow behavior, and unknown-flag
+  policy for the pinned modern V1 source. Keep the union separate from the
+  already-frozen outer record grammar.
+- [ ] **Step 3: Freeze stream boundaries.** Define
+  `ModernQueryStreamV1` as `u32_le total_query_bytes` followed by exactly that
+  many bytes containing zero or more complete `ModernQueryV1` values. The
+  prefix itself is excluded from the count; truncation, excess, and arithmetic
+  overflow fail closed.
+- [ ] **Step 4: Add evidence and stop.** Add positive zero-size/QUERY_END,
+  wrong-size, truncation, unknown-flag, trailing-byte, and overflow fixtures.
+  Leave all implementation gates `NOT_RUN`; I3B may implement the union only
+  after I3B0 is independently accepted.
+
+## Task 3: I3B deterministic PerspectiveStateMirror
 
 **Files:**
 
@@ -96,7 +124,7 @@ host flag, RPS outcome, or TP choice.
 
 - [ ] **Step 1: Write RED mirror tests.** Start from an established `GameplayPerspectiveV1` and assert participant roles `Self`/`Opponent`, LP, turn player/count, phase, deck/extra/hand/grave/banished counts, field slots, controller/owner distinction, and chain/public relationship values. Assert that every value has an explicit provenance class and that absent knowledge is not represented by a magic card code.
 
-- [ ] **Step 2: Implement a single-owner reducer.** Consume only I3A validated messages. Use fixed participant and zone order, explicit state transitions, exact source/destination validation, and immutable result snapshots. `MSG_UPDATE_CARD` uses the single `ModernQueryV1` suffix; `MSG_UPDATE_DATA` uses the `u32_le total_query_bytes`-prefixed `ModernQueryStreamV1` suffix. Their flag-specific query union remains unfrozen until its owning contract is accepted; unrecognized flags and incomplete query records fail closed.
+- [ ] **Step 2: Implement a single-owner reducer.** Consume only I3A validated messages and the accepted I3B0 query codec/union contract. Use fixed participant and zone order, explicit state transitions, exact source/destination validation, and immutable result snapshots. `MSG_UPDATE_CARD` uses the single `ModernQueryV1` suffix; `MSG_UPDATE_DATA` uses the `u32_le total_query_bytes`-prefixed `ModernQueryStreamV1` suffix. Unrecognized flags, incomplete query records, and stream-boundary violations fail closed.
 
 - [ ] **Step 3: Implement required public state families.** Cover the inventory's I3B-required families: `MSG_START`, `MSG_WIN`, `MSG_UPDATE_DATA`, `MSG_UPDATE_CARD`, `MSG_MOVE`, `MSG_POS_CHANGE`, `MSG_SET` as a consume-only presentation event with no mirror mutation, `MSG_SWAP`, `MSG_NEW_TURN`, `MSG_NEW_PHASE`, LP changes, required chain messages, target relations, and equipment relations. Keep prompt families at the I4/I5 boundary and do not apply presentation/summon notifications a second time when MOVE/query messages own the state change.
 
@@ -106,7 +134,7 @@ host flag, RPS outcome, or TP choice.
 
 - [ ] **Step 6: Stop.** Do not add knowledge-destroying policy beyond explicit hooks, public projection, candidates, or response selection. Commit and review I3B separately.
 
-## Task 3: I3C0 semantic-locator codec freeze (documentation only)
+## Task 4: I3C0 semantic-locator codec freeze (documentation only)
 
 This is a separate contract-freeze task. It creates no production project or
 runtime implementation and must be independently reviewed before I3C.
@@ -133,7 +161,7 @@ runtime implementation and must be independently reviewed before I3C.
 - [ ] **Step 4: Stop.** I3C0 does not implement the codec or the knowledge
   reducer. A separate implementation authorization is required after review.
 
-## Task 4: I3C card knowledge and semantic locators
+## Task 5: I3C card knowledge and semantic locators
 
 **Files:**
 
@@ -155,7 +183,7 @@ runtime implementation and must be independently reviewed before I3C.
 
 - [ ] **Step 6: Stop.** Do not implement the locator codec, `PublicContractProjectionV1`, or any model-facing identity in the same task. I3C consumes only the accepted I3C0 codec contract and is reviewed separately.
 
-## Task 5: I3D0 public-projection identity/codec freeze (documentation only)
+## Task 6: I3D0 public-projection identity/codec freeze (documentation only)
 
 This is a separate contract-freeze task after I3C and before I3D. It creates no
 production project or runtime implementation.
@@ -179,7 +207,7 @@ production project or runtime implementation.
 - [ ] **Step 4: Stop.** I3D0 does not implement projection or identity code. A
   separate implementation authorization is required after review.
 
-## Task 6: I3D PublicContractProjection and paired-world acceptance
+## Task 7: I3D PublicContractProjection and paired-world acceptance
 
 **Files:**
 
@@ -200,7 +228,7 @@ production project or runtime implementation.
 
 - [ ] **Step 6: Stop.** Do not implement I4/I5 prompt projection, private response binding, model input, runner IPC, checkpoint binding, or OCGForge cross-oracle.
 
-## Task 7: I3 provenance, CI, and acceptance evidence
+## Task 8: I3 provenance, CI, and acceptance evidence
 
 **Files:**
 
@@ -216,7 +244,7 @@ production project or runtime implementation.
 
 - [ ] **Step 4: Scope-audit before each slice commit.** Reject `.dll`, `.exe`, CDB, deck, checkpoint, copied upstream source, public endpoint, I4/I5 candidate type, model/IPC/UI code, or a Protocol→Gameplay reverse dependency.
 
-- [ ] **Step 5: Commit one slice at a time.** Use separate branches and PRs for I3A, I3B, I3C0, I3C, I3D0, and I3D. Do not combine slices or merge without independent review.
+- [ ] **Step 5: Commit one slice at a time.** Use separate branches and PRs for I3A, I3B0, I3B, I3C0, I3C, I3D0, and I3D. Do not combine slices or merge without independent review.
 
 ## I3A0 current verification boundary
 
