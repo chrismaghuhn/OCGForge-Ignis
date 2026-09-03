@@ -83,6 +83,27 @@ that uses them. The register intentionally contains no copied implementation.
 | WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | Game/GamePacketFactory.cs | CTOS packet construction provides a response-layout oracle | 2026-09-03 | wire layout |
 | WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | Game/GameBehavior.cs | Existing bot behavior contains heuristics and fallbacks and is not an authority or implementation source | 2026-09-03 | observed behavior |
 
+## I1 implemented facts
+
+Protocol contract ID: ocgforge-ignis.protocol.wire.v1
+
+The following facts are the only additional upstream facts used by the I1
+implementation. They were independently reimplemented; no upstream source
+implementation was copied.
+
+| External repository | Exact commit | Source path | Fact learned | Date | Classification |
+| --- | --- | --- | --- | --- | --- |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/netserver.cpp | A frame begins with a uint16 length, and the server consumes length plus the two-byte prefix; the length includes the packet type | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.h | Client frame writers encode length as one packet-type byte plus payload bytes | 2026-09-03 | wire layout |
+| WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | YGOSharp.Network/BinaryClient.cs | The independent client uses a two-byte maximum 0xffff frame header and retains incomplete receive data across arbitrary segmentation | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | The frozen CTOS and STOC packet IDs and the explicit unsupported STOC IDs are defined as direction-specific numeric constants | 2026-09-03 | numeric constant |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | CTOS_PlayerInfo, CTOS_JoinGame, CTOS_HandResult, and CTOS_TPResult define the implemented CTOS payload fields and alignment | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | STOC_ErrorMsg, STOC_HandResult, STOC_JoinGame/HostInfo, STOC_TypeChange, STOC_TimeLimit, and lobby payload structs define the implemented STOC fields and alignment | 2026-09-03 | wire layout |
+| WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | Game/GameClient.cs | Join-game serialization makes the two alignment bytes after the protocol version explicit and writes a fixed UTF-16 password and client version | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/bufferio.h | Fixed text fields use UTF-16 code units, reserve a terminating code unit, and zero-fill the fixed field | 2026-09-03 | wire layout |
+| WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | YGOSharp.Network/Utils/BinaryExtensions.cs | Fixed text fields use explicit little-endian UTF-16 with a fixed code-unit width | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp | STOC_GAME_MSG forwards the inner bytes to duel analysis and CTOS_RESPONSE forwards opaque response bytes; I1 preserves both payloads without semantic decoding | 2026-09-03 | observed behavior |
+
 No version fact in this ledger is attributed to gframe/ocgapi_constants.h.
 The corrected version facts above are tied only to the exact source paths where
 they were verified.
