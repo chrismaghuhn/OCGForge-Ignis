@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisMode>Recommended</AnalysisMode>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OCGForge.Ignis.Client\OCGForge.Ignis.Client.csproj" />
+    <ProjectReference Include="..\OCGForge.Ignis.Protocol\OCGForge.Ignis.Protocol.csproj" />
+  </ItemGroup>
+</Project>

@@ -14,7 +14,7 @@ public sealed class I2PumpResult
         I2ErrorCode error,
         IEnumerable<I2Event> events,
         PreDuelChoiceRequest? choiceRequest,
-        GameplayTransportHandoffV1? runtimeHandoff)
+        GameplayHandoffOfferV1? runtimeHandoff)
     {
         IsSuccess = isSuccess;
         State = state;
@@ -35,13 +35,13 @@ public sealed class I2PumpResult
 
     public PreDuelChoiceRequest? ChoiceRequest { get; }
 
-    internal GameplayTransportHandoffV1? RuntimeHandoff { get; }
+    public GameplayHandoffOfferV1? RuntimeHandoff { get; }
 
     internal static I2PumpResult Success(
         I2SessionState state,
         IEnumerable<I2Event> events,
         PreDuelChoiceRequest? choiceRequest,
-        GameplayTransportHandoffV1? runtimeHandoff) =>
+        GameplayHandoffOfferV1? runtimeHandoff) =>
         new(
             true,
             state,
@@ -54,7 +54,7 @@ public sealed class I2PumpResult
         I2SessionState state,
         I2ErrorCode error,
         IEnumerable<I2Event> events,
-        GameplayTransportHandoffV1? runtimeHandoff = null) =>
+        GameplayHandoffOfferV1? runtimeHandoff = null) =>
         new(
             false,
             state,
@@ -73,7 +73,7 @@ public sealed class I2SessionRunner : IAsyncDisposable
         new byte[ClientContractV1.MaxReceiveBufferBytes];
     private readonly PreDuelStateMachine stateMachine = new();
     private readonly SemaphoreSlim operationGate = new(1, 1);
-    private GameplayTransportHandoffV1? runtimeHandoff;
+    private GameplayHandoffOfferV1? runtimeHandoff;
     private int transportClosed;
     private bool disposed;
 
@@ -90,7 +90,7 @@ public sealed class I2SessionRunner : IAsyncDisposable
 
     public LobbyState Lobby => stateMachine.Lobby;
 
-    internal GameplayTransportHandoffV1? RuntimeHandoff => runtimeHandoff;
+    internal GameplayHandoffOfferV1? RuntimeHandoff => runtimeHandoff;
 
     public async ValueTask<I2Result> StartAsync(
         ConnectionConfigurationV1 configuration,
@@ -719,7 +719,7 @@ public sealed class I2SessionRunner : IAsyncDisposable
         }
 
         PreDuelSessionV1 publicSession = stateMachine.CreatePublicSession();
-        runtimeHandoff = new GameplayTransportHandoffV1(
+        runtimeHandoff = new GameplayHandoffOfferV1(
             transport,
             publicSession,
             receiveBuffer.CopyUnread());

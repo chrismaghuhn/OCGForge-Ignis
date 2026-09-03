@@ -1,4 +1,4 @@
-name: I1 protocol and I2 pre-duel client
+name: I1 protocol, I2 pre-duel client, and I3A gameplay foundation
 
 on:
   pull_request:
@@ -9,6 +9,7 @@ on:
       - main
       - chris/i1-deterministic-wire-codec
       - chris/i2-connection-lobby-state-machine
+      - chris/i3a-game-msg-decoder-foundation
 
 permissions:
   contents: read
@@ -34,8 +35,14 @@ jobs:
       - name: Build protocol tests
         run: dotnet build tests/OCGForge.Ignis.Protocol.Tests/OCGForge.Ignis.Protocol.Tests.csproj --configuration Release --no-restore
 
-      - name: Run deterministic protocol tests
-        run: dotnet run --project tests/OCGForge.Ignis.Protocol.Tests/OCGForge.Ignis.Protocol.Tests.csproj --configuration Release --no-build --no-restore
+      - name: Run deterministic protocol tests twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet run --project tests/OCGForge.Ignis.Protocol.Tests/OCGForge.Ignis.Protocol.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i1-a.txt"
+          dotnet run --project tests/OCGForge.Ignis.Protocol.Tests/OCGForge.Ignis.Protocol.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i1-b.txt"
+          cmp -- "$RUNNER_TEMP/i1-a.txt" "$RUNNER_TEMP/i1-b.txt"
+          cat "$RUNNER_TEMP/i1-a.txt"
 
       - name: Restore I2 client tests
         run: dotnet restore tests/OCGForge.Ignis.Client.Tests/OCGForge.Ignis.Client.Tests.csproj
@@ -46,5 +53,29 @@ jobs:
       - name: Build I2 client tests
         run: dotnet build tests/OCGForge.Ignis.Client.Tests/OCGForge.Ignis.Client.Tests.csproj --configuration Release --no-restore
 
-      - name: Run deterministic I2 client tests
-        run: dotnet run --project tests/OCGForge.Ignis.Client.Tests/OCGForge.Ignis.Client.Tests.csproj --configuration Release --no-build --no-restore
+      - name: Run deterministic I2 client tests twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet run --project tests/OCGForge.Ignis.Client.Tests/OCGForge.Ignis.Client.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i2-a.txt"
+          dotnet run --project tests/OCGForge.Ignis.Client.Tests/OCGForge.Ignis.Client.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i2-b.txt"
+          cmp -- "$RUNNER_TEMP/i2-a.txt" "$RUNNER_TEMP/i2-b.txt"
+          cat "$RUNNER_TEMP/i2-a.txt"
+
+      - name: Restore I3A gameplay tests
+        run: dotnet restore tests/OCGForge.Ignis.Gameplay.Tests/OCGForge.Ignis.Gameplay.Tests.csproj
+
+      - name: Build I3A gameplay
+        run: dotnet build src/OCGForge.Ignis.Gameplay/OCGForge.Ignis.Gameplay.csproj --configuration Release --no-restore
+
+      - name: Build I3A gameplay tests
+        run: dotnet build tests/OCGForge.Ignis.Gameplay.Tests/OCGForge.Ignis.Gameplay.Tests.csproj --configuration Release --no-restore
+
+      - name: Run deterministic I3A gameplay tests twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet run --project tests/OCGForge.Ignis.Gameplay.Tests/OCGForge.Ignis.Gameplay.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i3a-a.txt"
+          dotnet run --project tests/OCGForge.Ignis.Gameplay.Tests/OCGForge.Ignis.Gameplay.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i3a-b.txt"
+          cmp -- "$RUNNER_TEMP/i3a-a.txt" "$RUNNER_TEMP/i3a-b.txt"
+          cat "$RUNNER_TEMP/i3a-a.txt"
