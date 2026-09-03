@@ -167,12 +167,19 @@ public abstract record StocErrorPayload
 public sealed record JoinErrorPayload(JoinErrorCode Error) :
     StocErrorPayload(ErrorType.JoinError);
 
-public sealed record DeckErrorPayload(
+public sealed record DeckErrorCardCodePayload(
+    DeckErrorCode Error,
+    uint CardCode) :
+    StocErrorPayload(ErrorType.DeckError);
+
+public sealed record DeckErrorCountPayload(
     DeckErrorCode Error,
     uint Current,
     uint Minimum,
-    uint Maximum,
-    uint CardCode) :
+    uint Maximum) :
+    StocErrorPayload(ErrorType.DeckError);
+
+public sealed record DeckErrorTypeOnlyPayload(DeckErrorCode Error) :
     StocErrorPayload(ErrorType.DeckError);
 
 public sealed record SideErrorPayload(uint Code) :

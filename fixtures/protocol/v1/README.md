@@ -160,13 +160,14 @@ Packet type: STOC_ERROR_MSG, 0x02
 Frame hex:
 
 ~~~text
-19 00 02 02 00 00 00 05 00 00 00 06 00 00 00
-28 00 00 00 3c 00 00 00 44 33 22 11
+19 00 02 02 00 00 00 05 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 44 33 22 11
 ~~~
 
-Expected decode: DeckError with subtype CardCount, current 6, minimum 40,
-maximum 60, and card code 0x11223344. The three alignment bytes are
-canonical zero padding.
+Expected decode: DeckErrorCardCode with subtype CardCount and card code
+0x11223344. Count bytes are non-semantic for this subtype and are canonical
+zero; the three alignment bytes are also canonical zero padding.
 
 The other supported discriminated error payloads have these exact positive
 frame vectors:
@@ -214,6 +215,33 @@ Frame hex:
 
 Expected decode: VersionError2 with client/core version 41.0/11.0. The three
 alignment bytes are canonical zero padding.
+
+#### 10e. MAINCOUNT / count projection
+
+Frame hex:
+
+~~~text
+19 00 02 02 00 00 00 06 00 00 00
+06 00 00 00 28 00 00 00 3c 00 00 00
+00 00 00 00
+~~~
+
+Expected decode: DeckErrorCount with subtype MainCount, current 6, minimum
+40, and maximum 60. The card-code field is non-semantic and canonical zero.
+
+#### 10f. EXTRACOUNT / type-only projection
+
+Frame hex:
+
+~~~text
+19 00 02 02 00 00 00 07 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00
+~~~
+
+Expected decode: DeckErrorTypeOnly with subtype ExtraCount. Count and
+card-code fields are non-semantic and canonical zero because EXTRACOUNT has
+both count-bearing and type-only upstream construction paths.
 
 ### 11. STOC join game / HostInfo
 

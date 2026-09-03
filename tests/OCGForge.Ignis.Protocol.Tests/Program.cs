@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 using OCGForge.Ignis.Protocol;
 
 var tests = new (string Name, Action Body)[]
@@ -20,6 +22,7 @@ var tests = new (string Name, Action Body)[]
     ("repeated encode/decode determinism", TestDeterminism),
     ("type-aware packet validation surface", TestTypeAwareValidation),
     ("discriminated error payloads", TestErrorPayloads),
+    ("DeckError semantic projection", TestDeckErrorSemanticProjection),
     ("validated V1 version compatibility", TestValidatedVersionCompatibility)
 };
 
@@ -427,8 +430,9 @@ static void TestPaddingIsNonSemantic()
     BytesEqual(joinA, PacketPayloadCodec.EncodeJoinGame(decodedJoinB.Value));
 
     byte[] errorA = Hex(
-        "02 00 00 00 05 00 00 00 06 00 00 00 28 00 00 00 " +
-        "3c 00 00 00 44 33 22 11");
+        "02 00 00 00 05 00 00 00 " +
+        "00 00 00 00 00 00 00 00 00 00 00 00 " +
+        "44 33 22 11");
     byte[] errorB = errorA.ToArray();
     errorB[1] = 0xaa;
     errorB[2] = 0xbb;
@@ -544,17 +548,15 @@ static void TestTypedPayloads()
     BytesEqual(Hex("01"), PacketPayloadCodec.EncodeCtosTpResult(tp));
     Equal(tp, PacketPayloadCodec.DecodeCtosTpResult(Hex("01")).Value);
 
-    StocErrorPayload error = new DeckErrorPayload(
+    StocErrorPayload error = new DeckErrorCardCodePayload(
         DeckErrorCode.CardCount,
-        6,
-        40,
-        60,
         0x11223344);
     byte[] errorBytes = PacketPayloadCodec.EncodeStocErrorMessage(error);
     BytesEqual(
         Hex(
-            "02 00 00 00 05 00 00 00 06 00 00 00 28 00 00 00 " +
-            "3c 00 00 00 44 33 22 11"),
+            "02 00 00 00 05 00 00 00 " +
+            "00 00 00 00 00 00 00 00 00 00 00 00 " +
+            "44 33 22 11"),
         errorBytes);
     PayloadDecodeResult<StocErrorPayload> errorDecoded =
         PacketPayloadCodec.DecodeStocErrorMessage(errorBytes);
@@ -824,11 +826,8 @@ static void TestTypeAwareValidation()
     }
 
     byte[] error = PacketPayloadCodec.EncodeStocErrorMessage(
-        new DeckErrorPayload(
+        new DeckErrorCardCodePayload(
             DeckErrorCode.CardCount,
-            6,
-            40,
-            60,
             0x11223344));
     byte[] time = PacketPayloadCodec.EncodeStocTimeLimit(
         new StocTimeLimitPayload(0x02, 0x1234));
@@ -898,9 +897,20 @@ static void TestErrorPayloads()
             new JoinErrorPayload(JoinErrorCode.Password),
             "01 00 00 00 01 00 00 00"),
         (
-            new DeckErrorPayload(DeckErrorCode.CardCount, 6, 40, 60, 0x11223344),
-            "02 00 00 00 05 00 00 00 06 00 00 00 28 00 00 00 " +
-            "3c 00 00 00 44 33 22 11"),
+            new DeckErrorCardCodePayload(DeckErrorCode.CardCount, 0x11223344),
+            "02 00 00 00 05 00 00 00 " +
+            "00 00 00 00 00 00 00 00 00 00 00 00 " +
+            "44 33 22 11"),
+        (
+            new DeckErrorCountPayload(DeckErrorCode.MainCount, 6, 40, 60),
+            "02 00 00 00 06 00 00 00 " +
+            "06 00 00 00 28 00 00 00 3c 00 00 00 " +
+            "00 00 00 00"),
+        (
+            new DeckErrorTypeOnlyPayload(DeckErrorCode.ExtraCount),
+            "02 00 00 00 07 00 00 00 " +
+            "00 00 00 00 00 00 00 00 00 00 00 00 " +
+            "00 00 00 00"),
         (
             new SideErrorPayload(0x11223344),
             "03 00 00 00 44 33 22 11"),
@@ -930,8 +940,8 @@ static void TestErrorPayloads()
         (Hex("02 00 00 00 05 00 00 00"), ProtocolErrorCode.PayloadLengthMismatch),
         (
             Hex(
-                "02 00 00 00 05 00 00 00 06 00 00 00 28 00 00 00 " +
-                "3c 00 00 00 44 33 22 11 aa"),
+                "02 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00 " +
+                "00 00 00 00 44 33 22 11 aa"),
             ProtocolErrorCode.TrailingPayloadBytes),
         (Hex("03 00 00 00 44 33 22"), ProtocolErrorCode.PayloadLengthMismatch),
         (Hex("03 00 00 00 44 33 22 11 00"), ProtocolErrorCode.TrailingPayloadBytes),
@@ -959,8 +969,17 @@ static void TestErrorPayloads()
         ProtocolErrorCode.UnknownErrorCode,
         PacketPayloadCodec.DecodeStocErrorMessage(
             Hex(
-                "02 00 00 00 ff ff ff ff 06 00 00 00 28 00 00 00 " +
-                "3c 00 00 00 44 33 22 11")).Error);
+                "02 00 00 00 ff ff ff ff 00 00 00 00 00 00 00 00 " +
+                "00 00 00 00 44 33 22 11")).Error);
+
+    Equal(
+        ProtocolErrorCode.UnknownErrorCode,
+        PacketPayloadCodec.DecodeStocErrorMessage(
+            DeckErrorRaw(DeckErrorCode.None)).Error);
+    ProtocolCodecException none = AssertThrows<ProtocolCodecException>(
+        () => PacketPayloadCodec.EncodeStocErrorMessage(
+            new DeckErrorTypeOnlyPayload(DeckErrorCode.None)));
+    Equal(ProtocolErrorCode.UnknownErrorCode, none.Code);
 
     FrameReadResult<ValidatedStocPacket> malformedDeck =
         PacketPayloadValidator.TryReadValidatedStoc(
@@ -969,6 +988,78 @@ static void TestErrorPayloads()
                 Hex("02 00 00 00 05 00 00 00")));
     Equal(FrameReadStatus.Invalid, malformedDeck.Status);
     Equal(ProtocolErrorCode.PayloadLengthMismatch, malformedDeck.Error);
+}
+
+static void TestDeckErrorSemanticProjection()
+{
+    foreach (DeckErrorCode error in new[]
+    {
+        DeckErrorCode.Lflist,
+        DeckErrorCode.OcgOnly,
+        DeckErrorCode.TcgOnly,
+        DeckErrorCode.UnknownCard,
+        DeckErrorCode.CardCount,
+        DeckErrorCode.UnofficialCard
+    })
+    {
+        byte[] rawA = DeckErrorRaw(error, 6, 40, 60, 0x11223344);
+        byte[] rawB = rawA.ToArray();
+        for (int offset = 8; offset < 20; offset++)
+        {
+            rawB[offset] = (byte)(0xa0 + offset);
+        }
+
+        DeckErrorCardCodePayload cardA =
+            DecodeDeckError<DeckErrorCardCodePayload>(rawA);
+        DeckErrorCardCodePayload cardB =
+            DecodeDeckError<DeckErrorCardCodePayload>(rawB);
+        Equal(cardA, cardB);
+        Equal(cardA.GetHashCode(), cardB.GetHashCode());
+        BytesEqual(
+            DeckErrorRaw(error, 0, 0, 0, 0x11223344),
+            PacketPayloadCodec.EncodeStocErrorMessage(cardB));
+    }
+
+    foreach (DeckErrorCode error in new[]
+    {
+        DeckErrorCode.MainCount,
+        DeckErrorCode.SideCount
+    })
+    {
+        byte[] rawA = DeckErrorRaw(error, 6, 40, 60, 0x11223344);
+        byte[] rawB = DeckErrorRaw(error, 6, 40, 60, 0xaabbccdd);
+        DeckErrorCountPayload countA =
+            DecodeDeckError<DeckErrorCountPayload>(rawA);
+        DeckErrorCountPayload countB =
+            DecodeDeckError<DeckErrorCountPayload>(rawB);
+        Equal(countA, countB);
+        Equal(countA.GetHashCode(), countB.GetHashCode());
+        BytesEqual(
+            DeckErrorRaw(error, 6, 40, 60, 0),
+            PacketPayloadCodec.EncodeStocErrorMessage(countB));
+    }
+
+    foreach (DeckErrorCode error in new[]
+    {
+        DeckErrorCode.ExtraCount,
+        DeckErrorCode.ForbiddenType,
+        DeckErrorCode.InvalidSize,
+        DeckErrorCode.TooManyLegends,
+        DeckErrorCode.TooManySkills
+    })
+    {
+        byte[] rawA = DeckErrorRaw(error, 6, 40, 60, 0x11223344);
+        byte[] rawB = DeckErrorRaw(error, 1, 2, 3, 0xaabbccdd);
+        DeckErrorTypeOnlyPayload typeOnlyA =
+            DecodeDeckError<DeckErrorTypeOnlyPayload>(rawA);
+        DeckErrorTypeOnlyPayload typeOnlyB =
+            DecodeDeckError<DeckErrorTypeOnlyPayload>(rawB);
+        Equal(typeOnlyA, typeOnlyB);
+        Equal(typeOnlyA.GetHashCode(), typeOnlyB.GetHashCode());
+        BytesEqual(
+            DeckErrorRaw(error),
+            PacketPayloadCodec.EncodeStocErrorMessage(typeOnlyB));
+    }
 }
 
 static void TestValidatedVersionCompatibility()
@@ -1121,6 +1212,48 @@ static byte[] Concat(params byte[][] parts)
     }
 
     return result;
+}
+
+static T DecodeDeckError<T>(byte[] payload)
+    where T : StocErrorPayload
+{
+    PayloadDecodeResult<StocErrorPayload> decoded =
+        PacketPayloadCodec.DecodeStocErrorMessage(payload);
+    True(decoded.IsSuccess);
+    if (decoded.Value is not T result)
+    {
+        throw new InvalidOperationException(
+            $"Expected {typeof(T).Name}, got {decoded.Value.GetType().Name}.");
+    }
+
+    return result;
+}
+
+static byte[] DeckErrorRaw(
+    DeckErrorCode error,
+    uint current = 0,
+    uint minimum = 0,
+    uint maximum = 0,
+    uint cardCode = 0)
+{
+    byte[] payload = new byte[PacketPayloadCodec.DeckErrorPayloadLength];
+    payload[0] = (byte)ErrorType.DeckError;
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        payload.AsSpan(4, 4),
+        (uint)error);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        payload.AsSpan(8, 4),
+        current);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        payload.AsSpan(12, 4),
+        minimum);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        payload.AsSpan(16, 4),
+        maximum);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        payload.AsSpan(20, 4),
+        cardCode);
+    return payload;
 }
 
 static byte[] HostGoldenPayload() =>

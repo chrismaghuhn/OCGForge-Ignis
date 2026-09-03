@@ -186,7 +186,9 @@ public static class PacketPayloadCodec
         return value switch
         {
             JoinErrorPayload joinError => EncodeJoinError(joinError),
-            DeckErrorPayload deckError => EncodeDeckError(deckError),
+            DeckErrorCardCodePayload deckError => EncodeDeckCardCodeError(deckError),
+            DeckErrorCountPayload deckError => EncodeDeckCountError(deckError),
+            DeckErrorTypeOnlyPayload deckError => EncodeDeckTypeOnlyError(deckError),
             SideErrorPayload sideError => EncodeSmallError(
                 ErrorType.SideError,
                 sideError.Code),
@@ -232,14 +234,19 @@ public static class PacketPayloadCodec
         return payload;
     }
 
-    private static byte[] EncodeDeckError(DeckErrorPayload value)
+    private static byte[] EncodeDeckCardCodeError(
+        DeckErrorCardCodePayload value)
     {
-        ValidateDeckErrorCode(value.Error);
-        byte[] payload = new byte[DeckErrorPayloadLength];
-        payload[0] = (byte)ErrorType.DeckError;
-        BinaryPrimitives.WriteUInt32LittleEndian(
-            payload.AsSpan(4, 4),
-            (uint)value.Error);
+        ValidateDeckErrorFamily(value.Error, DeckErrorFamily.CardCode);
+        byte[] payload = CreateDeckErrorHeader(value.Error);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(20, 4), value.CardCode);
+        return payload;
+    }
+
+    private static byte[] EncodeDeckCountError(DeckErrorCountPayload value)
+    {
+        ValidateDeckErrorFamily(value.Error, DeckErrorFamily.Count);
+        byte[] payload = CreateDeckErrorHeader(value.Error);
         BinaryPrimitives.WriteUInt32LittleEndian(
             payload.AsSpan(8, 4),
             value.Current);
@@ -249,9 +256,22 @@ public static class PacketPayloadCodec
         BinaryPrimitives.WriteUInt32LittleEndian(
             payload.AsSpan(16, 4),
             value.Maximum);
+        return payload;
+    }
+
+    private static byte[] EncodeDeckTypeOnlyError(DeckErrorTypeOnlyPayload value)
+    {
+        ValidateDeckErrorFamily(value.Error, DeckErrorFamily.TypeOnly);
+        return CreateDeckErrorHeader(value.Error);
+    }
+
+    private static byte[] CreateDeckErrorHeader(DeckErrorCode error)
+    {
+        byte[] payload = new byte[DeckErrorPayloadLength];
+        payload[0] = (byte)ErrorType.DeckError;
         BinaryPrimitives.WriteUInt32LittleEndian(
-            payload.AsSpan(20, 4),
-            value.CardCode);
+            payload.AsSpan(4, 4),
+            (uint)error);
         return payload;
     }
 
@@ -299,19 +319,28 @@ public static class PacketPayloadCodec
         }
 
         uint rawError = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(4, 4));
-        if (rawError > (uint)DeckErrorCode.TooManySkills)
+        if (rawError == (uint)DeckErrorCode.None ||
+            rawError > (uint)DeckErrorCode.TooManySkills)
         {
             return PayloadDecodeResults.Failure<StocErrorPayload>(
                 ProtocolErrorCode.UnknownErrorCode);
         }
 
-        return PayloadDecodeResults.Success<StocErrorPayload>(
-            new DeckErrorPayload(
-                (DeckErrorCode)rawError,
-                BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(8, 4)),
-                BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(12, 4)),
-                BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(16, 4)),
-                BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(20, 4))));
+        DeckErrorCode error = (DeckErrorCode)rawError;
+        return IsCardCodeDeckError(error)
+            ? PayloadDecodeResults.Success<StocErrorPayload>(
+                new DeckErrorCardCodePayload(
+                    error,
+                    BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(20, 4))))
+            : IsCountDeckError(error)
+                ? PayloadDecodeResults.Success<StocErrorPayload>(
+                    new DeckErrorCountPayload(
+                        error,
+                        BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(8, 4)),
+                        BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(12, 4)),
+                        BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(16, 4))))
+                : PayloadDecodeResults.Success<StocErrorPayload>(
+                    new DeckErrorTypeOnlyPayload(error));
     }
 
     private static PayloadDecodeResult<StocErrorPayload> DecodeSmallSideError(
@@ -566,14 +595,52 @@ public static class PacketPayloadCodec
         }
     }
 
-    private static void ValidateDeckErrorCode(DeckErrorCode error)
+    private static void ValidateDeckErrorFamily(
+        DeckErrorCode error,
+        DeckErrorFamily expectedFamily)
     {
-        if ((uint)error > (uint)DeckErrorCode.TooManySkills)
+        DeckErrorFamily? actualFamily = error switch
+        {
+            DeckErrorCode.Lflist or
+            DeckErrorCode.OcgOnly or
+            DeckErrorCode.TcgOnly or
+            DeckErrorCode.UnknownCard or
+            DeckErrorCode.CardCount or
+            DeckErrorCode.UnofficialCard => DeckErrorFamily.CardCode,
+            DeckErrorCode.MainCount or
+            DeckErrorCode.SideCount => DeckErrorFamily.Count,
+            DeckErrorCode.ExtraCount or
+            DeckErrorCode.ForbiddenType or
+            DeckErrorCode.InvalidSize or
+            DeckErrorCode.TooManyLegends or
+            DeckErrorCode.TooManySkills => DeckErrorFamily.TypeOnly,
+            _ => null
+        };
+
+        if (actualFamily != expectedFamily)
         {
             throw new ProtocolCodecException(
                 ProtocolErrorCode.UnknownErrorCode,
-                "The deck-error code is not part of the frozen V1 set.");
+                "The deck-error code is not valid for the selected semantic family.");
         }
+    }
+
+    private static bool IsCardCodeDeckError(DeckErrorCode error) =>
+        error is DeckErrorCode.Lflist or
+            DeckErrorCode.OcgOnly or
+            DeckErrorCode.TcgOnly or
+            DeckErrorCode.UnknownCard or
+            DeckErrorCode.CardCount or
+            DeckErrorCode.UnofficialCard;
+
+    private static bool IsCountDeckError(DeckErrorCode error) =>
+        error is DeckErrorCode.MainCount or DeckErrorCode.SideCount;
+
+    private enum DeckErrorFamily : byte
+    {
+        CardCode,
+        Count,
+        TypeOnly
     }
 
     private static void WriteClientVersion(
