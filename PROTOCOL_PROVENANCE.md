@@ -83,6 +83,49 @@ that uses them. The register intentionally contains no copied implementation.
 | WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | Game/GamePacketFactory.cs | CTOS packet construction provides a response-layout oracle | 2026-09-03 | wire layout |
 | WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | Game/GameBehavior.cs | Existing bot behavior contains heuristics and fallbacks and is not an authority or implementation source | 2026-09-03 | observed behavior |
 
+## I1 implemented facts
+
+Protocol contract ID: ocgforge-ignis.protocol.wire.v1
+
+The following facts are the only additional upstream facts used by the I1
+implementation. They were independently reimplemented; no upstream source
+implementation was copied.
+
+| External repository | Exact commit | Source path | Fact learned | Date | Classification |
+| --- | --- | --- | --- | --- | --- |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/netserver.cpp | A frame begins with a uint16 length, and the server consumes length plus the two-byte prefix; the length includes the packet type | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.h | Client frame writers encode length as one packet-type byte plus payload bytes | 2026-09-03 | wire layout |
+| WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | YGOSharp.Network/BinaryClient.cs | The independent client uses a two-byte maximum 0xffff frame header and retains incomplete receive data across arbitrary segmentation | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | The frozen CTOS and STOC packet IDs and the explicit unsupported STOC IDs are defined as direction-specific numeric constants | 2026-09-03 | numeric constant |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | CTOS_PlayerInfo, CTOS_JoinGame, CTOS_HandResult, and CTOS_TPResult define the implemented CTOS payload fields and alignment | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | JoinError, DeckError, STOC_ErrorMsg/SIDEERROR, VersionError/VERERROR2, STOC_HandResult, STOC_JoinGame/HostInfo, STOC_TypeChange, STOC_TimeLimit, and lobby payload structs define the implemented STOC fields and alignment | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | ERROR_TYPE discriminates JoinError (8 bytes: error), DeckError (24 bytes: type, count.current, count.minimum, count.maximum, code), STOC_ErrorMsg for SIDEERROR/legacy VERERROR (8 bytes: code), and VersionError/VERERROR2 (8 bytes: three padding bytes plus ClientVersion) | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | JoinError.JERR values are 0..2 (unable/password/refused), and DeckError.DERR values are 0..13 (NONE through TOOMANYSKILLS); these inner discriminators are validated before typed publication | 2026-09-03 | numeric constant |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/deck_manager.cpp | CheckCards initializes a DeckError with NONE, assigns the card code before card/content checks, and returns card-code errors with that code; CheckDeckSize initializes count fields only for MAINCOUNT, EXTRACOUNT, and SIDECOUNT; CheckDeckContent can also return EXTRACOUNT and type-only errors without those fields initialized | 2026-09-03 | observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp | A DeckError is sent only when its type is not NONE; NONE is therefore not an emitted STOC_ERROR_MSG subtype, and EXTRACOUNT has no unambiguous wire-level source-path discriminator | 2026-09-03 | observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h and gframe/generic_duel.cpp | Raw C++ payload structs include alignment bytes, and the assigned semantic fields do not guarantee initialization of those bytes | 2026-09-03 | observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp | Join, version, deck, and side failures send different error structs; the error discriminator therefore selects an exact payload layout | 2026-09-03 | observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/game.cpp, gframe/config.h, and gframe/ocgapi_types.h | The validated V1 join boundary accepts only PRO_VERSION 0x1354 and client/core version 41.0/11.0; incompatible CTOS_JOIN_GAME or STOC_JOIN_GAME version fields are UnsupportedVersion | 2026-09-03 | numeric constant/validation behavior |
+| WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | Game/GameClient.cs | Join-game serialization makes the two alignment bytes after the protocol version explicit and writes a fixed UTF-16 password and client version | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/bufferio.h | Fixed text fields use UTF-16 code units and write a terminating code unit; the caller-owned remainder of the containing C++ struct is not guaranteed to be zero-filled | 2026-09-03 | wire layout |
+| WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | YGOSharp.Network/Utils/BinaryExtensions.cs | Fixed text fields use explicit little-endian UTF-16 with a fixed code-unit width | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp | STOC_GAME_MSG forwards the inner bytes to duel analysis and CTOS_RESPONSE forwards opaque response bytes; I1 preserves both payloads without semantic decoding | 2026-09-03 | observed behavior |
+
+I1 treats C/C++ alignment bytes as transport-only: the raw frame payload
+retains them, the typed semantic DTO consumes and ignores them, and canonical
+encoding emits zero padding. They do not participate in DTO equality or typed
+identity.
+
+DeckError has the same 24-byte physical layout for every DERR_TYPE, but its
+initialized semantic fields are subtype-dependent. The typed projection emits
+only CardCode for LFLIST, OCGONLY, TCGONLY, UNKNOWNCARD, CARDCOUNT, and
+UNOFFICIALCARD; only Current/Minimum/Maximum for MAINCOUNT and SIDECOUNT; and
+only the DERR_TYPE for EXTRACOUNT, FORBTYPE, INVALIDSIZE, TOOMANYLEGENDS, and
+TOOMANYSKILLS. The remaining raw bytes are transport-only. EXTRACOUNT uses the
+type-only projection because the pinned upstream has both count-bearing and
+type-only construction paths without a wire discriminator. DERR_TYPE NONE is
+rejected as a non-emitted error.
+
 No version fact in this ledger is attributed to gframe/ocgapi_constants.h.
 The corrected version facts above are tied only to the exact source paths where
 they were verified.

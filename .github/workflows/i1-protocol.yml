@@ -1,0 +1,37 @@
+name: I1 deterministic CTOS STOC wire codec
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+      - chris/i1-deterministic-wire-codec
+
+permissions:
+  contents: read
+
+jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore tests/OCGForge.Ignis.Protocol.Tests/OCGForge.Ignis.Protocol.Tests.csproj
+
+      - name: Build protocol library
+        run: dotnet build src/OCGForge.Ignis.Protocol/OCGForge.Ignis.Protocol.csproj --configuration Release --no-restore
+
+      - name: Build protocol tests
+        run: dotnet build tests/OCGForge.Ignis.Protocol.Tests/OCGForge.Ignis.Protocol.Tests.csproj --configuration Release --no-restore
+
+      - name: Run deterministic protocol tests
+        run: dotnet run --project tests/OCGForge.Ignis.Protocol.Tests/OCGForge.Ignis.Protocol.Tests.csproj --configuration Release --no-build --no-restore
