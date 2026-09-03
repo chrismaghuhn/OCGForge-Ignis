@@ -1,0 +1,26 @@
+# Build and IDE output
+bin/
+obj/
+artifacts/
+.vs/
+.idea/
+*.user
+*.suo
+
+# Local configuration and secrets
+.env
+.env.*
+*.local
+*.secret
+secrets/
+
+# Restricted runtime traces
+traces/private/
+*.protocol-trace
+*.response-bytes
+
+# External runtime material is never a repository input by accident
+*.cdb
+*.ydk
+*.ckpt
+*.safetensors
