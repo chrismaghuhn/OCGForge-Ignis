@@ -1,6 +1,6 @@
 # Protocol Provenance and Clean-Room Ledger
 
-Status: I3A0 contract/provenance ledger
+Status: I3A implementation/provenance ledger
 Date inspected: 2026-09-03
 
 ## Clean-room discipline
@@ -186,6 +186,14 @@ serialized upstream packet, or client implementation is copied.
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp, `MSG_REFRESH_DECK` case | The modern client does not read a player byte for `MSG_REFRESH_DECK`; the legacy player read is commented out, so I3 cannot derive a player mapping or player-scoped mutation from this exact empty message | 2026-09-03 | wire layout/effect classification |
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp, `MSG_NEW_TURN` and `MSG_NEW_PHASE` cases | The client consumes the authoritative player/phase fields and updates display state; it does not reconstruct expected Yu-Gi-Oh! turn alternation or phase legality, which is outside I3 authority | 2026-09-03 | observed behavior/authority boundary |
 | ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | processor.cpp, `MSG_REMOVE_CARDS` writer | `MSG_REMOVE_CARDS` carries a uint32 count followed by that many loc_info records; no leading card-code field is part of the modern V1 layout | 2026-09-03 | wire layout |
+
+## I3A implementation boundary
+
+I3A uses the already recorded I1 outer-frame contract, modern loc_info layout,
+modern GAME_MSG envelope, and exact MSG_START facts above. The implementation
+adds no query-flag union, state-mirror, semantic-locator, or public-projection
+protocol claim. No upstream parser, control flow, source implementation, or
+serialized packet is copied.
 
 ## Provenance boundaries
 

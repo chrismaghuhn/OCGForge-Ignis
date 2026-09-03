@@ -1,11 +1,12 @@
 namespace OCGForge.Ignis.Client;
 
-internal sealed class GameplayTransportHandoffV1
+public sealed class GameplayTransportHandoffV1
 {
     private readonly byte[] pendingBytes;
     private int claimed;
+    private int transportClosed;
 
-    internal GameplayTransportHandoffV1(
+    public GameplayTransportHandoffV1(
         IByteTransport transport,
         PreDuelSessionV1 publicSession,
         ReadOnlySpan<byte> pendingBytes)
@@ -16,17 +17,48 @@ internal sealed class GameplayTransportHandoffV1
         this.pendingBytes = pendingBytes.ToArray();
     }
 
-    internal IByteTransport Transport { get; }
+    public IByteTransport Transport { get; }
 
-    internal PreDuelSessionV1 PublicSession { get; }
+    public PreDuelSessionV1 PublicSession { get; }
 
-    internal ReadOnlyMemory<byte> PendingBytes => pendingBytes;
+    public ReadOnlyMemory<byte> PendingBytes => pendingBytes;
 
-    internal I2Result Claim()
+    public I2Result Claim()
     {
         if (Interlocked.Exchange(ref claimed, 1) != 0)
         {
             return I2Result.Failure(I2ErrorCode.TransportOwnershipError);
+        }
+
+        return I2Result.Success();
+    }
+
+    public async ValueTask<I2Result> CloseOwnedTransportAsync()
+    {
+        if (Volatile.Read(ref claimed) == 0)
+        {
+            return I2Result.Failure(I2ErrorCode.TransportOwnershipError);
+        }
+
+        if (Interlocked.Exchange(ref transportClosed, 1) != 0)
+        {
+            return I2Result.Success();
+        }
+
+        try
+        {
+            await Transport.CloseAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            await Transport.DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
         }
 
         return I2Result.Success();

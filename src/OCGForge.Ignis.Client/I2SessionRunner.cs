@@ -35,7 +35,7 @@ public sealed class I2PumpResult
 
     public PreDuelChoiceRequest? ChoiceRequest { get; }
 
-    internal GameplayTransportHandoffV1? RuntimeHandoff { get; }
+    public GameplayTransportHandoffV1? RuntimeHandoff { get; }
 
     internal static I2PumpResult Success(
         I2SessionState state,
@@ -90,7 +90,7 @@ public sealed class I2SessionRunner : IAsyncDisposable
 
     public LobbyState Lobby => stateMachine.Lobby;
 
-    internal GameplayTransportHandoffV1? RuntimeHandoff => runtimeHandoff;
+    public GameplayTransportHandoffV1? RuntimeHandoff => runtimeHandoff;
 
     public async ValueTask<I2Result> StartAsync(
         ConnectionConfigurationV1 configuration,
