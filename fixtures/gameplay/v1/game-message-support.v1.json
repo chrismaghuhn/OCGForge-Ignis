@@ -2,10 +2,12 @@
   "schema_id": "ocgforge-ignis.game_message_support.v1",
   "schema_version": 1,
   "contract_id": "ocgforge-ignis.gameplay.perspective-privacy.v1",
-  "canonical_order": {
-    "entries": "ascending message_id",
-    "uniqueness": "message_id and symbolic_name are unique",
-    "semantics": "all effect and layout fields are enum tokens"
+    "canonical_order": {
+      "entries": "ascending message_id",
+      "query_flags": "ascending numeric_u32_value",
+      "uniqueness": "message_id and symbolic_name are unique",
+      "query_flag_uniqueness": "numeric_u32_value and symbolic_name are unique",
+      "semantics": "all effect and layout fields are enum tokens"
   },
   "scope": {
     "runtime": "EDOPro 41.0.2 Bagooska; ocgcore API 11.0",
@@ -57,7 +59,7 @@
         "flag_specific_payload_bytes": 0,
         "terminates_current_query": true
       },
-      "flag_specific_union_status": "UNFROZEN"
+      "flag_specific_union_status": "FROZEN"
     },
     "ModernQueryStreamV1": {
       "prefix_fields": [
@@ -71,14 +73,15 @@
       },
       "count_rule": "ZERO_OR_MORE_COMPLETE_QUERY_VALUES",
       "length_rule": "TOTAL_EXCLUDES_OWN_PREFIX",
-      "flag_specific_union_status": "UNFROZEN"
+      "flag_specific_union_status": "FROZEN"
     }
   },
   "query_codec_contract": {
     "owner": "I3B0",
     "scope": "FLAG_SPECIFIC_UNION_ONLY",
-    "status": "NOT_FROZEN_REQUIRES_I3B0",
+    "status": "FROZEN",
     "implementation_dependency": "I3B",
+    "implementation_status": "NOT_IMPLEMENTED_I3B0_CONTRACT_ONLY",
     "outer_grammar_owner": "I3A0",
     "outer_grammar_status": "FROZEN",
     "frozen_outer_grammar_elements": [
@@ -97,7 +100,960 @@
       "FLAG_OVERFLOW_RULES",
       "UNKNOWN_FLAG_POLICY",
       "MALFORMED_NEGATIVE_VECTORS"
-    ]
+    ],
+    "required_freeze_status": "ALL_FROZEN",
+    "query_flag_numeric_order": "ASCENDING_U32_VALUE",
+    "query_flag_value_policy": "EXACT_SINGLE_ADMITTED_VALUE",
+    "unknown_flag_policy": "FAIL_CLOSED",
+    "known_unadmitted_flag_policy": "FAIL_CLOSED",
+    "composite_flag_policy": "FAIL_CLOSED",
+    "known_query_flag_count": 27,
+    "admitted_flag_count": 26,
+    "known_unsupported_flag_count": 0,
+    "query_flags": [
+      {
+        "symbolic_name": "QUERY_CODE",
+        "numeric_u32_value": 1,
+        "numeric_u32_hex": "0x00000001",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_CODE",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_POSITION",
+        "numeric_u32_value": 2,
+        "numeric_u32_hex": "0x00000002",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_POSITION",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_ALIAS",
+        "numeric_u32_value": 4,
+        "numeric_u32_hex": "0x00000004",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_ALIAS",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_TYPE",
+        "numeric_u32_value": 8,
+        "numeric_u32_hex": "0x00000008",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_TYPE",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_LEVEL",
+        "numeric_u32_value": 16,
+        "numeric_u32_hex": "0x00000010",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_LEVEL",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_RANK",
+        "numeric_u32_value": 32,
+        "numeric_u32_hex": "0x00000020",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_RANK",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_ATTRIBUTE",
+        "numeric_u32_value": 64,
+        "numeric_u32_hex": "0x00000040",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_ATTRIBUTE",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_RACE",
+        "numeric_u32_value": 128,
+        "numeric_u32_hex": "0x00000080",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U64_LE",
+        "payload_byte_width_or_count_rule": "EXACT_8",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_RACE",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_ATTACK",
+        "numeric_u32_value": 256,
+        "numeric_u32_hex": "0x00000100",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_I32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_ATTACK",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_DEFENSE",
+        "numeric_u32_value": 512,
+        "numeric_u32_hex": "0x00000200",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_I32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_DEFENSE",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_BASE_ATTACK",
+        "numeric_u32_value": 1024,
+        "numeric_u32_hex": "0x00000400",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_I32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_BASE_ATTACK",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_BASE_DEFENSE",
+        "numeric_u32_value": 2048,
+        "numeric_u32_hex": "0x00000800",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_I32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_BASE_DEFENSE",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_REASON",
+        "numeric_u32_value": 4096,
+        "numeric_u32_hex": "0x00001000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_REASON",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_REASON_CARD",
+        "numeric_u32_value": 8192,
+        "numeric_u32_hex": "0x00002000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "LOC_INFO_V1",
+        "payload_byte_width_or_count_rule": "EXACT_LOC_INFO_V1_10",
+        "semantic_target_field_or_structural_role": "LOC_INFO_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_REASON_CARD",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_EQUIP_CARD",
+        "numeric_u32_value": 16384,
+        "numeric_u32_hex": "0x00004000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "LOC_INFO_V1",
+        "payload_byte_width_or_count_rule": "EXACT_LOC_INFO_V1_10",
+        "semantic_target_field_or_structural_role": "LOC_INFO_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_EQUIP_CARD",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_TARGET_CARD",
+        "numeric_u32_value": 32768,
+        "numeric_u32_hex": "0x00008000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "VECTOR_LOC_INFO_V1",
+        "payload_byte_width_or_count_rule": "COUNT_U32_PLUS_LOC_INFO_V1_10",
+        "semantic_target_field_or_structural_role": "COUNTED_LOC_INFO_QUERY_VECTOR",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_TARGET_CARD",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_OVERLAY_CARD",
+        "numeric_u32_value": 65536,
+        "numeric_u32_hex": "0x00010000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "VECTOR_U32_LE",
+        "payload_byte_width_or_count_rule": "COUNT_U32_PLUS_U32_LE_4",
+        "semantic_target_field_or_structural_role": "COUNTED_U32_QUERY_VECTOR",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_OVERLAY_CARD",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_COUNTERS",
+        "numeric_u32_value": 131072,
+        "numeric_u32_hex": "0x00020000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "VECTOR_PACKED_U32_LE",
+        "payload_byte_width_or_count_rule": "COUNT_U32_PLUS_PACKED_U32_LE_4",
+        "semantic_target_field_or_structural_role": "COUNTED_PACKED_U32_QUERY_VECTOR",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_COUNTERS",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_OWNER",
+        "numeric_u32_value": 262144,
+        "numeric_u32_hex": "0x00040000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U8",
+        "payload_byte_width_or_count_rule": "EXACT_1",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_OWNER",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_STATUS",
+        "numeric_u32_value": 524288,
+        "numeric_u32_hex": "0x00080000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_STATUS",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_IS_PUBLIC",
+        "numeric_u32_value": 1048576,
+        "numeric_u32_hex": "0x00100000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U8",
+        "payload_byte_width_or_count_rule": "EXACT_1",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_IS_PUBLIC",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_LSCALE",
+        "numeric_u32_value": 2097152,
+        "numeric_u32_hex": "0x00200000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_LSCALE",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_RSCALE",
+        "numeric_u32_value": 4194304,
+        "numeric_u32_hex": "0x00400000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_RSCALE",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_LINK",
+        "numeric_u32_value": 8388608,
+        "numeric_u32_hex": "0x00800000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "LINK_PAIR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_TWO_U32_LE_8",
+        "semantic_target_field_or_structural_role": "LINK_QUERY_PAIR",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_LINK",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_IS_HIDDEN",
+        "numeric_u32_value": 16777216,
+        "numeric_u32_hex": "0x01000000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U8",
+        "payload_byte_width_or_count_rule": "EXACT_1",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_IS_HIDDEN",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_COVER",
+        "numeric_u32_value": 33554432,
+        "numeric_u32_hex": "0x02000000",
+        "admission": "ADMITTED_I3B",
+        "payload_contract_id": "SCALAR_U32_LE",
+        "payload_byte_width_or_count_rule": "EXACT_4",
+        "semantic_target_field_or_structural_role": "SCALAR_QUERY_VALUE",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_COVER",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      },
+      {
+        "symbolic_name": "QUERY_END",
+        "numeric_u32_value": 2147483648,
+        "numeric_u32_hex": "0x80000000",
+        "admission": "OUTER_GRAMMAR_SENTINEL",
+        "payload_contract_id": "QUERY_END_SENTINEL",
+        "payload_byte_width_or_count_rule": "OUTER_SENTINEL_ITEM_SIZE_4",
+        "semantic_target_field_or_structural_role": "OUTER_QUERY_TERMINATOR",
+        "authority_source": [
+          "ocgapi_constants.h#QUERY_END",
+          "card.cpp#card::get_infos",
+          "gframe/core_utils.cpp#Query::Parse"
+        ]
+      }
+    ],
+    "payload_contract_catalog": {
+      "SCALAR_U8": {
+        "payload_shape": "SCALAR",
+        "payload_fields": ["u8 value"],
+        "integer_endianness": "NOT_APPLICABLE",
+        "count_field_width_bits": 0,
+        "element_width_bytes": 0,
+        "minimum_payload_bytes": 1,
+        "maximum_payload_bytes": 1,
+        "maximum_payload_bound_rule": "EXACT_1",
+        "item_size_relationship": {
+          "formula": "4 + payload_bytes",
+          "accepted_item_size": 5
+        },
+        "overflow_rule": "NONE_FIXED_WIDTH",
+        "truncated_behavior": "FAIL_CLOSED_NO_ALLOCATION",
+        "wrong_size_behavior": "FAIL_CLOSED",
+        "trailing_behavior": "FAIL_CLOSED_EXACT_REMAINDER",
+        "zero_count_legal": false,
+        "duplicate_entries_allowed_wire": false,
+        "ordering": "NOT_APPLICABLE"
+      },
+      "SCALAR_U32_LE": {
+        "payload_shape": "SCALAR",
+        "payload_fields": ["u32_le value"],
+        "integer_endianness": "LITTLE",
+        "count_field_width_bits": 0,
+        "element_width_bytes": 0,
+        "minimum_payload_bytes": 4,
+        "maximum_payload_bytes": 4,
+        "maximum_payload_bound_rule": "EXACT_4",
+        "item_size_relationship": {
+          "formula": "4 + payload_bytes",
+          "accepted_item_size": 8
+        },
+        "overflow_rule": "NONE_FIXED_WIDTH",
+        "truncated_behavior": "FAIL_CLOSED_NO_ALLOCATION",
+        "wrong_size_behavior": "FAIL_CLOSED",
+        "trailing_behavior": "FAIL_CLOSED_EXACT_REMAINDER",
+        "zero_count_legal": false,
+        "duplicate_entries_allowed_wire": false,
+        "ordering": "NOT_APPLICABLE"
+      },
+      "SCALAR_I32_LE": {
+        "payload_shape": "SCALAR",
+        "payload_fields": ["i32_le value"],
+        "integer_endianness": "LITTLE",
+        "count_field_width_bits": 0,
+        "element_width_bytes": 0,
+        "minimum_payload_bytes": 4,
+        "maximum_payload_bytes": 4,
+        "maximum_payload_bound_rule": "EXACT_4",
+        "item_size_relationship": {
+          "formula": "4 + payload_bytes",
+          "accepted_item_size": 8
+        },
+        "overflow_rule": "NONE_FIXED_WIDTH",
+        "truncated_behavior": "FAIL_CLOSED_NO_ALLOCATION",
+        "wrong_size_behavior": "FAIL_CLOSED",
+        "trailing_behavior": "FAIL_CLOSED_EXACT_REMAINDER",
+        "zero_count_legal": false,
+        "duplicate_entries_allowed_wire": false,
+        "ordering": "NOT_APPLICABLE"
+      },
+      "SCALAR_U64_LE": {
+        "payload_shape": "SCALAR",
+        "payload_fields": ["u64_le value"],
+        "integer_endianness": "LITTLE",
+        "count_field_width_bits": 0,
+        "element_width_bytes": 0,
+        "minimum_payload_bytes": 8,
+        "maximum_payload_bytes": 8,
+        "maximum_payload_bound_rule": "EXACT_8",
+        "item_size_relationship": {
+          "formula": "4 + payload_bytes",
+          "accepted_item_size": 12
+        },
+        "overflow_rule": "NONE_FIXED_WIDTH",
+        "truncated_behavior": "FAIL_CLOSED_NO_ALLOCATION",
+        "wrong_size_behavior": "FAIL_CLOSED",
+        "trailing_behavior": "FAIL_CLOSED_EXACT_REMAINDER",
+        "zero_count_legal": false,
+        "duplicate_entries_allowed_wire": false,
+        "ordering": "NOT_APPLICABLE"
+      },
+      "LOC_INFO_V1": {
+        "payload_shape": "STRUCT",
+        "payload_fields": [
+          "u8 controller",
+          "u8 location",
+          "u32_le sequence",
+          "u32_le position"
+        ],
+        "integer_endianness": "LITTLE_FOR_U32_FIELDS",
+        "count_field_width_bits": 0,
+        "element_width_bytes": 10,
+        "minimum_payload_bytes": 10,
+        "maximum_payload_bytes": 10,
+        "maximum_payload_bound_rule": "EXACT_10",
+        "item_size_relationship": {
+          "formula": "4 + payload_bytes",
+          "accepted_item_size": 14
+        },
+        "overflow_rule": "NONE_FIXED_WIDTH",
+        "truncated_behavior": "FAIL_CLOSED_NO_ALLOCATION",
+        "wrong_size_behavior": "FAIL_CLOSED",
+        "trailing_behavior": "FAIL_CLOSED_EXACT_REMAINDER",
+        "zero_count_legal": false,
+        "duplicate_entries_allowed_wire": false,
+        "ordering": "FIELD_ORDER_FIXED"
+      },
+      "LINK_PAIR_U32_LE": {
+        "payload_shape": "STRUCT",
+        "payload_fields": ["u32_le link", "u32_le link_marker"],
+        "integer_endianness": "LITTLE",
+        "count_field_width_bits": 0,
+        "element_width_bytes": 0,
+        "minimum_payload_bytes": 8,
+        "maximum_payload_bytes": 8,
+        "maximum_payload_bound_rule": "EXACT_8",
+        "item_size_relationship": {
+          "formula": "4 + payload_bytes",
+          "accepted_item_size": 12
+        },
+        "overflow_rule": "NONE_FIXED_WIDTH",
+        "truncated_behavior": "FAIL_CLOSED_NO_ALLOCATION",
+        "wrong_size_behavior": "FAIL_CLOSED",
+        "trailing_behavior": "FAIL_CLOSED_EXACT_REMAINDER",
+        "zero_count_legal": false,
+        "duplicate_entries_allowed_wire": false,
+        "ordering": "FIELD_ORDER_FIXED"
+      },
+      "VECTOR_LOC_INFO_V1": {
+        "payload_shape": "COUNTED_VECTOR",
+        "payload_fields": ["u32_le count", "loc_info_v1[count]"],
+        "integer_endianness": "LITTLE_FOR_ALL_NUMERIC_FIELDS",
+        "count_field_width_bits": 32,
+        "element_width_bytes": 10,
+        "minimum_payload_bytes": 4,
+        "maximum_payload_bytes": 65524,
+        "maximum_payload_bound_rule": "count <= 6552; 4 + 10 * count <= 65531",
+        "maximum_count": 6552,
+        "item_size_relationship": {
+          "formula": "8 + (10 * count)",
+          "accepted_item_size_minimum": 8,
+          "accepted_item_size_maximum": 65528
+        },
+        "overflow_rule": "CHECKED_COUNT_MULTIPLICATION_AND_ADDITION_BEFORE_ALLOCATION",
+        "truncated_behavior": "FAIL_CLOSED_NO_ALLOCATION",
+        "wrong_size_behavior": "FAIL_CLOSED_COUNT_LENGTH_MISMATCH",
+        "trailing_behavior": "FAIL_CLOSED_EXACT_REMAINDER",
+        "zero_count_legal": true,
+        "duplicate_entries_allowed_wire": true,
+        "ordering": "PRESERVE_WIRE_ORDER"
+      },
+      "VECTOR_U32_LE": {
+        "payload_shape": "COUNTED_VECTOR",
+        "payload_fields": ["u32_le count", "u32_le value[count]"],
+        "integer_endianness": "LITTLE",
+        "count_field_width_bits": 32,
+        "element_width_bytes": 4,
+        "minimum_payload_bytes": 4,
+        "maximum_payload_bytes": 65528,
+        "maximum_payload_bound_rule": "count <= 16381; 4 + 4 * count <= 65531",
+        "maximum_count": 16381,
+        "item_size_relationship": {
+          "formula": "8 + (4 * count)",
+          "accepted_item_size_minimum": 8,
+          "accepted_item_size_maximum": 65532
+        },
+        "overflow_rule": "CHECKED_COUNT_MULTIPLICATION_AND_ADDITION_BEFORE_ALLOCATION",
+        "truncated_behavior": "FAIL_CLOSED_NO_ALLOCATION",
+        "wrong_size_behavior": "FAIL_CLOSED_COUNT_LENGTH_MISMATCH",
+        "trailing_behavior": "FAIL_CLOSED_EXACT_REMAINDER",
+        "zero_count_legal": true,
+        "duplicate_entries_allowed_wire": true,
+        "ordering": "PRESERVE_WIRE_ORDER"
+      },
+      "VECTOR_PACKED_U32_LE": {
+        "payload_shape": "COUNTED_VECTOR",
+        "payload_fields": ["u32_le count", "u32_le packed_value[count]"],
+        "integer_endianness": "LITTLE",
+        "count_field_width_bits": 32,
+        "element_width_bytes": 4,
+        "minimum_payload_bytes": 4,
+        "maximum_payload_bytes": 65528,
+        "maximum_payload_bound_rule": "count <= 16381; 4 + 4 * count <= 65531",
+        "maximum_count": 16381,
+        "item_size_relationship": {
+          "formula": "8 + (4 * count)",
+          "accepted_item_size_minimum": 8,
+          "accepted_item_size_maximum": 65532
+        },
+        "overflow_rule": "CHECKED_COUNT_MULTIPLICATION_AND_ADDITION_BEFORE_ALLOCATION",
+        "truncated_behavior": "FAIL_CLOSED_NO_ALLOCATION",
+        "wrong_size_behavior": "FAIL_CLOSED_COUNT_LENGTH_MISMATCH",
+        "trailing_behavior": "FAIL_CLOSED_EXACT_REMAINDER",
+        "zero_count_legal": true,
+        "duplicate_entries_allowed_wire": true,
+        "ordering": "PRESERVE_WIRE_ORDER"
+      },
+      "QUERY_END_SENTINEL": {
+        "payload_shape": "OUTER_GRAMMAR_SENTINEL",
+        "payload_fields": [],
+        "integer_endianness": "LITTLE_FOR_U32_FLAG",
+        "count_field_width_bits": 0,
+        "element_width_bytes": 0,
+        "minimum_payload_bytes": 0,
+        "maximum_payload_bytes": 0,
+        "maximum_payload_bound_rule": "EXACT_0",
+        "item_size_relationship": {
+          "formula": "item_size == 4",
+          "accepted_item_size": 4
+        },
+        "overflow_rule": "NOT_APPLICABLE_SENTINEL",
+        "truncated_behavior": "FAIL_CLOSED_NO_ALLOCATION",
+        "wrong_size_behavior": "FAIL_CLOSED",
+        "trailing_behavior": "FAIL_CLOSED_EXACT_REMAINDER",
+        "zero_count_legal": false,
+        "duplicate_entries_allowed_wire": false,
+        "ordering": "OUTER_TERMINATION"
+      }
+    },
+    "validation_vectors": {
+      "positive_record_vectors": [
+        {
+          "flag": "QUERY_CODE",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 01 00 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00000001; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_POSITION",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 02 00 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00000002; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_ALIAS",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 04 00 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00000004; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_TYPE",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 08 00 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00000008; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_LEVEL",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 10 00 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00000010; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_RANK",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 20 00 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00000020; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_ATTRIBUTE",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 40 00 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00000040; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_RACE",
+          "payload_contract_id": "SCALAR_U64_LE",
+          "record_hex": "0C 00 80 00 00 00 88 77 66 55 44 33 22 11",
+          "expected_fields": "item_size=12; flag=0x00000080; value=0x1122334455667788"
+        },
+        {
+          "flag": "QUERY_ATTACK",
+          "payload_contract_id": "SCALAR_I32_LE",
+          "record_hex": "08 00 00 01 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00000100; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_DEFENSE",
+          "payload_contract_id": "SCALAR_I32_LE",
+          "record_hex": "08 00 00 02 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00000200; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_BASE_ATTACK",
+          "payload_contract_id": "SCALAR_I32_LE",
+          "record_hex": "08 00 00 04 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00000400; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_BASE_DEFENSE",
+          "payload_contract_id": "SCALAR_I32_LE",
+          "record_hex": "08 00 00 08 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00000800; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_REASON",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 00 10 00 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00001000; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_REASON_CARD",
+          "payload_contract_id": "LOC_INFO_V1",
+          "record_hex": "0E 00 00 20 00 00 01 02 44 33 22 11 88 77 66 55",
+          "expected_fields": "item_size=14; flag=0x00002000; loc_info=(1,2,0x11223344,0x55667788)"
+        },
+        {
+          "flag": "QUERY_EQUIP_CARD",
+          "payload_contract_id": "LOC_INFO_V1",
+          "record_hex": "0E 00 00 40 00 00 01 02 44 33 22 11 88 77 66 55",
+          "expected_fields": "item_size=14; flag=0x00004000; loc_info=(1,2,0x11223344,0x55667788)"
+        },
+        {
+          "flag": "QUERY_TARGET_CARD",
+          "payload_contract_id": "VECTOR_LOC_INFO_V1",
+          "record_hex": "12 00 00 80 00 00 01 00 00 00 01 02 44 33 22 11 88 77 66 55",
+          "expected_fields": "item_size=18; flag=0x00008000; count=1; loc_info[0]=(1,2,0x11223344,0x55667788)"
+        },
+        {
+          "flag": "QUERY_OVERLAY_CARD",
+          "payload_contract_id": "VECTOR_U32_LE",
+          "record_hex": "0C 00 00 00 01 00 01 00 00 00 78 56 34 12",
+          "expected_fields": "item_size=12; flag=0x00010000; count=1; value[0]=0x12345678"
+        },
+        {
+          "flag": "QUERY_COUNTERS",
+          "payload_contract_id": "VECTOR_PACKED_U32_LE",
+          "record_hex": "0C 00 00 00 02 00 01 00 00 00 44 33 22 11",
+          "expected_fields": "item_size=12; flag=0x00020000; count=1; packed_value[0]=0x11223344"
+        },
+        {
+          "flag": "QUERY_OWNER",
+          "payload_contract_id": "SCALAR_U8",
+          "record_hex": "05 00 00 00 04 00 01",
+          "expected_fields": "item_size=5; flag=0x00040000; value=1"
+        },
+        {
+          "flag": "QUERY_STATUS",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 00 00 08 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00080000; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_IS_PUBLIC",
+          "payload_contract_id": "SCALAR_U8",
+          "record_hex": "05 00 00 00 10 00 01",
+          "expected_fields": "item_size=5; flag=0x00100000; value=1"
+        },
+        {
+          "flag": "QUERY_LSCALE",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 00 00 20 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00200000; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_RSCALE",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 00 00 40 00 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x00400000; value=0x12345678"
+        },
+        {
+          "flag": "QUERY_LINK",
+          "payload_contract_id": "LINK_PAIR_U32_LE",
+          "record_hex": "0C 00 00 00 80 00 78 56 34 12 F0 DE BC 9A",
+          "expected_fields": "item_size=12; flag=0x00800000; link=0x12345678; link_marker=0x9ABCDEF0"
+        },
+        {
+          "flag": "QUERY_IS_HIDDEN",
+          "payload_contract_id": "SCALAR_U8",
+          "record_hex": "05 00 00 00 00 01 01",
+          "expected_fields": "item_size=5; flag=0x01000000; value=1"
+        },
+        {
+          "flag": "QUERY_COVER",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 00 00 00 02 78 56 34 12",
+          "expected_fields": "item_size=8; flag=0x02000000; value=0x12345678"
+        }
+      ],
+      "negative_vectors": [
+        {
+          "case": "TRUNCATED_PAYLOAD",
+          "payload_contract_id": "SCALAR_U8",
+          "record_hex": "05 00 00 00 04 00",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "TRUNCATED_PAYLOAD",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "08 00 01 00 00 00",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "TRUNCATED_PAYLOAD",
+          "payload_contract_id": "SCALAR_I32_LE",
+          "record_hex": "08 00 00 01 00 00",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "TRUNCATED_PAYLOAD",
+          "payload_contract_id": "SCALAR_U64_LE",
+          "record_hex": "0C 00 80 00 00 00",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "TRUNCATED_PAYLOAD",
+          "payload_contract_id": "LOC_INFO_V1",
+          "record_hex": "0E 00 00 20 00 00",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "TRUNCATED_PAYLOAD",
+          "payload_contract_id": "LINK_PAIR_U32_LE",
+          "record_hex": "0C 00 00 00 80 00",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "WRONG_SIZE_TRAILING_PAYLOAD",
+          "payload_contract_id": "SCALAR_U8",
+          "record_hex": "06 00 00 00 04 00 01 AA",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "WRONG_SIZE_TRAILING_PAYLOAD",
+          "payload_contract_id": "SCALAR_U32_LE",
+          "record_hex": "09 00 01 00 00 00 78 56 34 12 AA",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "WRONG_SIZE_TRAILING_PAYLOAD",
+          "payload_contract_id": "SCALAR_I32_LE",
+          "record_hex": "09 00 00 01 00 00 78 56 34 12 AA",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "WRONG_SIZE_TRAILING_PAYLOAD",
+          "payload_contract_id": "SCALAR_U64_LE",
+          "record_hex": "0D 00 80 00 00 00 88 77 66 55 44 33 22 11 AA",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "WRONG_SIZE_TRAILING_PAYLOAD",
+          "payload_contract_id": "LOC_INFO_V1",
+          "record_hex": "0F 00 00 20 00 00 01 02 44 33 22 11 88 77 66 55 AA",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "WRONG_SIZE_TRAILING_PAYLOAD",
+          "payload_contract_id": "LINK_PAIR_U32_LE",
+          "record_hex": "0D 00 00 00 80 00 78 56 34 12 F0 DE BC 9A AA",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "COUNT_LENGTH_MISMATCH",
+          "payload_contract_id": "VECTOR_LOC_INFO_V1",
+          "record_hex": "12 00 00 80 00 00 02 00 00 00 01 02 44 33 22 11 88 77 66 55",
+          "expected": "FAIL_CLOSED_BEFORE_VECTOR_ALLOCATION"
+        },
+        {
+          "case": "TRAILING_PAYLOAD_BYTES",
+          "payload_contract_id": "VECTOR_LOC_INFO_V1",
+          "record_hex": "13 00 00 80 00 00 01 00 00 00 01 02 44 33 22 11 88 77 66 55 AA",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "COUNT_BOUND_OVERFLOW",
+          "payload_contract_id": "VECTOR_LOC_INFO_V1",
+          "record_hex": "FF FF 00 80 00 00 99 19 00 00",
+          "expected": "FAIL_CLOSED_BEFORE_VECTOR_ALLOCATION; count=6553; required_item_size=65538"
+        },
+        {
+          "case": "COUNT_LENGTH_MISMATCH",
+          "payload_contract_id": "VECTOR_U32_LE",
+          "record_hex": "0C 00 00 00 01 00 02 00 00 00 78 56 34 12",
+          "expected": "FAIL_CLOSED_BEFORE_VECTOR_ALLOCATION"
+        },
+        {
+          "case": "TRAILING_PAYLOAD_BYTES",
+          "payload_contract_id": "VECTOR_U32_LE",
+          "record_hex": "0D 00 00 00 01 00 01 00 00 00 78 56 34 12 AA",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "COUNT_BOUND_OVERFLOW",
+          "payload_contract_id": "VECTOR_U32_LE",
+          "record_hex": "FF FF 00 00 01 00 FE 3F 00 00",
+          "expected": "FAIL_CLOSED_BEFORE_VECTOR_ALLOCATION; count=16382; required_item_size=65536"
+        },
+        {
+          "case": "COUNT_LENGTH_MISMATCH",
+          "payload_contract_id": "VECTOR_PACKED_U32_LE",
+          "record_hex": "0C 00 00 00 02 00 01 00 00 00 44 33 22 11",
+          "expected": "FAIL_CLOSED_BEFORE_VECTOR_ALLOCATION"
+        },
+        {
+          "case": "TRAILING_PAYLOAD_BYTES",
+          "payload_contract_id": "VECTOR_PACKED_U32_LE",
+          "record_hex": "0D 00 00 00 02 00 01 00 00 00 44 33 22 11 AA",
+          "expected": "FAIL_CLOSED"
+        },
+        {
+          "case": "COUNT_BOUND_OVERFLOW",
+          "payload_contract_id": "VECTOR_PACKED_U32_LE",
+          "record_hex": "FF FF 00 00 02 00 FE 3F 00 00",
+          "expected": "FAIL_CLOSED_BEFORE_VECTOR_ALLOCATION; count=16382; required_item_size=65536"
+        },
+        {
+          "case": "UNKNOWN_FLAG",
+          "payload_contract_id": "UNKNOWN",
+          "record_hex": "08 00 00 00 00 04 78 56 34 12",
+          "expected": "FAIL_CLOSED; flag=0x04000000"
+        },
+        {
+          "case": "COMPOSITE_FLAG",
+          "payload_contract_id": "UNKNOWN",
+          "record_hex": "08 00 03 00 00 00 78 56 34 12",
+          "expected": "FAIL_CLOSED; flag=QUERY_CODE|QUERY_POSITION"
+        }
+      ],
+      "required_negative_cases_by_payload_contract": {
+        "SCALAR_U8": ["TRUNCATED_PAYLOAD", "WRONG_SIZE_TRAILING_PAYLOAD"],
+        "SCALAR_U32_LE": ["TRUNCATED_PAYLOAD", "WRONG_SIZE_TRAILING_PAYLOAD"],
+        "SCALAR_I32_LE": ["TRUNCATED_PAYLOAD", "WRONG_SIZE_TRAILING_PAYLOAD"],
+        "SCALAR_U64_LE": ["TRUNCATED_PAYLOAD", "WRONG_SIZE_TRAILING_PAYLOAD"],
+        "LOC_INFO_V1": ["TRUNCATED_PAYLOAD", "WRONG_SIZE_TRAILING_PAYLOAD"],
+        "LINK_PAIR_U32_LE": ["TRUNCATED_PAYLOAD", "WRONG_SIZE_TRAILING_PAYLOAD"],
+        "VECTOR_LOC_INFO_V1": ["TRUNCATED_PAYLOAD", "COUNT_LENGTH_MISMATCH", "TRAILING_PAYLOAD_BYTES", "COUNT_BOUND_OVERFLOW"],
+        "VECTOR_U32_LE": ["TRUNCATED_PAYLOAD", "COUNT_LENGTH_MISMATCH", "TRAILING_PAYLOAD_BYTES", "COUNT_BOUND_OVERFLOW"],
+        "VECTOR_PACKED_U32_LE": ["TRUNCATED_PAYLOAD", "COUNT_LENGTH_MISMATCH", "TRAILING_PAYLOAD_BYTES", "COUNT_BOUND_OVERFLOW"]
+      },
+      "unknown_flag_vectors": [
+        "08 00 00 00 00 04 78 56 34 12",
+        "08 00 03 00 00 00 78 56 34 12"
+      ]
+    },
+    "outer_grammar_regression_vectors": {
+      "onfield_skipped_record": {
+        "record_hex": "00 00",
+        "expected": "ONFIELD_SKIPPED; no query_flag follows; current query terminates"
+      },
+      "query_end_record": {
+        "record_hex": "04 00 00 00 00 80",
+        "expected": "QUERY_END; item_size=4; payload_bytes=0"
+      },
+      "truncated_nonzero_before_flag": {
+        "record_hex": "08 00",
+        "expected": "FAIL_CLOSED_TRUNCATED_OUTER_QUERY_RECORD"
+      },
+      "stream_total_shorter_than_body": {
+        "stream_hex": "04 00 00 00 08 00 01 00 00 00",
+        "expected": "FAIL_CLOSED_EXACT_STREAM_BOUNDARY"
+      },
+      "stream_total_longer_than_body": {
+        "stream_hex": "08 00 00 00 04 00 00 00 00 80",
+        "expected": "FAIL_CLOSED_EXACT_STREAM_BOUNDARY"
+      },
+      "stream_multiple_complete_queries": {
+        "stream_hex": "0C 00 00 00 04 00 00 00 00 80 04 00 00 00 00 80",
+        "expected": "two complete QUERY_END records within total_query_bytes=12"
+      }
+    }
   },
   "audited_wire_prefixes": {
     "MSG_UPDATE_DATA": {
@@ -106,7 +1062,7 @@
         "u8 location"
       ],
       "suffix": "ModernQueryStreamV1",
-      "status": "PREFIX_PROVEN_FULL_LAYOUT_UNFROZEN"
+      "status": "PREFIX_AND_SUFFIX_LAYOUT_FROZEN"
     },
     "MSG_UPDATE_CARD": {
       "fields": [
@@ -115,7 +1071,7 @@
         "u8 sequence"
       ],
       "suffix": "ModernQueryV1",
-      "status": "PREFIX_PROVEN_FULL_LAYOUT_UNFROZEN"
+      "status": "PREFIX_AND_SUFFIX_LAYOUT_FROZEN"
     }
   },
   "provenance_sources": {
@@ -138,6 +1094,34 @@
         "playerop.cpp"
       ],
       "classification": "wire layout"
+    },
+    "CORE_QUERY_FLAG_DEFINITIONS": {
+      "repository": "https://github.com/edo9300/ygopro-core",
+      "commit": "46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57",
+      "source_paths": [
+        "ocgapi_constants.h"
+      ],
+      "classification": "numeric constant"
+    },
+    "CORE_QUERY_WRITERS": {
+      "repository": "https://github.com/edo9300/ygopro-core",
+      "commit": "46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57",
+      "source_paths": [
+        "card.cpp"
+      ],
+      "classification": "wire layout"
+    },
+    "EDOPRO_QUERY_READERS_AND_SIZES": {
+      "repository": "https://github.com/edo9300/edopro",
+      "commit": "30935e847165a9ef0e547fb51a43f36168fab7c7",
+      "source_paths": [
+        "gframe/core_utils.h",
+        "gframe/core_utils.cpp",
+        "gframe/duelclient.cpp",
+        "gframe/client_field.cpp",
+        "gframe/generic_duel.cpp"
+      ],
+      "classification": "wire layout and boundary behavior"
     },
     "EDOPRO_CLIENT_LAYOUTS": {
       "repository": "https://github.com/edo9300/edopro",
@@ -162,6 +1146,23 @@
     "layout_status": [
       "FROZEN",
       "UNFROZEN"
+    ],
+    "query_flag_admission": [
+      "ADMITTED_I3B",
+      "KNOWN_UNSUPPORTED_FAIL_CLOSED",
+      "OUTER_GRAMMAR_SENTINEL"
+    ],
+    "query_payload_contract": [
+      "SCALAR_U8",
+      "SCALAR_U32_LE",
+      "SCALAR_I32_LE",
+      "SCALAR_U64_LE",
+      "LOC_INFO_V1",
+      "LINK_PAIR_U32_LE",
+      "VECTOR_LOC_INFO_V1",
+      "VECTOR_U32_LE",
+      "VECTOR_PACKED_U32_LE",
+      "QUERY_END_SENTINEL"
     ],
     "perspective_effect": [
       "NONE",
@@ -268,6 +1269,33 @@
       ],
       "invalid_player_behavior": "FAIL_CLOSED",
       "win_type_encoding": "RAW_U8_PRESERVED"
+    },
+    "MSG_UPDATE_DATA_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u8 location",
+        "ModernQueryStreamV1 suffix"
+      ],
+      "length_rule": "PREFIX_PLUS_FROZEN_QUERY_STREAM",
+      "prefix_payload_bytes": 2,
+      "suffix_contract_id": "I3B0_QUERY_FLAG_UNION",
+      "minimum_suffix_bytes": 4,
+      "minimum_payload_bytes": 6,
+      "minimum_total_message_bytes": 7
+    },
+    "MSG_UPDATE_CARD_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u8 location",
+        "u8 sequence",
+        "ModernQueryV1 suffix"
+      ],
+      "length_rule": "PREFIX_PLUS_FROZEN_QUERY",
+      "prefix_payload_bytes": 3,
+      "suffix_contract_id": "I3B0_QUERY_FLAG_UNION",
+      "minimum_suffix_bytes": 2,
+      "minimum_payload_bytes": 5,
+      "minimum_total_message_bytes": 6
     },
     "MSG_SHUFFLE_DECK_V1": {
       "payload_fields": [
@@ -825,8 +1853,8 @@
       "support_status": "REQUIRED",
       "semantic_category": "CARD_VISIBILITY_QUERY",
       "planned_slice": "I3B/I3C",
-      "layout_status": "UNFROZEN",
-      "wire_layout_id": "UNFROZEN",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_UPDATE_DATA_V1",
       "perspective_effect": "LOCATOR_MAPPED",
       "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
       "knowledge_effect": "REVEAL",
@@ -846,8 +1874,8 @@
       "support_status": "REQUIRED",
       "semantic_category": "CARD_VISIBILITY_QUERY",
       "planned_slice": "I3B/I3C",
-      "layout_status": "UNFROZEN",
-      "wire_layout_id": "UNFROZEN",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_UPDATE_CARD_V1",
       "perspective_effect": "LOCATOR_MAPPED",
       "state_effect": "STATE_AND_KNOWLEDGE_MUTATING",
       "knowledge_effect": "REVEAL",
