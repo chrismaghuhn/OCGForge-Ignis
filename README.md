@@ -11,9 +11,10 @@ dependency direction never points back from OCGForge to this repository.
 
 ## Current status
 
-The merged `main` baseline contains the I0 repository bootstrap and the final
-I1 deterministic protocol codec. This branch contains the separately
-authorized I2 Client implementation for independent review.
+The merged `main` baseline contains the I0 repository bootstrap, the final I1
+deterministic protocol codec, and the final I2 connection/lobby/pre-duel
+Client. This branch contains the separately authorized I3A0 gameplay
+perspective/privacy contract freeze for independent review.
 
 - repository charter and governance;
 - frozen V1 architecture;
@@ -24,12 +25,14 @@ authorized I2 Client implementation for independent review.
 - third-party and clean-room protocol provenance records;
 - repository hygiene configuration;
 - the I1 platform-neutral protocol library and deterministic tests;
-- the I2 headless 1v1 local/private connection and pre-duel Client under review.
+- the final I2 headless 1v1 local/private connection and pre-duel Client;
+- the I3A0 gameplay-message support inventory and perspective/privacy design
+  contract only.
 
-The original I0 commit contained no production implementation. The current
-I2 scope contains only the Protocol and Client projects; it does not contain
-model-runner code, WPF/UI code, gameplay state, copied source, or external
-runtime assets.
+The original I0 commit contained no production implementation. I3A0 adds no
+production code: it contains only contract/design documents and a deterministic
+GAME_MSG support inventory. There is still no gameplay decoder, state mirror,
+model-runner code, WPF/UI code, copied source, or external runtime asset.
 
 The user-authorized I0 evidence records the accepted OCGForge recovery head as
 f13d19cab2b3677149f4caa25ef3c755623ded41 with:
@@ -140,6 +143,8 @@ OI-N01 decision is required before that boundary can change.
 - [ADR-0002: language and processes](docs/adr/ADR-0002-language-and-processes.md)
 - [Third-party policy](THIRD_PARTY.md)
 - [Protocol provenance](PROTOCOL_PROVENANCE.md)
+- [I3A0 gameplay perspective/state/privacy contract](docs/superpowers/specs/2026-09-03-i3-perspective-state-privacy-design.md)
+- [I3A0 GAME_MSG support inventory](fixtures/gameplay/v1/game-message-support.v1.json)
 
 The candidate completeness and fail-closed rules are normative. A supported
 prompt must expose every legal candidate in source order, preserve the
@@ -165,6 +170,9 @@ I9   reachable prompt coverage and local duel
 I10  audit trace and first-divergence tooling
 I11  Windows release and controlled human readiness
 ~~~
+
+I3A0 is the current documentation-only gameplay perspective/state/privacy
+contract freeze. It does not authorize I3A or any later implementation slice.
 
 Completion of I0 does not authorize I1. Each later task requires its own
 authorization, focused gates, independent review, and stop point.

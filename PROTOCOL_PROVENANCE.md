@@ -1,6 +1,6 @@
 # Protocol Provenance and Clean-Room Ledger
 
-Status: I2 implementation provenance ledger
+Status: I3A0 contract/provenance ledger
 Date inspected: 2026-09-03
 
 ## Clean-room discipline
@@ -153,6 +153,25 @@ parser, or control flow is copied.
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp | TPResult uses 0/1, enters the active duel path, and is followed by gameplay-message generation rather than a required STOC_TP_RESULT acknowledgement | 2026-09-03 | observed behavior |
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp | Player-change status low nibbles 0..5 encode duelist position moves while 0x8..0xb encode observe/ready/not-ready/leave | 2026-09-03 | wire layout/observed behavior |
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/netserver.cpp | EOF/error closes an unjoined player through DisconnectPlayer and routes an already-joined player through LeaveGame; an explicit CTOS_LEAVE_GAME is dispatched to LeaveGame when a duel mode exists | 2026-09-03 | observed behavior |
+
+## I3A0 researched gameplay-message facts
+
+I3A0 uses the following clean-room facts for the gameplay-message contract and
+inventory. They are references only. No parser, state-mutation routine,
+serialized upstream packet, or client implementation is copied.
+
+| External repository | Exact commit | Source path / symbol | Fact learned | Date | Classification |
+| --- | --- | --- | --- | --- | --- |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | ocgapi_constants.h, MSG_* definitions | The pinned runtime defines the complete numeric MSG_* identifier set indexed in `game-message-support.v1.json`; the same file defines location, position, and query flag constants used by later decoding | 2026-09-03 | numeric constant |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp, `GenericDuel::TPResult` start buffer | Modern gameplay start messages contain message ID 4, playertype, two uint32 LP values, and two uint16 deck/extra count pairs; the server sends 18 total bytes and uses playertype 0/1 for duelists and 0x10/0x11 for observers | 2026-09-03 | wire layout/observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp, `STOC_GAME_MSG` dispatch and `MSG_START` case | The client receives the I1-preserved GAME_MSG payload as an inner message stream, reads modern MSG_START fields in canonical player order, and maps player-relative values through the established gameplay perspective | 2026-09-03 | wire layout/observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp, `MSG_NEW_TURN` and `MSG_NEW_PHASE` cases | The client initializes turn count at MSG_START, increments it on each semantic MSG_NEW_TURN, reads the turn player as uint8, and reads phase as uint16 | 2026-09-03 | wire layout/observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/core_utils.h, `loc_info` | A protocol card locator carries controller, location, sequence, and position; it is a protocol-local address, not a public semantic identity | 2026-09-03 | wire layout/identity boundary |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/core_utils.cpp, `ReadLocInfo` and `Query::Parse` | Modern loc_info uses two uint8 fields followed by two uint32 fields; modern query data is a length/flag stream with a terminating query-end item and flag-specific values, including relation lists and counters | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/client_card.cpp, `ClientCard::UpdateInfo` and `SetCode` | Client-visible card properties are updated only for present query flags; code and public/hidden transitions affect what the client knows and must not be treated as stable identity without a visibility proof | 2026-09-03 | observed behavior/privacy interpretation |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | field.cpp, shuffle/move/reload message creation | Core emits movement, shuffle, reload, and zone messages from semantic card transitions; shuffle families are explicit knowledge-destruction boundaries for hidden locator continuity | 2026-09-03 | observed behavior/privacy interpretation |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | operations.cpp, processor.cpp, playerop.cpp | Core message families cover state, movement, LP, battle, chain, relation, random-result, and prompt messages; prompt families are not gameplay-state answers and are assigned to I4/I5 or fail-closed scope | 2026-09-03 | observed behavior/scope classification |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp, `MSG_SHUFFLE_DECK`, `MSG_SHUFFLE_HAND`, `MSG_SHUFFLE_EXTRA`, `MSG_SHUFFLE_SET_CARD`, `MSG_REVERSE_DECK` | The client clears or reassigns hidden card codes/positions during shuffle and reorder handling; I3 must destroy stale continuity rather than expose those process-local associations | 2026-09-03 | observed behavior/privacy interpretation |
 
 ## Provenance boundaries
 
