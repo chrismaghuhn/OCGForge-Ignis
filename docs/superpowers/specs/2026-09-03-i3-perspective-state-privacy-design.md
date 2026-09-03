@@ -774,28 +774,33 @@ projection, model input, and response selection.
 Stop condition: any unsupported or ambiguous state-relevant message fails the
 I3A session; no fallback parser or legacy mode is attempted.
 
-### I3B0 — query codec/union freeze (documentation only)
+### I3B0 — query-flag union freeze (documentation only)
 
-Owner: I3 contract governance. This is a documentation-only prerequisite for
-I3B and does not implement query parsing or the state mirror.
+Owner: I3 contract governance for the flag-specific query union only. This is
+a documentation-only prerequisite for I3B and does not implement query parsing
+or the state mirror.
 
-I3B0 must freeze the exact modern query contract for the pinned V1 path:
+I3A0 already freezes the outer `ModernQueryV1` and `ModernQueryStreamV1`
+grammars. Their `item_size==0`/`ONFIELD_SKIPPED`, `QUERY_END==4`, item-size
+arithmetic, stream total-byte boundary, and prefix-exclusion semantics are
+immutable I3B0 inputs. I3B0 must not redefine or revise them.
+
+I3B0 owns and must freeze only:
 
 - the complete `QUERY_FLAG` enum set admitted by the slice;
 - the exact payload type and width for every admitted flag;
 - per-flag size bounds and integer-overflow behavior;
-- the `ModernQueryV1` `item_size==0` `ONFIELD_SKIPPED` form;
-- the `QUERY_END` form with `item_size==4` and no flag payload;
-- the distinction between the single-query and `u32`-length-prefixed stream
-  grammars;
-- exact total-byte boundary and zero-query behavior for
-  `ModernQueryStreamV1`; and
+- the relationship between each admitted flag payload and its inherited
+  `item_size`;
+- the unknown-flag policy; and
 - positive, truncated, wrong-size, unknown-flag, trailing-byte, and overflow
-  golden fixtures.
+  fixtures for flag-specific validation.
 
-The flag-specific union is `NOT_FROZEN` in I3A0. I3B may not publish a typed
-query value until I3B0 is accepted. I3B0 adds no production code and leaves
-all I3 implementation gates `NOT_RUN`.
+Inherited zero-size, `QUERY_END`, and stream-boundary cases may be regression
+fixtures, but their expected semantics belong to I3A0 and cannot be changed
+by I3B0. The flag-specific union is `NOT_FROZEN` in I3A0. I3B may not publish
+a typed query value until I3B0 is accepted. I3B0 adds no production code and
+leaves all I3 implementation gates `NOT_RUN`.
 
 ### I3B — deterministic PerspectiveStateMirror
 

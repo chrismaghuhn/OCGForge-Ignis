@@ -85,7 +85,7 @@ host flag, RPS outcome, or TP choice.
 
 - [ ] **Step 6: Stop.** Do not add the PerspectiveStateMirror, card knowledge, semantic locators, public projection, prompt answer, or model input. Commit and review I3A as a separate task only after a new authorization.
 
-## Task 2: I3B0 query codec/union freeze (documentation only)
+## Task 2: I3B0 query-flag union freeze (documentation only)
 
 This is a separate contract-freeze task between I3A and I3B. It creates no
 production project or runtime parser.
@@ -95,23 +95,24 @@ production project or runtime parser.
 - Modify the owning I3 design/spec document only.
 - Add no C# source, project, or runtime dependency.
 
-- [ ] **Step 1: Freeze the two query grammars.** Define `ModernQueryV1` with
-  `item_size==0` as `ONFIELD_SKIPPED` with no following `query_flag`, and with
-  nonzero `item_size` requiring at least four bytes for the `u32_le query_flag`.
-  Define the `QUERY_END` record as `item_size==4` with zero flag-payload bytes.
+- [ ] **Step 1: Consume the outer grammars unchanged.** Use the I3A0-frozen
+  `ModernQueryV1` and `ModernQueryStreamV1` definitions as immutable inputs.
+  Their `item_size==0`/`ONFIELD_SKIPPED`, `QUERY_END==4`, item-size arithmetic,
+  stream total-byte boundary, and prefix-exclusion semantics are not owned by
+  I3B0 and must not be changed here.
 - [ ] **Step 2: Freeze the flag union.** Record the exact admitted query flags,
   payload types, widths, per-flag bounds, overflow behavior, and unknown-flag
-  policy for the pinned modern V1 source. Keep the union separate from the
-  already-frozen outer record grammar.
-- [ ] **Step 3: Freeze stream boundaries.** Define
-  `ModernQueryStreamV1` as `u32_le total_query_bytes` followed by exactly that
-  many bytes containing zero or more complete `ModernQueryV1` values. The
-  prefix itself is excluded from the count; truncation, excess, and arithmetic
-  overflow fail closed.
-- [ ] **Step 4: Add evidence and stop.** Add positive zero-size/QUERY_END,
-  wrong-size, truncation, unknown-flag, trailing-byte, and overflow fixtures.
-  Leave all implementation gates `NOT_RUN`; I3B may implement the union only
-  after I3B0 is independently accepted.
+  policy for the pinned modern V1 source. Keep this flag-specific contract
+  separate from the already-frozen outer record grammars.
+- [ ] **Step 3: Freeze flag-specific validation.** Define the exact relationship
+  between each admitted flag payload and its inherited `item_size`, including
+  malformed/truncated flag payloads and any count/vector bounds. The outer
+  grammar remains an unchanged prerequisite, not a new I3B0 decision.
+- [ ] **Step 4: Add evidence and stop.** Add positive and negative fixtures for
+  each admitted flag, including inherited zero-size/QUERY_END/stream-boundary
+  regression cases without changing their expected semantics. Leave all
+  implementation gates `NOT_RUN`; I3B may implement the union only after I3B0
+  is independently accepted.
 
 ## Task 3: I3B deterministic PerspectiveStateMirror
 

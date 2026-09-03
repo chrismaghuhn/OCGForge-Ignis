@@ -76,16 +76,26 @@
   },
   "query_codec_contract": {
     "owner": "I3B0",
+    "scope": "FLAG_SPECIFIC_UNION_ONLY",
     "status": "NOT_FROZEN_REQUIRES_I3B0",
     "implementation_dependency": "I3B",
+    "outer_grammar_owner": "I3A0",
+    "outer_grammar_status": "FROZEN",
+    "frozen_outer_grammar_elements": [
+      "MODERN_QUERY_V1",
+      "ITEM_SIZE_SEMANTICS",
+      "ONFIELD_SKIPPED_ZERO_SIZE",
+      "QUERY_END_ITEM_SIZE_FOUR",
+      "MODERN_QUERY_STREAM_V1",
+      "STREAM_TOTAL_QUERY_BYTES_EXCLUDES_PREFIX"
+    ],
     "required_freeze_elements": [
       "QUERY_FLAG_ENUM",
       "FLAG_PAYLOAD_TYPES",
       "FLAG_PAYLOAD_WIDTHS",
       "FLAG_BOUNDS",
-      "ZERO_SIZE_RECORD",
-      "QUERY_END_RECORD",
-      "STREAM_TOTAL_BYTE_BOUNDARY",
+      "FLAG_OVERFLOW_RULES",
+      "UNKNOWN_FLAG_POLICY",
       "MALFORMED_NEGATIVE_VECTORS"
     ]
   },
