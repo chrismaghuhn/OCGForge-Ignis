@@ -14,6 +14,20 @@ Accepted I2 implementation: `3e2e319112a1237a9f42c33f3d974ba05e944e8e`
 Contract ID: `ocgforge-ignis.gameplay.perspective-privacy.v1`
 Message inventory schema: `ocgforge-ignis.game_message_support.v1`
 
+Semantic projection status:
+
+```text
+PUBLIC_PROJECTION_SEMANTICS_FROZEN=YES
+PUBLIC_PROJECTION_CODEC_STATUS=NOT_FROZEN_REQUIRES_I3D0
+LOCATOR_SEMANTICS_FROZEN=YES
+LOCATOR_CODEC_STATUS=NOT_FROZEN_REQUIRES_I3C0
+```
+
+The I3A0 contract freezes the privacy-safe semantic shape and lifecycle, not
+the byte-level locator or public-projection identity codec. No implementation
+may invent those bytes before the separate documentation-only I3C0 and I3D0
+freezes.
+
 This document freezes the design boundary only. It does not implement a
 GAME_MSG decoder, a gameplay state mirror, prompt projection, model input, or
 any later I3 slice.
@@ -115,8 +129,16 @@ byte[] message_payload
 ```
 
 The first byte is the `MSG_*` identifier. The payload has no second TCP frame
-or adapter framing. A strict cursor must consume exactly the message payload;
-underflow, overflow, unknown IDs, and trailing bytes are typed failures.
+or adapter framing. I1 owns incomplete outer CTOS/STOC frame accumulation. A
+`StocGameMessagePayload` passed to the I3 inner decoder is already the complete
+payload of exactly one validated outer `STOC_GAME_MSG` frame.
+
+The inner decoder has no `NeedMoreData` result. It must consume exactly the
+inner message payload; underflow in this complete payload is
+`MALFORMED_GAME_MESSAGE`, while an unknown or intentionally unsupported ID is
+`UNSUPPORTED_MESSAGE`. The decoder never borrows bytes from a following
+`STOC_GAME_MSG` frame. Only an incomplete outer frame can produce I1
+`NeedMoreData`.
 
 The locked V1 target is the modern `41.0.2` / ocgcore API `11.0` path. Legacy
 compatibility layouts are not silently accepted. In particular, modern
@@ -177,10 +199,37 @@ marker. If a future cross-check proves an irreconcilable protocol conflict, it
 fails closed rather than selecting one interpretation.
 
 `MSG_START` initializes the semantic turn count to `0`. Each accepted
-`MSG_NEW_TURN` carries the new turn player and increments that semantic count
-exactly once in message order. The count is derived from semantic messages,
-not transport reads or packet offsets; a duplicate or out-of-order turn event
-fails closed.
+`MSG_NEW_TURN` carries the authoritative turn player and increments that
+semantic count exactly once in message order. The count is derived from
+semantic messages, not transport reads or packet offsets. I3 validates the
+player encoding, complete message shape, duplicate transport processing, and
+mirror references, but never recomputes expected player alternation, skipped
+phases, extra turns, or any other Yu-Gi-Oh! turn legality. `MSG_NEW_PHASE`
+updates the phase from the authoritative message; I3 does not reject a phase
+because a locally reconstructed rules sequence would have expected another
+phase.
+
+### Terminal result semantics
+
+The modern `MSG_WIN` payload is exactly `u8 player; u8 win_type`. The pinned
+server records `player` values `0` and `1` as the corresponding canonical
+winner and maps every value greater than `1` to its draw result. I3A therefore
+accepts exactly this explicit V1 result domain:
+
+| `player` | Semantic result |
+| ---: | --- |
+| `0` | canonical player 0 wins |
+| `1` | canonical player 1 wins |
+| `2` | draw |
+
+The wire value `2` is the canonical draw representation; values `3..255` are
+not accepted as an alternate V1 encoding and fail closed, even though the
+server's internal comparison treats every value greater than `1` as a draw.
+`win_type` is an exact raw `u8` terminal field: I3 preserves it without
+inventing a local enum or using it to infer a winner. After a
+terminal result is accepted, a duplicate `MSG_WIN` or any later state mutation
+fails closed. The established gameplay perspective maps winner `0`/`1` to
+`Self`/`Opponent`; a draw has no winner participant.
 
 ## 6. PerspectiveStateMirror V1
 
@@ -280,17 +329,23 @@ entities:
 | `MSG_SHUFFLE_DECK` | invalidate hidden deck ordering and locator-to-card associations; retain only proven counts/public facts |
 | `MSG_SHUFFLE_HAND` | invalidate hidden hand ordering and associations; do not infer identities from the prior hand order |
 | `MSG_SHUFFLE_EXTRA` | invalidate hidden Extra Deck ordering and associations |
-| `MSG_SHUFFLE_SET_CARD` | invalidate affected hidden set-card continuity unless a complete independent mapping proves the same entity |
+| `MSG_SHUFFLE_SET_CARD` | invalidate affected hidden set-card continuity unless the protocol-provided record mapping proves the same entity |
 | `MSG_REVERSE_DECK` | invalidate hidden ordering continuity unless the mirror has an independently proven complete mapping; never expose a guessed mapping |
 | `MSG_REFRESH_DECK` / `MSG_SWAP_GRAVE_DECK` | invalidate any hidden locator relationship that the new representation does not prove |
 | hidden randomized movement | destroy continuity when source-to-destination identity is not proven |
 | hidden reorder with ambiguity | destroy the old association and create explicit unknowns as needed |
 
-For own private cards, a deterministic operation may retain an identity only if
+For `MSG_SHUFFLE_SET_CARD`, the ordered records define
+`previous[i] ↔ current[i]` for the same record ordinal `i`; this is protocol
+evidence and may be used as the pairing. It does not authorize continuity
+inference from a zone array position, cached object, packet timing, card code,
+deck composition, probability, or model output. For own private cards, a
+deterministic operation may retain an identity only if
 the protocol and current private knowledge prove the complete mapping. For
 opponent hidden cards, the default is destruction. No continuity may be
-recovered from prior ordering, array index, packet timing, move order, unique
-card code, deck composition, elimination, probability, or later model output.
+recovered from prior zone ordering, an array index outside the protocol record
+pair, packet timing, move order, unique card code, deck composition, elimination,
+probability, or later model output.
 
 ## 9. Semantic public locators
 
@@ -325,6 +380,12 @@ public locator's deterministic creation ordinal, with participant, zone, and
 slot fields encoded in fixed contract order. A destroyed hidden locator never
 reappears under the same public identity.
 
+The semantic lifecycle above is frozen for I3A0. Its identity domain, schema,
+integer widths, endian order, enum codes, optional encoding, knowledge-union
+encoding, locator encoding, and hash/prefix bytes are intentionally not frozen.
+The documentation-only `I3C0` task must freeze the complete semantic-locator
+codec before I3C implementation.
+
 Two equal-code public cards receive two distinct locators when they are two
 distinct proven entities. If a message cannot distinguish two possible source
 entities, the transition fails closed instead of choosing one.
@@ -357,8 +418,11 @@ It must not contain:
 - inferred archetypes, probabilities, beliefs, or model-derived facts;
 - incomplete or fabricated legal candidate data.
 
-The I3 projection is not declared byte-equal to OCGForge `PlayerObservation`.
-I6 owns byte-exact cross-oracle and compatibility evidence.
+The semantic projection shape is frozen, but I3A0 does not freeze its byte
+encoding or `public_projection_id`. The documentation-only `I3D0` task must
+freeze the complete projection identity/codec before I3D implementation. The
+I3 projection is not declared byte-equal to OCGForge `PlayerObservation`; I6
+owns byte-exact cross-oracle and compatibility evidence.
 
 ## 11. Normative information-flow table
 
@@ -435,11 +499,11 @@ public_projection_id
 transport_protocol_provenance_id
 ```
 
-`public_projection_id` is a versioned digest of the canonical public
-projection. A future gameplay semantic identity may include the canonical
-perspective mirror, but only fields allowed by the mirror contract. The
-transport/provenance identity contains pins and execution facts and is never
-used as gameplay identity.
+`public_projection_id` will be a versioned digest of the canonical public
+projection only after I3D0 freezes its exact domain and byte codec. A future
+gameplay semantic identity may include the canonical perspective mirror, but
+only fields allowed by the mirror contract. The transport/provenance identity
+contains pins and execution facts and is never used as gameplay identity.
 
 Canonical order is fixed as:
 
@@ -455,13 +519,18 @@ No raw packet buffer, unread count, TCP chunk, endpoint, password, PID, wall
 clock, task/thread ID, path, address, mutable alias, or unordered iteration
 participates in these identities.
 
+I3A0 freezes the semantic ordering above, not a byte-level identity contract.
+The exact locator codec is an I3C0 prerequisite; the exact public projection
+identity/codec is an I3D0 prerequisite. Until those tasks are accepted, no
+production code may emit or compare a public identity digest.
+
 ## 14. Fail-closed GAME_MSG handling
 
 I3 must return a stable typed failure for:
 
 - unknown or malformed GAME_MSG;
 - unsupported required message;
-- message illegal for the current mirror state;
+- message invalid for the current mirror state under a structural contract;
 - impossible zone/controller/position transition;
 - illegal duplicate semantic message;
 - perspective-dependent message before `MSG_START`;
@@ -469,6 +538,12 @@ I3 must return a stable typed failure for:
 - knowledge-continuity ambiguity;
 - semantic locator collision;
 - state-capacity/resource failure.
+
+These checks are structural and contract checks only. I3 must not reject a
+message merely because a locally rebuilt Yu-Gi-Oh! rules model predicts an
+unexpected turn, phase, player alternation, skipped phase, or extra turn.
+`MSG_NEW_TURN` and `MSG_NEW_PHASE` update the mirror from the authoritative
+stream.
 
 I3 must not skip unknown messages, guess payload lengths, continue with partial
 state, invent cards/entities, repair malformed relationships, or silently
@@ -490,119 +565,151 @@ The matrix is intentionally not a claim of complete EDOPro coverage. The
 inventory includes every `MSG_*` identifier defined by the pinned core so that
 an omitted message cannot be mistaken for supported coverage.
 
+### Layout and effect contract
+
+Every inventory entry has an explicit `layout_status`. `FROZEN` means that the
+modern V1 field sequence and length/count rule are present in the inventory's
+machine-readable `layout_catalog`. `UNFROZEN` means that I3 must not publish a
+message-specific typed value until its owning future slice proves the exact
+layout; the entry is not a speculative codec description.
+
+The inventory separately records proven prefixes for `MSG_UPDATE_DATA` and
+`MSG_UPDATE_CARD`. Their modern prefixes are respectively
+`u8 player; u8 location` and `u8 player; u8 location; u8 sequence`; the
+following query union remains `UNFROZEN` until its flag-specific contract is
+accepted. Those entries therefore remain fail-closed rather than claiming a
+complete typed query layout.
+
+Parsing and semantic effects are separate. The inventory's `state_effect`,
+`knowledge_effect`, `locator_effect`, and `boundary_kind` fields are normative
+tokens. In particular, `MUST_CONSUME_NO_STATE` means that a known message may
+be consumed and recorded as a presentation/event signal without mutating the
+semantic mirror. This classification applies to `MSG_SET`, the summon and
+summon-completion notifications, `MSG_WAITING`, and the presentation-only
+battle/hint notifications where listed. Their physical payload, when frozen,
+is still consumed exactly once; it must not be applied a second time when a
+MOVE or query message owns the actual mirror change.
+
+`MSG_SHUFFLE_SET_CARD` is the explicit exception to a blanket “never infer by
+index” rule: its protocol records provide `previous[i] ↔ current[i]`. Only
+that record-ordinal pairing is allowed. Zone-array order, cached object
+identity, timing, card-code uniqueness, deck composition, probability, and
+model output remain forbidden identity evidence.
+
 ## 16. GAME_MSG support matrix
 
 The full machine-readable matrix is
 [`game-message-support.v1.json`](../../../fixtures/gameplay/v1/game-message-support.v1.json).
-The following identifier/status ledger is normative for agreement checking;
-entries are ordered by numeric message ID.
+The following ledger is normative for agreement checking; entries are ordered by numeric message ID. The status, layout, perspective, effect, pairing, and planned-slice tokens must match the JSON inventory.
 
-| ID | Symbol | Status | Planned slice |
-| ---: | --- | --- | --- |
-| 1 | `MSG_RETRY` | `UNSUPPORTED_FAIL_CLOSED` | I3A |
-| 2 | `MSG_HINT` | `OPTIONAL` | I3B |
-| 3 | `MSG_WAITING` | `OPTIONAL` | I3B |
-| 4 | `MSG_START` | `REQUIRED` | I3A |
-| 5 | `MSG_WIN` | `REQUIRED` | I3B |
-| 6 | `MSG_UPDATE_DATA` | `REQUIRED` | I3B/I3C |
-| 7 | `MSG_UPDATE_CARD` | `REQUIRED` | I3B/I3C |
-| 8 | `MSG_REQUEST_DECK` | `UNSUPPORTED_FAIL_CLOSED` | I3A |
-| 10 | `MSG_SELECT_BATTLECMD` | `OUT_OF_SCOPE` | I4 |
-| 11 | `MSG_SELECT_IDLECMD` | `OUT_OF_SCOPE` | I4 |
-| 12 | `MSG_SELECT_EFFECTYN` | `OUT_OF_SCOPE` | I4 |
-| 13 | `MSG_SELECT_YESNO` | `OUT_OF_SCOPE` | I4 |
-| 14 | `MSG_SELECT_OPTION` | `OUT_OF_SCOPE` | I4 |
-| 15 | `MSG_SELECT_CARD` | `OUT_OF_SCOPE` | I5 |
-| 16 | `MSG_SELECT_CHAIN` | `OUT_OF_SCOPE` | I4 |
-| 18 | `MSG_SELECT_PLACE` | `OUT_OF_SCOPE` | I5 |
-| 19 | `MSG_SELECT_POSITION` | `OUT_OF_SCOPE` | I4 |
-| 20 | `MSG_SELECT_TRIBUTE` | `OUT_OF_SCOPE` | I5 |
-| 21 | `MSG_SORT_CHAIN` | `OUT_OF_SCOPE` | I5 |
-| 22 | `MSG_SELECT_COUNTER` | `OUT_OF_SCOPE` | I5 |
-| 23 | `MSG_SELECT_SUM` | `OUT_OF_SCOPE` | I5 |
-| 24 | `MSG_SELECT_DISFIELD` | `OUT_OF_SCOPE` | I5 |
-| 25 | `MSG_SORT_CARD` | `OUT_OF_SCOPE` | I5 |
-| 26 | `MSG_SELECT_UNSELECT_CARD` | `OUT_OF_SCOPE` | I5 |
-| 30 | `MSG_CONFIRM_DECKTOP` | `OPTIONAL` | I3C |
-| 31 | `MSG_CONFIRM_CARDS` | `OPTIONAL` | I3C |
-| 32 | `MSG_SHUFFLE_DECK` | `REQUIRED` | I3C |
-| 33 | `MSG_SHUFFLE_HAND` | `REQUIRED` | I3C |
-| 34 | `MSG_REFRESH_DECK` | `OPTIONAL` | I3C |
-| 35 | `MSG_SWAP_GRAVE_DECK` | `OPTIONAL` | I3B/I3C |
-| 36 | `MSG_SHUFFLE_SET_CARD` | `REQUIRED` | I3C |
-| 37 | `MSG_REVERSE_DECK` | `REQUIRED` | I3C |
-| 38 | `MSG_DECK_TOP` | `OPTIONAL` | I3C |
-| 39 | `MSG_SHUFFLE_EXTRA` | `REQUIRED` | I3C |
-| 40 | `MSG_NEW_TURN` | `REQUIRED` | I3B |
-| 41 | `MSG_NEW_PHASE` | `REQUIRED` | I3B |
-| 42 | `MSG_CONFIRM_EXTRATOP` | `OPTIONAL` | I3C |
-| 50 | `MSG_MOVE` | `REQUIRED` | I3B/I3C |
-| 53 | `MSG_POS_CHANGE` | `REQUIRED` | I3B/I3C |
-| 54 | `MSG_SET` | `REQUIRED` | I3B |
-| 55 | `MSG_SWAP` | `REQUIRED` | I3B/I3C |
-| 56 | `MSG_FIELD_DISABLED` | `OPTIONAL` | I3B |
-| 60 | `MSG_SUMMONING` | `OPTIONAL` | I3B |
-| 61 | `MSG_SUMMONED` | `OPTIONAL` | I3B |
-| 62 | `MSG_SPSUMMONING` | `OPTIONAL` | I3B |
-| 63 | `MSG_SPSUMMONED` | `OPTIONAL` | I3B |
-| 64 | `MSG_FLIPSUMMONING` | `OPTIONAL` | I3B |
-| 65 | `MSG_FLIPSUMMONED` | `OPTIONAL` | I3B |
-| 70 | `MSG_CHAINING` | `REQUIRED` | I3B |
-| 71 | `MSG_CHAINED` | `REQUIRED` | I3B |
-| 72 | `MSG_CHAIN_SOLVING` | `REQUIRED` | I3B |
-| 73 | `MSG_CHAIN_SOLVED` | `REQUIRED` | I3B |
-| 74 | `MSG_CHAIN_END` | `REQUIRED` | I3B |
-| 75 | `MSG_CHAIN_NEGATED` | `REQUIRED` | I3B |
-| 76 | `MSG_CHAIN_DISABLED` | `REQUIRED` | I3B |
-| 80 | `MSG_CARD_SELECTED` | `OPTIONAL` | I3B |
-| 81 | `MSG_RANDOM_SELECTED` | `OPTIONAL` | I3C |
-| 83 | `MSG_BECOME_TARGET` | `REQUIRED` | I3B |
-| 90 | `MSG_DRAW` | `REQUIRED` | I3B/I3C |
-| 91 | `MSG_DAMAGE` | `REQUIRED` | I3B |
-| 92 | `MSG_RECOVER` | `REQUIRED` | I3B |
-| 93 | `MSG_EQUIP` | `REQUIRED` | I3B/I3C |
-| 94 | `MSG_LPUPDATE` | `REQUIRED` | I3B |
-| 95 | `MSG_UNEQUIP` | `REQUIRED` | I3B/I3C |
-| 96 | `MSG_CARD_TARGET` | `REQUIRED` | I3B |
-| 97 | `MSG_CANCEL_TARGET` | `REQUIRED` | I3B |
-| 100 | `MSG_PAY_LPCOST` | `REQUIRED` | I3B |
-| 101 | `MSG_ADD_COUNTER` | `OPTIONAL` | I3B |
-| 102 | `MSG_REMOVE_COUNTER` | `OPTIONAL` | I3B |
-| 110 | `MSG_ATTACK` | `OPTIONAL` | I3B |
-| 111 | `MSG_BATTLE` | `OPTIONAL` | I3B |
-| 112 | `MSG_ATTACK_DISABLED` | `OPTIONAL` | I3B |
-| 113 | `MSG_DAMAGE_STEP_START` | `OPTIONAL` | I3B |
-| 114 | `MSG_DAMAGE_STEP_END` | `OPTIONAL` | I3B |
-| 120 | `MSG_MISSED_EFFECT` | `OPTIONAL` | I3B |
-| 121 | `MSG_BE_CHAIN_TARGET` | `OPTIONAL` | I3B |
-| 122 | `MSG_CREATE_RELATION` | `OPTIONAL` | I3B |
-| 123 | `MSG_RELEASE_RELATION` | `OPTIONAL` | I3B |
-| 130 | `MSG_TOSS_COIN` | `OPTIONAL` | I3B |
-| 131 | `MSG_TOSS_DICE` | `OPTIONAL` | I3B |
-| 132 | `MSG_ROCK_PAPER_SCISSORS` | `UNSUPPORTED_FAIL_CLOSED` | I3A |
-| 133 | `MSG_HAND_RES` | `UNSUPPORTED_FAIL_CLOSED` | I3A |
-| 140 | `MSG_ANNOUNCE_RACE` | `OUT_OF_SCOPE` | I5 |
-| 141 | `MSG_ANNOUNCE_ATTRIB` | `OUT_OF_SCOPE` | I5 |
-| 142 | `MSG_ANNOUNCE_CARD` | `UNSUPPORTED_FAIL_CLOSED` | I3A |
-| 143 | `MSG_ANNOUNCE_NUMBER` | `OUT_OF_SCOPE` | I5 |
-| 160 | `MSG_CARD_HINT` | `OPTIONAL` | I3C |
-| 161 | `MSG_TAG_SWAP` | `UNSUPPORTED_FAIL_CLOSED` | I3A |
-| 162 | `MSG_RELOAD_FIELD` | `OPTIONAL` | I3B/I3C |
-| 163 | `MSG_AI_NAME` | `OUT_OF_SCOPE` | UI_ONLY |
-| 164 | `MSG_SHOW_HINT` | `OUT_OF_SCOPE` | UI_ONLY |
-| 165 | `MSG_PLAYER_HINT` | `OPTIONAL` | I3B |
-| 170 | `MSG_MATCH_KILL` | `UNSUPPORTED_FAIL_CLOSED` | I3A |
-| 180 | `MSG_CUSTOM_MSG` | `UNSUPPORTED_FAIL_CLOSED` | I3A |
-| 190 | `MSG_REMOVE_CARDS` | `REQUIRED` | I3C |
+| ID | Symbol | Status | Layout | Perspective | State effect | Knowledge effect | Locator effect | Boundary | Pairing | Planned slice |
+| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | MSG_RETRY | UNSUPPORTED_FAIL_CLOSED | UNFROZEN | NONE | UNSUPPORTED_FAIL_CLOSED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED_FAIL_CLOSED | NONE | I3A |
+| 2 | MSG_HINT | OPTIONAL | FROZEN | PLAYER_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 3 | MSG_WAITING | OPTIONAL | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | NONE | PRESENTATION_ONLY | NONE | I3B |
+| 4 | MSG_START | REQUIRED | FROZEN | ESTABLISHES | STATE_AND_KNOWLEDGE_MUTATING | PRESERVE | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3A |
+| 5 | MSG_WIN | REQUIRED | FROZEN | PLAYER_MAPPED | STATE_MUTATING | PRESERVE | NONE | GAMEPLAY_STATE | NONE | I3B |
+| 6 | MSG_UPDATE_DATA | REQUIRED | UNFROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 7 | MSG_UPDATE_CARD | REQUIRED | UNFROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 8 | MSG_REQUEST_DECK | UNSUPPORTED_FAIL_CLOSED | UNFROZEN | NONE | UNSUPPORTED_FAIL_CLOSED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED_FAIL_CLOSED | NONE | I3A |
+| 10 | MSG_SELECT_BATTLECMD | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I4 |
+| 11 | MSG_SELECT_IDLECMD | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I4 |
+| 12 | MSG_SELECT_EFFECTYN | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I4 |
+| 13 | MSG_SELECT_YESNO | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I4 |
+| 14 | MSG_SELECT_OPTION | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I4 |
+| 15 | MSG_SELECT_CARD | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 16 | MSG_SELECT_CHAIN | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I4 |
+| 18 | MSG_SELECT_PLACE | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 19 | MSG_SELECT_POSITION | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I4 |
+| 20 | MSG_SELECT_TRIBUTE | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 21 | MSG_SORT_CHAIN | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 22 | MSG_SELECT_COUNTER | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 23 | MSG_SELECT_SUM | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 24 | MSG_SELECT_DISFIELD | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 25 | MSG_SORT_CARD | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 26 | MSG_SELECT_UNSELECT_CARD | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 30 | MSG_CONFIRM_DECKTOP | OPTIONAL | UNFROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3C |
+| 31 | MSG_CONFIRM_CARDS | OPTIONAL | UNFROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3C |
+| 32 | MSG_SHUFFLE_DECK | REQUIRED | FROZEN | PLAYER_MAPPED | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_HIDDEN | KNOWLEDGE_BOUNDARY | NONE | I3C |
+| 33 | MSG_SHUFFLE_HAND | REQUIRED | FROZEN | PLAYER_MAPPED | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_HIDDEN | KNOWLEDGE_BOUNDARY | NONE | I3C |
+| 34 | MSG_REFRESH_DECK | OPTIONAL | FROZEN | PLAYER_MAPPED | KNOWLEDGE_MUTATING | DESTROY_IF_AMBIGUOUS | INVALIDATE_OR_REBIND | KNOWLEDGE_BOUNDARY | NONE | I3C |
+| 35 | MSG_SWAP_GRAVE_DECK | OPTIONAL | UNFROZEN | NONE | STATE_AND_KNOWLEDGE_MUTATING | DESTROY_IF_AMBIGUOUS | INVALIDATE_OR_REBIND | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 36 | MSG_SHUFFLE_SET_CARD | REQUIRED | FROZEN | LOCATOR_MAPPED | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_OR_REBIND | KNOWLEDGE_BOUNDARY | PREVIOUS_I_TO_CURRENT_I_PROTOCOL | I3C |
+| 37 | MSG_REVERSE_DECK | REQUIRED | FROZEN | NONE | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_HIDDEN | KNOWLEDGE_BOUNDARY | NONE | I3C |
+| 38 | MSG_DECK_TOP | OPTIONAL | FROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3C |
+| 39 | MSG_SHUFFLE_EXTRA | REQUIRED | FROZEN | PLAYER_MAPPED | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_HIDDEN | KNOWLEDGE_BOUNDARY | NONE | I3C |
+| 40 | MSG_NEW_TURN | REQUIRED | FROZEN | PLAYER_MAPPED | STATE_MUTATING | PRESERVE | NONE | GAMEPLAY_STATE | NONE | I3B |
+| 41 | MSG_NEW_PHASE | REQUIRED | FROZEN | NONE | STATE_MUTATING | PRESERVE | NONE | GAMEPLAY_STATE | NONE | I3B |
+| 42 | MSG_CONFIRM_EXTRATOP | OPTIONAL | UNFROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3C |
+| 50 | MSG_MOVE | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | DESTROY_IF_AMBIGUOUS | MOVE | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 53 | MSG_POS_CHANGE | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | DESTROY_IF_AMBIGUOUS | RETAIN_OR_INVALIDATE | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 54 | MSG_SET | REQUIRED | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | NONE | PRESENTATION_ONLY | NONE | I3B |
+| 55 | MSG_SWAP | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | DESTROY_IF_AMBIGUOUS | MOVE | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 56 | MSG_FIELD_DISABLED | OPTIONAL | FROZEN | PLAYER_MAPPED | STATE_MUTATING | NONE | NONE | GAMEPLAY_STATE | NONE | I3B |
+| 60 | MSG_SUMMONING | OPTIONAL | FROZEN | LOCATOR_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 61 | MSG_SUMMONED | OPTIONAL | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 62 | MSG_SPSUMMONING | OPTIONAL | FROZEN | LOCATOR_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 63 | MSG_SPSUMMONED | OPTIONAL | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 64 | MSG_FLIPSUMMONING | OPTIONAL | FROZEN | LOCATOR_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 65 | MSG_FLIPSUMMONED | OPTIONAL | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 70 | MSG_CHAINING | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_MUTATING | NONE | CREATE_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 71 | MSG_CHAINED | REQUIRED | FROZEN | NONE | STATE_MUTATING | NONE | RETAIN_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 72 | MSG_CHAIN_SOLVING | REQUIRED | FROZEN | NONE | STATE_MUTATING | NONE | RETAIN_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 73 | MSG_CHAIN_SOLVED | REQUIRED | FROZEN | NONE | STATE_MUTATING | NONE | RETAIN_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 74 | MSG_CHAIN_END | REQUIRED | FROZEN | NONE | STATE_MUTATING | NONE | RELEASE_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 75 | MSG_CHAIN_NEGATED | REQUIRED | FROZEN | NONE | STATE_MUTATING | NONE | RETAIN_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 76 | MSG_CHAIN_DISABLED | REQUIRED | FROZEN | NONE | STATE_MUTATING | NONE | RETAIN_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 80 | MSG_CARD_SELECTED | OPTIONAL | FROZEN | LOCATOR_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 81 | MSG_RANDOM_SELECTED | OPTIONAL | UNFROZEN | LOCATOR_MAPPED | KNOWLEDGE_MUTATING | DESTROY_IF_AMBIGUOUS | INVALIDATE_OR_REBIND | KNOWLEDGE_BOUNDARY | NONE | I3C |
+| 83 | MSG_BECOME_TARGET | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_MUTATING | NONE | CREATE_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 90 | MSG_DRAW | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 91 | MSG_DAMAGE | REQUIRED | FROZEN | PLAYER_MAPPED | STATE_MUTATING | NONE | NONE | GAMEPLAY_STATE | NONE | I3B |
+| 92 | MSG_RECOVER | REQUIRED | FROZEN | PLAYER_MAPPED | STATE_MUTATING | NONE | NONE | GAMEPLAY_STATE | NONE | I3B |
+| 93 | MSG_EQUIP | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_MUTATING | NONE | CREATE_RELATION | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 94 | MSG_LPUPDATE | REQUIRED | FROZEN | PLAYER_MAPPED | STATE_MUTATING | NONE | NONE | GAMEPLAY_STATE | NONE | I3B |
+| 95 | MSG_UNEQUIP | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_MUTATING | NONE | RELEASE_RELATION | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 96 | MSG_CARD_TARGET | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_MUTATING | NONE | CREATE_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 97 | MSG_CANCEL_TARGET | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_MUTATING | NONE | RELEASE_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 100 | MSG_PAY_LPCOST | REQUIRED | FROZEN | PLAYER_MAPPED | STATE_MUTATING | NONE | NONE | GAMEPLAY_STATE | NONE | I3B |
+| 101 | MSG_ADD_COUNTER | OPTIONAL | FROZEN | LOCATOR_MAPPED | STATE_MUTATING | NONE | REFERENCE | GAMEPLAY_STATE | NONE | I3B |
+| 102 | MSG_REMOVE_COUNTER | OPTIONAL | FROZEN | LOCATOR_MAPPED | STATE_MUTATING | NONE | REFERENCE | GAMEPLAY_STATE | NONE | I3B |
+| 110 | MSG_ATTACK | OPTIONAL | FROZEN | LOCATOR_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 111 | MSG_BATTLE | OPTIONAL | FROZEN | LOCATOR_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 112 | MSG_ATTACK_DISABLED | OPTIONAL | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | NONE | PRESENTATION_ONLY | NONE | I3B |
+| 113 | MSG_DAMAGE_STEP_START | OPTIONAL | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | NONE | PRESENTATION_ONLY | NONE | I3B |
+| 114 | MSG_DAMAGE_STEP_END | OPTIONAL | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | NONE | PRESENTATION_ONLY | NONE | I3B |
+| 120 | MSG_MISSED_EFFECT | OPTIONAL | FROZEN | LOCATOR_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 121 | MSG_BE_CHAIN_TARGET | OPTIONAL | UNFROZEN | LOCATOR_MAPPED | STATE_MUTATING | NONE | CREATE_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 122 | MSG_CREATE_RELATION | OPTIONAL | UNFROZEN | LOCATOR_MAPPED | STATE_MUTATING | NONE | CREATE_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 123 | MSG_RELEASE_RELATION | OPTIONAL | UNFROZEN | LOCATOR_MAPPED | STATE_MUTATING | NONE | RELEASE_RELATION | GAMEPLAY_STATE | NONE | I3B |
+| 130 | MSG_TOSS_COIN | OPTIONAL | FROZEN | PLAYER_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 131 | MSG_TOSS_DICE | OPTIONAL | FROZEN | PLAYER_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 132 | MSG_ROCK_PAPER_SCISSORS | UNSUPPORTED_FAIL_CLOSED | UNFROZEN | NONE | UNSUPPORTED_FAIL_CLOSED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED_FAIL_CLOSED | NONE | I3A |
+| 133 | MSG_HAND_RES | UNSUPPORTED_FAIL_CLOSED | UNFROZEN | NONE | UNSUPPORTED_FAIL_CLOSED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED_FAIL_CLOSED | NONE | I3A |
+| 140 | MSG_ANNOUNCE_RACE | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 141 | MSG_ANNOUNCE_ATTRIB | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 142 | MSG_ANNOUNCE_CARD | UNSUPPORTED_FAIL_CLOSED | UNFROZEN | NONE | UNSUPPORTED_FAIL_CLOSED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED_FAIL_CLOSED | NONE | I3A |
+| 143 | MSG_ANNOUNCE_NUMBER | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I5 |
+| 160 | MSG_CARD_HINT | OPTIONAL | FROZEN | LOCATOR_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3C |
+| 161 | MSG_TAG_SWAP | UNSUPPORTED_FAIL_CLOSED | UNFROZEN | NONE | UNSUPPORTED_FAIL_CLOSED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED_FAIL_CLOSED | NONE | I3A |
+| 162 | MSG_RELOAD_FIELD | OPTIONAL | UNFROZEN | NONE | STATE_AND_KNOWLEDGE_MUTATING | DESTROY_IF_AMBIGUOUS | INVALIDATE_OR_REBIND | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 163 | MSG_AI_NAME | OUT_OF_SCOPE | UNFROZEN | UI_ONLY | MUST_CONSUME_NO_STATE | NONE | NONE | OUT_OF_SCOPE | NONE | UI_ONLY |
+| 164 | MSG_SHOW_HINT | OUT_OF_SCOPE | UNFROZEN | UI_ONLY | MUST_CONSUME_NO_STATE | NONE | NONE | OUT_OF_SCOPE | NONE | UI_ONLY |
+| 165 | MSG_PLAYER_HINT | OPTIONAL | FROZEN | PLAYER_MAPPED | MUST_CONSUME_NO_STATE | NONE | REFERENCE | PRESENTATION_ONLY | NONE | I3B |
+| 170 | MSG_MATCH_KILL | UNSUPPORTED_FAIL_CLOSED | FROZEN | NONE | UNSUPPORTED_FAIL_CLOSED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED_FAIL_CLOSED | NONE | I3A |
+| 180 | MSG_CUSTOM_MSG | UNSUPPORTED_FAIL_CLOSED | UNFROZEN | NONE | UNSUPPORTED_FAIL_CLOSED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED_FAIL_CLOSED | NONE | I3A |
+| 190 | MSG_REMOVE_CARDS | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | DESTROY_IF_AMBIGUOUS | DESTROY | GAMEPLAY_STATE | NONE | I3C |
 
-For every `REQUIRED` or `OPTIONAL` entry, the future owner must freeze the
-exact modern field layout and strict length/count behavior before implementing
-it. An entry marked `OUT_OF_SCOPE` or `UNSUPPORTED_FAIL_CLOSED` is never
-silently skipped.
+A FROZEN layout has an exact modern V1 field sequence and length/count rule in the JSON layout_catalog. An UNFROZEN layout is not a speculative codec and fails closed until its owning future slice freezes it.
 
 ## 17. Ordered I3 implementation slices
 
 The following are separate future tasks. I3A0 does not authorize any of them.
+The frozen order is:
+
+```text
+I3A → I3B → I3C0 → I3C → I3D0 → I3D
+```
 
 ### I3A — GAME_MSG foundation and perspective establishment
 
@@ -645,7 +752,8 @@ Outputs: canonical participant/zone/LP/turn/phase/field/chain/public-relation
 mirror values with explicit unknowns and deterministic state transitions.
 
 Initial message families: `MSG_START`, `MSG_UPDATE_DATA`, `MSG_UPDATE_CARD`,
-`MSG_MOVE`, `MSG_POS_CHANGE`, `MSG_SET`, `MSG_SWAP`, `MSG_NEW_TURN`,
+`MSG_MOVE`, `MSG_POS_CHANGE`, `MSG_SET` (consume-only event; no mirror
+mutation), `MSG_SWAP`, `MSG_NEW_TURN`,
 `MSG_NEW_PHASE`, LP families, required chain families, and required public
 target/equipment families listed in the inventory.
 
@@ -659,12 +767,34 @@ candidate construction, model input, and legality recomputation.
 Stop condition: the mirror is not published when a required transition is
 unproven or ambiguous.
 
+### I3C0 — semantic-locator codec freeze (documentation only)
+
+Owner: I3 contract governance. This is a documentation-only prerequisite and
+does not implement a codec or a knowledge reducer.
+
+The I3C0 contract must freeze, with exact golden bytes:
+
+- locator identity domain and schema/version encoding;
+- participant, zone, slot, and lifecycle enum codes;
+- integer widths and endian order;
+- creation-ordinal and vector-count encoding;
+- explicit optional, unknown, destroyed, and replacement representation;
+- duplicate-entity handling; and
+- the locator hash algorithm and prefix, if a digest is part of the locator
+  identity.
+
+The codec must be independent of raw protocol addresses, pointers, object
+allocation, PID, time, task/thread scheduling, filesystem paths, hash-map
+iteration, and TCP chunking. I3C0 adds no production code and leaves I3
+implementation gates `NOT_RUN`.
+
 ### I3C — card knowledge and semantic locators
 
 Owner: I3 knowledge/identity subsystem.
 
-Inputs: I3B mirror transitions, visible query/reveal facts, and knowledge-boundary
-messages such as shuffle, reverse, remove, and confirm families.
+Inputs: I3B mirror transitions, the accepted I3C0 locator codec contract,
+visible query/reveal facts, and knowledge-boundary messages such as shuffle,
+reverse, remove, and confirm families.
 
 Outputs: explicit card knowledge union, lifecycle-safe mirror locators, and
 canonical invalidation/replacement events.
@@ -680,14 +810,36 @@ prompt projection, model input, and response binding.
 Stop condition: any identity continuity that is not independently proven is
 destroyed and represented as unknown; no best-effort rebind is allowed.
 
+### I3D0 — public-projection identity/codec freeze (documentation only)
+
+Owner: I3 contract governance. This is a documentation-only prerequisite after
+I3C and before I3D; it does not implement projection or identity code.
+
+The I3D0 contract must freeze, with exact golden bytes and paired-world
+evidence:
+
+- projection identity domain and schema/version encoding;
+- participant, zone, entity, relationship, and locator-table field order;
+- integer widths, endian order, enum codes, vector ordering, and count rules;
+- optional, unknown, and knowledge-union encoding; and
+- the exact `public_projection_id` hash algorithm and prefix.
+
+The frozen codec must exclude raw protocol bytes/offsets, private-control
+values, hidden opponent identities, execution metadata, response bindings, and
+model-derived values. It must not claim byte equality with OCGForge
+`PlayerObservation`. I3D0 adds no production code and leaves I3 implementation
+gates `NOT_RUN`.
+
 ### I3D — PublicContractProjection and privacy acceptance
 
 Owner: I3 public projection/identity boundary.
 
-Inputs: only the accepted perspective-safe mirror and canonical locator table.
+Inputs: only the accepted perspective-safe mirror, the accepted I3C0 locator
+codec, and the accepted I3D0 projection identity/codec contract.
 
-Outputs: versioned public projection bytes/value objects, public locator table,
-and separate public projection identity.
+Outputs: versioned public projection value objects, canonical bytes, public
+locator table, and separate public projection identity exactly as frozen by
+I3D0. I3D makes no new byte-level identity decision.
 
 Required negative tests include all information-flow rows marked non-public,
 paired hidden worlds A–E, raw metadata scan, projection mutation/aliasing,
@@ -712,7 +864,7 @@ I3-G03  MSG_START establishes final perspective exactly = NOT_RUN
 I3-G04  perspective does not depend on lobby inference = NOT_RUN
 I3-G05  supported GAME_MSG decoding is deterministic under chunking = NOT_RUN
 I3-G06  unknown/malformed state-relevant messages fail closed = NOT_RUN
-I3-G07  state transition legality/invariants hold = NOT_RUN
+I3-G07  state transition structural invariants hold = NOT_RUN
 I3-G08  hidden opponent identities do not enter public projection = NOT_RUN
 I3-G09  knowledge destruction removes stale hidden identity continuity = NOT_RUN
 I3-G10  semantic locators are deterministic and perspective-safe = NOT_RUN

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement the separately reviewable I3A–I3D gameplay-message, perspective, knowledge, locator, and public-projection slices without introducing a second rules authority or hidden-information leak.
+**Goal:** Specify and later implement the separately reviewable I3A–I3D gameplay-message, perspective, knowledge, locator, and public-projection slices, with the I3C0/I3D0 byte-codec freezes preceding their implementations, without introducing a second rules authority or hidden-information leak.
 
 **Architecture:** A future platform-neutral Gameplay layer consumes one claimed I2 handoff, processes pending bytes before new reads, decodes only the modern pinned GAME_MSG stream, and owns a single `PerspectiveStateMirror`. A separate projection boundary converts only accepted perspective-safe values to `PublicContractProjectionV1`; private response binding, model input, and audit traces remain outside I3.
 
@@ -11,6 +11,7 @@
 ---
 
 Execution status: CONTRACT_FREEZE_ONLY; all implementation tasks remain `NOT_RUN` and unauthorized.
+Frozen slice order: `I3A → I3B → I3C0 → I3C → I3D0 → I3D`.
 
 ## Frozen inputs and non-negotiable boundaries
 
@@ -18,7 +19,7 @@ Execution status: CONTRACT_FREEZE_ONLY; all implementation tasks remain `NOT_RUN
 - Inventory: `ocgforge-ignis.game_message_support.v1`.
 - Runtime: EDOPro `30935e847165a9ef0e547fb51a43f36168fab7c7`, ocgcore gitlink `46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57`.
 - I2 handoff: `FINAL_GAMEPLAY_PERSPECTIVE=UNRESOLVED_AT_I2_HANDOFF`.
-- I3 production is not authorized by this plan. Each I3A–I3D slice requires a new explicit task, its own branch/commit/PR, focused gates, independent review, and a stop.
+- I3 production is not authorized by this plan. The frozen sequence is `I3A → I3B → I3C0 → I3C → I3D0 → I3D`; each implementation or documentation-freeze slice requires a new explicit task, its own branch/commit/PR, focused gates, independent review, and a stop.
 - EDOPro remains the sole rules/legal authority. I3 never recomputes legality, selects a prompt answer, creates candidates, scores a model, or binds a response.
 - `ANNOUNCE_CARD`, Tag/Relay, Match/Siding, observer gameplay, reconnect, public servers, IPC, WPF, and model integration remain fail-closed or out of scope.
 
@@ -60,7 +61,7 @@ dotnet run --project tests/OCGForge.Ignis.Gameplay.Tests/OCGForge.Ignis.Gameplay
 
 Expected result: the future Gameplay project/types do not exist or the wished-for decoder contract is not implemented. Do not treat missing I3 production code as a passing gate.
 
-- [ ] **Step 3: Implement only the strict modern envelope.** The decoder consumes the I1-preserved GAME_MSG payload as `u8 message_id + message payload`, uses explicit little-endian reads, and returns one of `Success`, `NeedMoreData`, or a stable typed failure. It must consume exactly one message and never parse an I4/I5 prompt beyond identifying its boundary. It must not repair a length, skip an unknown message, or fall back to a legacy layout.
+- [ ] **Step 3: Implement only the strict modern envelope.** The decoder consumes the complete I1-preserved GAME_MSG payload as `u8 message_id + message payload`, uses explicit little-endian reads, and returns `Success`, `UNSUPPORTED_MESSAGE`, or `MALFORMED_GAME_MESSAGE` (or equivalent stable typed values). The inner decoder never returns `NeedMoreData`: underflow in a complete outer `STOC_GAME_MSG` payload is malformed. Only I1 may report `NeedMoreData` while accumulating an incomplete outer frame, and the inner decoder never borrows bytes from a following frame. It must consume exactly one message and never parse an I4/I5 prompt beyond identifying its boundary. It must not repair a length, skip an unknown message, or fall back to a legacy layout.
 
 - [ ] **Step 4: Add exact `MSG_START` establishment.** Accept only an exact 18-byte inner message:
 
@@ -97,15 +98,42 @@ host flag, RPS outcome, or TP choice.
 
 - [ ] **Step 2: Implement a single-owner reducer.** Consume only I3A validated messages. Use fixed participant and zone order, explicit state transitions, exact source/destination validation, and immutable result snapshots. `MSG_UPDATE_DATA` and `MSG_UPDATE_CARD` may publish only query fields proven by the modern query stream; unrecognized flags and incomplete query records fail closed.
 
-- [ ] **Step 3: Implement required public state families.** Cover the inventory's I3B-required families: `MSG_START`, `MSG_WIN`, `MSG_UPDATE_DATA`, `MSG_UPDATE_CARD`, `MSG_MOVE`, `MSG_POS_CHANGE`, `MSG_SET`, `MSG_SWAP`, `MSG_NEW_TURN`, `MSG_NEW_PHASE`, LP changes, required chain messages, target relations, and equipment relations. Keep prompt families at the I4/I5 boundary.
+- [ ] **Step 3: Implement required public state families.** Cover the inventory's I3B-required families: `MSG_START`, `MSG_WIN`, `MSG_UPDATE_DATA`, `MSG_UPDATE_CARD`, `MSG_MOVE`, `MSG_POS_CHANGE`, `MSG_SET` as a consume-only presentation event with no mirror mutation, `MSG_SWAP`, `MSG_NEW_TURN`, `MSG_NEW_PHASE`, LP changes, required chain messages, target relations, and equipment relations. Keep prompt families at the I4/I5 boundary and do not apply presentation/summon notifications a second time when MOVE/query messages own the state change.
 
-- [ ] **Step 4: Add RED/green failure coverage.** Reject wrong player mapping, unknown locators, impossible zone/controller/position changes, illegal duplicate chain events, arithmetic overflow/underflow, impossible phase/turn order, and state-capacity failure. Do not mutate or publish a partial mirror on any rejected transition.
+- [ ] **Step 4: Add RED/green failure coverage.** Reject wrong player mapping, unknown locators, structurally contradictory zone/controller/position references, duplicate transport processing, arithmetic overflow/underflow, unsupported phase values, and state-capacity failure. Do not mutate or publish a partial mirror on any rejected transition. Do not reimplement expected turn alternation, phase sequencing, skipped-phase legality, extra-turn legality, or another Yu-Gi-Oh! rules check; `MSG_NEW_TURN` and `MSG_NEW_PHASE` are authoritative updates.
 
 - [ ] **Step 5: Verify chunking and process determinism.** Feed the same validated message stream as one message, one byte at a time, complete-frame chunks, and fixed irregular chunks. Compare mirror values, event order, and semantic identity; exclude transport chunk counts and timing from all comparisons.
 
 - [ ] **Step 6: Stop.** Do not add knowledge-destroying policy beyond explicit hooks, public projection, candidates, or response selection. Commit and review I3B separately.
 
-## Task 3: I3C card knowledge and semantic locators
+## Task 3: I3C0 semantic-locator codec freeze (documentation only)
+
+This is a separate contract-freeze task. It creates no production project or
+runtime implementation and must be independently reviewed before I3C.
+
+**Files:**
+
+- Modify the owning I3 design/spec document only.
+- Add no C# source, project, fixture, or runtime dependency.
+
+- [ ] **Step 1: Freeze the locator identity domain.** Define the exact locator
+  domain tag, schema/version bytes, semantic participant and zone enum codes,
+  slot/sequence widths, endian order, creation-ordinal encoding, and explicit
+  optional/unknown encoding. Do not use raw protocol addresses as public
+  identity.
+- [ ] **Step 2: Freeze canonical locator bytes.** Define the complete field
+  order, vector count encoding, duplicate-entity handling, lifecycle
+  create/move/rebind/destroy representation, and hash algorithm/prefix. Every
+  byte must have one normative semantic owner; no map iteration, object
+  identity, PID, time, path, or transport metadata is allowed.
+- [ ] **Step 3: Add codec-freeze evidence.** Add golden byte vectors and
+  metamorphic cases for equal semantic locators, destroyed hidden locators,
+  duplicate public card codes, and ordering changes that are not semantic.
+  Leave all implementation gates `NOT_RUN`.
+- [ ] **Step 4: Stop.** I3C0 does not implement the codec or the knowledge
+  reducer. A separate implementation authorization is required after review.
+
+## Task 4: I3C card knowledge and semantic locators
 
 **Files:**
 
@@ -125,9 +153,33 @@ host flag, RPS outcome, or TP choice.
 
 - [ ] **Step 5: Verify I3C.** Run all I3B tests plus paired hidden-world fixtures A–E, fresh-process output comparison, no-secret scan, no-control-metadata scan, and explicit resource-failure tests. Do not add probability, archetype inference, elimination, or hidden-deck reconstruction.
 
-- [ ] **Step 6: Stop.** Do not implement `PublicContractProjectionV1` or any model-facing identity in the same task. Commit and review I3C separately.
+- [ ] **Step 6: Stop.** Do not implement the locator codec, `PublicContractProjectionV1`, or any model-facing identity in the same task. I3C consumes only the accepted I3C0 codec contract and is reviewed separately.
 
-## Task 4: I3D PublicContractProjection and paired-world acceptance
+## Task 5: I3D0 public-projection identity/codec freeze (documentation only)
+
+This is a separate contract-freeze task after I3C and before I3D. It creates no
+production project or runtime implementation.
+
+**Files:**
+
+- Modify the owning I3 design/spec document only.
+- Add no C# source, project, fixture, or runtime dependency.
+
+- [ ] **Step 1: Freeze the projection domain.** Define the exact projection
+  domain tag, schema/version bytes, participant/zone/entity field order,
+  integer widths, endian order, enum codes, and explicit optional/unknown and
+  knowledge-union encodings.
+- [ ] **Step 2: Freeze canonical projection bytes.** Define vector count and
+  ordering rules, relation encoding, the public locator table encoding, and
+  the exact public identity hash algorithm and prefix. Exclude raw protocol,
+  private-control, hidden-opponent, execution, and model-derived fields.
+- [ ] **Step 3: Add codec-freeze evidence.** Add golden projection bytes and
+  paired-hidden-world metamorphic cases A–E, including process-restart and
+  chunking invariance. Leave all implementation gates `NOT_RUN`.
+- [ ] **Step 4: Stop.** I3D0 does not implement projection or identity code. A
+  separate implementation authorization is required after review.
+
+## Task 6: I3D PublicContractProjection and paired-world acceptance
 
 **Files:**
 
@@ -140,7 +192,7 @@ host flag, RPS outcome, or TP choice.
 
 - [ ] **Step 2: Implement the projection boundary.** Consume only the accepted mirror and locator table. Emit `PublicContractProjectionV1` plus a separate `public_projection_id`; never reuse a transport/provenance digest as gameplay identity. Reject publication when a required mirror field is ambiguous or when an unclassified field would enter the output.
 
-- [ ] **Step 3: Freeze canonical encoding.** Encode schema ID first, then `Self`/`Opponent`, fixed zone order, ascending public slots, declared card knowledge/property order, chain/public relationships in semantic order, and the public locator table in locator creation order. Do not use map iteration or mutable aliases.
+- [ ] **Step 3: Consume the accepted I3D0 codec.** Encode only according to the separately accepted projection domain, field order, optional/knowledge encoding, locator-table encoding, and identity hash/prefix. I3D must not make new byte-level identity decisions. Do not use map iteration or mutable aliases.
 
 - [ ] **Step 4: Add paired-hidden-world acceptance.** Implement fixture classes A–E: different hidden opponent hands, different hidden deck order, reveal-then-hide knowledge destruction, duplicate equal-code public cards, and TCP chunking variants. Require byte-identical projection, public locator table, and public identity for semantically equal public worlds.
 
@@ -148,7 +200,7 @@ host flag, RPS outcome, or TP choice.
 
 - [ ] **Step 6: Stop.** Do not implement I4/I5 prompt projection, private response binding, model input, runner IPC, checkpoint binding, or OCGForge cross-oracle.
 
-## Task 5: I3 provenance, CI, and acceptance evidence
+## Task 7: I3 provenance, CI, and acceptance evidence
 
 **Files:**
 
@@ -164,7 +216,7 @@ host flag, RPS outcome, or TP choice.
 
 - [ ] **Step 4: Scope-audit before each slice commit.** Reject `.dll`, `.exe`, CDB, deck, checkpoint, copied upstream source, public endpoint, I4/I5 candidate type, model/IPC/UI code, or a Protocol→Gameplay reverse dependency.
 
-- [ ] **Step 5: Commit one slice at a time.** Use separate branches and PRs for I3A, I3B, I3C, and I3D. Do not combine slices or merge without independent review.
+- [ ] **Step 5: Commit one slice at a time.** Use separate branches and PRs for I3A, I3B, I3C0, I3C, I3D0, and I3D. Do not combine slices or merge without independent review.
 
 ## I3A0 current verification boundary
 
