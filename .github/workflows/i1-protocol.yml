@@ -1,4 +1,4 @@
-name: I1 deterministic CTOS STOC wire codec
+name: I1 protocol and I2 pre-duel client
 
 on:
   pull_request:
@@ -8,6 +8,7 @@ on:
     branches:
       - main
       - chris/i1-deterministic-wire-codec
+      - chris/i2-connection-lobby-state-machine
 
 permissions:
   contents: read
@@ -35,3 +36,15 @@ jobs:
 
       - name: Run deterministic protocol tests
         run: dotnet run --project tests/OCGForge.Ignis.Protocol.Tests/OCGForge.Ignis.Protocol.Tests.csproj --configuration Release --no-build --no-restore
+
+      - name: Restore I2 client tests
+        run: dotnet restore tests/OCGForge.Ignis.Client.Tests/OCGForge.Ignis.Client.Tests.csproj
+
+      - name: Build I2 client
+        run: dotnet build src/OCGForge.Ignis.Client/OCGForge.Ignis.Client.csproj --configuration Release --no-restore
+
+      - name: Build I2 client tests
+        run: dotnet build tests/OCGForge.Ignis.Client.Tests/OCGForge.Ignis.Client.Tests.csproj --configuration Release --no-restore
+
+      - name: Run deterministic I2 client tests
+        run: dotnet run --project tests/OCGForge.Ignis.Client.Tests/OCGForge.Ignis.Client.Tests.csproj --configuration Release --no-build --no-restore
