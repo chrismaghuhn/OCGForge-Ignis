@@ -38,8 +38,6 @@ public readonly record struct CtosTpResultPayload(byte Result);
 
 public readonly record struct CtosJoinGamePayload(
     ushort ProtocolVersion,
-    byte Reserved0,
-    byte Reserved1,
     uint GameId,
     string Password,
     ProtocolClientVersion ClientVersion);
@@ -73,7 +71,7 @@ public sealed class CtosUpdateDeckPayload
     internal ReadOnlySpan<uint> SideSpan => sideCards;
 }
 
-public class OpaquePayload
+public class OpaquePayload : IEquatable<OpaquePayload>
 {
     private readonly byte[] bytes;
 
@@ -87,6 +85,26 @@ public class OpaquePayload
     public ReadOnlyMemory<byte> Bytes => bytes;
 
     internal ReadOnlySpan<byte> AsSpan() => bytes;
+
+    public bool Equals(OpaquePayload? other) =>
+        other is not null &&
+        GetType() == other.GetType() &&
+        bytes.AsSpan().SequenceEqual(other.bytes);
+
+    public override bool Equals(object? obj) =>
+        obj is OpaquePayload other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        uint hash = 2166136261;
+        foreach (byte value in bytes)
+        {
+            hash ^= value;
+            hash *= 16777619;
+        }
+
+        return unchecked((int)hash);
+    }
 }
 
 public sealed class CtosResponsePayload : OpaquePayload
@@ -105,36 +123,50 @@ public sealed class StocGameMessagePayload : OpaquePayload
     }
 }
 
-public sealed class StocErrorMessagePayload
+public sealed class StocErrorMessagePayload :
+    IEquatable<StocErrorMessagePayload>
 {
     public StocErrorMessagePayload(
         ErrorType type,
-        byte reserved0,
-        byte reserved1,
-        byte reserved2,
         uint code,
         OpaquePayload additionalPayload)
     {
         ArgumentNullException.ThrowIfNull(additionalPayload);
         Type = type;
-        Reserved0 = reserved0;
-        Reserved1 = reserved1;
-        Reserved2 = reserved2;
         Code = code;
         AdditionalPayload = additionalPayload;
     }
 
     public ErrorType Type { get; }
 
-    public byte Reserved0 { get; }
-
-    public byte Reserved1 { get; }
-
-    public byte Reserved2 { get; }
-
     public uint Code { get; }
 
     public OpaquePayload AdditionalPayload { get; }
+
+    public bool Equals(StocErrorMessagePayload? other) =>
+        other is not null &&
+        Type == other.Type &&
+        Code == other.Code &&
+        AdditionalPayload.Equals(other.AdditionalPayload);
+
+    public override bool Equals(object? obj) =>
+        obj is StocErrorMessagePayload other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        uint hash = 2166136261;
+        hash = (hash ^ (byte)Type) * 16777619;
+        hash = (hash ^ (Code & 0xff)) * 16777619;
+        hash = (hash ^ ((Code >> 8) & 0xff)) * 16777619;
+        hash = (hash ^ ((Code >> 16) & 0xff)) * 16777619;
+        hash = (hash ^ ((Code >> 24) & 0xff)) * 16777619;
+        foreach (byte value in AdditionalPayload.Bytes.Span)
+        {
+            hash = (hash ^ value) * 16777619;
+        }
+
+        return unchecked((int)hash);
+    }
 }
 
 public readonly record struct HostInfoPayload(
@@ -144,9 +176,6 @@ public readonly record struct HostInfoPayload(
     byte DuelRule,
     byte NoCheckDeckContent,
     byte NoShuffleDeck,
-    byte Reserved0,
-    byte Reserved1,
-    byte Reserved2,
     uint StartLp,
     byte StartHand,
     byte DrawCount,
@@ -162,23 +191,15 @@ public readonly record struct HostInfoPayload(
     ushort ExtraRules,
     DeckSizeLimits MainDeck,
     DeckSizeLimits ExtraDeck,
-    DeckSizeLimits SideDeck,
-    byte TrailingReserved0,
-    byte TrailingReserved1);
+    DeckSizeLimits SideDeck);
 
 public readonly record struct StocHandResultPayload(byte Result1, byte Result2);
 
 public readonly record struct StocTypeChangePayload(byte Type);
 
-public readonly record struct StocTimeLimitPayload(
-    byte Player,
-    byte Reserved,
-    ushort LeftTime);
+public readonly record struct StocTimeLimitPayload(byte Player, ushort LeftTime);
 
-public readonly record struct StocHsPlayerEnterPayload(
-    string Name,
-    byte Position,
-    byte Reserved);
+public readonly record struct StocHsPlayerEnterPayload(string Name, byte Position);
 
 public readonly record struct StocHsPlayerChangePayload(byte Status);
 

@@ -29,8 +29,6 @@ public static class PacketPayloadCodec
     {
         byte[] payload = new byte[JoinGamePayloadLength];
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(0, 2), value.ProtocolVersion);
-        payload[2] = value.Reserved0;
-        payload[3] = value.Reserved1;
         BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4, 4), value.GameId);
         FixedUtf16String.Encode(
                 value.Password,
@@ -56,8 +54,6 @@ public static class PacketPayloadCodec
             ? PayloadDecodeResults.Success(
                 new CtosJoinGamePayload(
                     BinaryPrimitives.ReadUInt16LittleEndian(payload[..2]),
-                    payload[2],
-                    payload[3],
                     BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(4, 4)),
                     password.Value,
                     ReadClientVersion(payload, 48)))
@@ -184,6 +180,13 @@ public static class PacketPayloadCodec
     public static byte[] EncodeStocErrorMessage(StocErrorMessagePayload value)
     {
         ArgumentNullException.ThrowIfNull(value);
+        if (!IsKnownErrorType((byte)value.Type))
+        {
+            throw new ProtocolCodecException(
+                ProtocolErrorCode.UnknownErrorType,
+                "The error-message type is not part of the frozen V1 set.");
+        }
+
         int payloadLength;
         try
         {
@@ -200,9 +203,6 @@ public static class PacketPayloadCodec
         EnsurePayloadLength(payloadLength);
         byte[] payload = new byte[payloadLength];
         payload[0] = (byte)value.Type;
-        payload[1] = value.Reserved0;
-        payload[2] = value.Reserved1;
-        payload[3] = value.Reserved2;
         BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4, 4), value.Code);
         value.AdditionalPayload.AsSpan().CopyTo(payload.AsSpan(8));
         return payload;
@@ -217,12 +217,15 @@ public static class PacketPayloadCodec
                 ProtocolErrorCode.PayloadLengthMismatch);
         }
 
+        if (!IsKnownErrorType(payload[0]))
+        {
+            return PayloadDecodeResults.Failure<StocErrorMessagePayload>(
+                ProtocolErrorCode.UnknownErrorType);
+        }
+
         return PayloadDecodeResults.Success(
             new StocErrorMessagePayload(
                 (ErrorType)payload[0],
-                payload[1],
-                payload[2],
-                payload[3],
                 BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(4, 4)),
                 new OpaquePayload(payload[8..])));
     }
@@ -236,9 +239,6 @@ public static class PacketPayloadCodec
         payload[6] = value.DuelRule;
         payload[7] = value.NoCheckDeckContent;
         payload[8] = value.NoShuffleDeck;
-        payload[9] = value.Reserved0;
-        payload[10] = value.Reserved1;
-        payload[11] = value.Reserved2;
         BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(12, 4), value.StartLp);
         payload[16] = value.StartHand;
         payload[17] = value.DrawCount;
@@ -255,8 +255,6 @@ public static class PacketPayloadCodec
         WriteDeckSize(payload, 54, value.MainDeck);
         WriteDeckSize(payload, 58, value.ExtraDeck);
         WriteDeckSize(payload, 62, value.SideDeck);
-        payload[66] = value.TrailingReserved0;
-        payload[67] = value.TrailingReserved1;
         return payload;
     }
 
@@ -277,9 +275,6 @@ public static class PacketPayloadCodec
                 payload[6],
                 payload[7],
                 payload[8],
-                payload[9],
-                payload[10],
-                payload[11],
                 BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(12, 4)),
                 payload[16],
                 payload[17],
@@ -295,9 +290,7 @@ public static class PacketPayloadCodec
                 BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(52, 2)),
                 ReadDeckSize(payload, 54),
                 ReadDeckSize(payload, 58),
-                ReadDeckSize(payload, 62),
-                payload[66],
-                payload[67]));
+                ReadDeckSize(payload, 62)));
     }
 
     public static byte[] EncodeStocHandResult(StocHandResultPayload value) =>
@@ -326,7 +319,6 @@ public static class PacketPayloadCodec
     {
         byte[] payload = new byte[TimeLimitPayloadLength];
         payload[0] = value.Player;
-        payload[1] = value.Reserved;
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2, 2), value.LeftTime);
         return payload;
     }
@@ -337,7 +329,6 @@ public static class PacketPayloadCodec
             ? PayloadDecodeResults.Success(
                 new StocTimeLimitPayload(
                     payload[0],
-                    payload[1],
                     BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(2, 2))))
             : PayloadDecodeResults.Failure<StocTimeLimitPayload>(
                 ExactLengthError(payload.Length, TimeLimitPayloadLength));
@@ -350,7 +341,6 @@ public static class PacketPayloadCodec
                 ProtocolContractV1.FixedTextCodeUnits)
             .CopyTo(payload, 0);
         payload[40] = value.Position;
-        payload[41] = value.Reserved;
         return payload;
     }
 
@@ -368,7 +358,7 @@ public static class PacketPayloadCodec
             ProtocolContractV1.FixedTextCodeUnits);
         return name.IsSuccess
             ? PayloadDecodeResults.Success(
-                new StocHsPlayerEnterPayload(name.Value, payload[40], payload[41]))
+                new StocHsPlayerEnterPayload(name.Value, payload[40]))
             : PayloadDecodeResults.Failure<StocHsPlayerEnterPayload>(name.Error);
     }
 
@@ -437,6 +427,10 @@ public static class PacketPayloadCodec
         actual > expected
             ? ProtocolErrorCode.TrailingPayloadBytes
             : ProtocolErrorCode.PayloadLengthMismatch;
+
+    private static bool IsKnownErrorType(byte rawType) =>
+        rawType >= (byte)ErrorType.JoinError &&
+        rawType <= (byte)ErrorType.VersionError2;
 
     private static void WriteClientVersion(
         Span<byte> destination,

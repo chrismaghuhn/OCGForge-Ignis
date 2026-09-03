@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text;
 
 namespace OCGForge.Ignis.Protocol;
@@ -75,30 +76,32 @@ public static class FixedUtf16String
                     : ProtocolErrorCode.PayloadLengthMismatch);
         }
 
+        int terminatorOffset = -1;
+        for (int offset = 0; offset < expectedLength; offset += 2)
+        {
+            if (BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(offset, 2)) == 0)
+            {
+                terminatorOffset = offset;
+                break;
+            }
+        }
+
+        if (terminatorOffset < 0)
+        {
+            return PayloadDecodeResults.Failure<string>(
+                ProtocolErrorCode.InvalidFixedString);
+        }
+
         string decoded;
         try
         {
-            decoded = LittleEndianUtf16.GetString(payload);
+            decoded = LittleEndianUtf16.GetString(payload[..terminatorOffset]);
         }
         catch (DecoderFallbackException)
         {
             return PayloadDecodeResults.Failure<string>(ProtocolErrorCode.InvalidFixedString);
         }
 
-        int terminator = decoded.IndexOf('\0');
-        if (terminator < 0)
-        {
-            return PayloadDecodeResults.Success(decoded);
-        }
-
-        for (int index = terminator + 1; index < decoded.Length; index++)
-        {
-            if (decoded[index] != '\0')
-            {
-                return PayloadDecodeResults.Failure<string>(ProtocolErrorCode.InvalidFixedString);
-            }
-        }
-
-        return PayloadDecodeResults.Success(decoded[..terminator]);
+        return PayloadDecodeResults.Success(decoded);
     }
 }

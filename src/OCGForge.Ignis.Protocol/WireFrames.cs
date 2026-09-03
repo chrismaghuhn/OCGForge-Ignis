@@ -60,9 +60,13 @@ public static class WireFrameCodec
         return Encode((byte)type, payload);
     }
 
+    // This method returns a raw frame after structural direction/type checks.
+    // Use PacketPayloadValidator for the type-aware validated packet boundary.
     public static FrameReadResult<CtosFrame> TryReadCtos(ReadOnlySpan<byte> buffer) =>
         TryReadCtosCore(buffer);
 
+    // This method returns a raw frame after structural direction/type checks.
+    // Use PacketPayloadValidator for the type-aware validated packet boundary.
     public static FrameReadResult<StocFrame> TryReadStoc(ReadOnlySpan<byte> buffer) =>
         TryReadStocCore(buffer);
 

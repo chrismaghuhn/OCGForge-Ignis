@@ -105,14 +105,15 @@ Frame prefix and type:
 Payload hex:
 
 ~~~text
-54 13 aa bb 44 33 22 11
+54 13 00 00 44 33 22 11
 72 00 6f 00 6f 00 6d 00 2d 00 73 00 65 00 63 00 72 00 65 00 74 00
 00 00 x 9
 29 00 0b 00
 ~~~
 
-Expected decode: protocol version 0x1354, reserved bytes aa bb, game ID
-0x11223344, password room-secret, and client/core version 41.0/11.0.
+Expected decode: protocol version 0x1354, game ID 0x11223344, password
+room-secret, and client/core version 41.0/11.0. The two alignment bytes are
+canonical zero padding.
 
 ### 7. CTOS update deck
 
@@ -159,11 +160,11 @@ Packet type: STOC_ERROR_MSG, 0x02
 Frame hex:
 
 ~~~text
-0b 00 02 02 aa bb cc 44 33 22 11 55 66
+0b 00 02 02 00 00 00 44 33 22 11 55 66
 ~~~
 
-Expected decode: error type DeckError, reserved bytes aa bb cc, raw code
-0x11223344, and opaque additional payload 55 66.
+Expected decode: error type DeckError, raw code 0x11223344, and opaque
+additional payload 55 66. The three alignment bytes are canonical zero padding.
 
 ### 11. STOC join game / HostInfo
 
@@ -178,7 +179,7 @@ Frame prefix and type:
 Payload hex:
 
 ~~~text
-04 03 02 01 05 06 07 08 09 0a 0b 0c
+04 03 02 01 05 06 07 08 09 00 00 00
 10 0f 0e 0d 11 12 14 13 18 17 16 15
 1c 1b 1a 19 1d 1e 1f 20
 24 23 22 21 28 27 26 25 2c 2b 2a 29
@@ -188,7 +189,8 @@ Payload hex:
 ~~~
 
 Expected decode: the exact 68-byte mechanically aligned HostInfo payload,
-including reserved bytes and the three main/extra/side deck-size pairs.
+including canonical zero alignment bytes and the three main/extra/side
+deck-size pairs.
 
 ### 12. STOC hand result
 
@@ -221,10 +223,11 @@ Packet type: STOC_TIME_LIMIT, 0x18
 Frame hex:
 
 ~~~text
-05 00 18 02 aa 34 12
+05 00 18 02 00 34 12
 ~~~
 
-Expected decode: player 0x02, reserved byte aa, remaining time 0x1234.
+Expected decode: player 0x02 and remaining time 0x1234. The alignment byte is
+canonical zero padding.
 
 ### 15. STOC lobby player enter
 
@@ -239,10 +242,11 @@ Frame prefix and type:
 Payload hex:
 
 ~~~text
-50 00 31 00 00 00 x 18 03 cc
+50 00 31 00 00 00 x 18 03 00
 ~~~
 
-Expected decode: name P1, position 0x03, and reserved trailing byte cc.
+Expected decode: name P1 and position 0x03. The trailing alignment byte is
+canonical zero padding.
 
 ### 16. STOC lobby player change
 

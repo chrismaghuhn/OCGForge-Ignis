@@ -99,10 +99,16 @@ implementation was copied.
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | The frozen CTOS and STOC packet IDs and the explicit unsupported STOC IDs are defined as direction-specific numeric constants | 2026-09-03 | numeric constant |
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | CTOS_PlayerInfo, CTOS_JoinGame, CTOS_HandResult, and CTOS_TPResult define the implemented CTOS payload fields and alignment | 2026-09-03 | wire layout |
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | STOC_ErrorMsg, STOC_HandResult, STOC_JoinGame/HostInfo, STOC_TypeChange, STOC_TimeLimit, and lobby payload structs define the implemented STOC fields and alignment | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h and gframe/generic_duel.cpp | Raw C++ payload structs include alignment bytes, and the assigned semantic fields do not guarantee initialization of those bytes | 2026-09-03 | observed behavior |
 | WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | Game/GameClient.cs | Join-game serialization makes the two alignment bytes after the protocol version explicit and writes a fixed UTF-16 password and client version | 2026-09-03 | wire layout |
-| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/bufferio.h | Fixed text fields use UTF-16 code units, reserve a terminating code unit, and zero-fill the fixed field | 2026-09-03 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/bufferio.h | Fixed text fields use UTF-16 code units and write a terminating code unit; the caller-owned remainder of the containing C++ struct is not guaranteed to be zero-filled | 2026-09-03 | wire layout |
 | WindBot | bffe6b62679c8b2fafea8f59740e03a132517da4 | YGOSharp.Network/Utils/BinaryExtensions.cs | Fixed text fields use explicit little-endian UTF-16 with a fixed code-unit width | 2026-09-03 | wire layout |
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp | STOC_GAME_MSG forwards the inner bytes to duel analysis and CTOS_RESPONSE forwards opaque response bytes; I1 preserves both payloads without semantic decoding | 2026-09-03 | observed behavior |
+
+I1 treats C/C++ alignment bytes as transport-only: the raw frame payload
+retains them, the typed semantic DTO consumes and ignores them, and canonical
+encoding emits zero padding. They do not participate in DTO equality or typed
+identity.
 
 No version fact in this ledger is attributed to gframe/ocgapi_constants.h.
 The corrected version facts above are tied only to the exact source paths where

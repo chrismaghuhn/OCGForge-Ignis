@@ -12,7 +12,8 @@ public enum ProtocolErrorCode : byte
     InvalidFixedString = 7,
     UnsupportedVersion = 8,
     TrailingPayloadBytes = 9,
-    IntegerOverflow = 10
+    IntegerOverflow = 10,
+    UnknownErrorType = 11
 }
 
 public enum FrameReadStatus : byte

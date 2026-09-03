@@ -11,11 +11,14 @@ var tests = new (string Name, Action Body)[]
     ("coalesced frames and exact consumption", TestCoalescing),
     ("end-of-stream classification", TestEndOfStream),
     ("fixed UTF-16 strings", TestFixedUtf16Strings),
+    ("fixed UTF-16 tail semantics", TestFixedUtf16TailSemantics),
+    ("padding is non-semantic", TestPaddingIsNonSemantic),
     ("typed payload golden vectors", TestTypedPayloads),
     ("version recognition", TestVersionRecognition),
     ("negative typed payloads", TestNegativePayloads),
     ("unsupported outgoing packet types", TestUnsupportedOutgoingTypes),
-    ("repeated encode/decode determinism", TestDeterminism)
+    ("repeated encode/decode determinism", TestDeterminism),
+    ("type-aware packet validation surface", TestTypeAwareValidation)
 };
 
 int passed = 0;
@@ -359,7 +362,123 @@ static void TestFixedUtf16Strings()
     nonZeroAfterTerminator[4] = (byte)'B';
     PayloadDecodeResult<string> malformed =
         FixedUtf16String.Decode(nonZeroAfterTerminator, 4);
-    Equal(ProtocolErrorCode.InvalidFixedString, malformed.Error);
+    True(malformed.IsSuccess);
+    Equal("A", malformed.Value);
+}
+
+static void TestFixedUtf16TailSemantics()
+{
+    byte[] validTail = new byte[8];
+    validTail[0] = (byte)'A';
+    validTail[4] = (byte)'B';
+    PayloadDecodeResult<string> valid =
+        FixedUtf16String.Decode(validTail, 4);
+    True(valid.IsSuccess);
+    Equal("A", valid.Value);
+
+    byte[] invalidSurrogateTail = new byte[8];
+    invalidSurrogateTail[0] = (byte)'A';
+    invalidSurrogateTail[5] = 0xd8;
+    PayloadDecodeResult<string> invalidSurrogate =
+        FixedUtf16String.Decode(invalidSurrogateTail, 4);
+    True(invalidSurrogate.IsSuccess);
+    Equal("A", invalidSurrogate.Value);
+
+    byte[] noTerminator = new byte[8];
+    noTerminator[0] = (byte)'A';
+    noTerminator[2] = (byte)'B';
+    noTerminator[4] = (byte)'C';
+    noTerminator[6] = (byte)'D';
+    Equal(
+        ProtocolErrorCode.InvalidFixedString,
+        FixedUtf16String.Decode(noTerminator, 4).Error);
+}
+
+static void TestPaddingIsNonSemantic()
+{
+    byte[] timeA = Hex("02 00 34 12");
+    byte[] timeB = Hex("02 7f 34 12");
+    PayloadDecodeResult<StocTimeLimitPayload> decodedTimeA =
+        PacketPayloadCodec.DecodeStocTimeLimit(timeA);
+    PayloadDecodeResult<StocTimeLimitPayload> decodedTimeB =
+        PacketPayloadCodec.DecodeStocTimeLimit(timeB);
+    True(decodedTimeA.IsSuccess);
+    True(decodedTimeB.IsSuccess);
+    Equal(decodedTimeA.Value, decodedTimeB.Value);
+    BytesEqual(timeA, PacketPayloadCodec.EncodeStocTimeLimit(decodedTimeB.Value));
+
+    byte[] joinA = Hex(
+        "54 13 00 00 44 33 22 11 " +
+        "72 00 6f 00 6f 00 6d 00 2d 00 73 00 65 00 63 00 72 00 65 00 74 00 " +
+        "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 " +
+        "29 00 0b 00");
+    byte[] joinB = joinA.ToArray();
+    joinB[2] = 0xaa;
+    joinB[3] = 0xbb;
+    PayloadDecodeResult<CtosJoinGamePayload> decodedJoinA =
+        PacketPayloadCodec.DecodeJoinGame(joinA);
+    PayloadDecodeResult<CtosJoinGamePayload> decodedJoinB =
+        PacketPayloadCodec.DecodeJoinGame(joinB);
+    True(decodedJoinA.IsSuccess);
+    True(decodedJoinB.IsSuccess);
+    Equal(decodedJoinA.Value, decodedJoinB.Value);
+    BytesEqual(joinA, PacketPayloadCodec.EncodeJoinGame(decodedJoinB.Value));
+
+    byte[] errorA = Hex("02 00 00 00 44 33 22 11 55 66");
+    byte[] errorB = errorA.ToArray();
+    errorB[1] = 0xaa;
+    errorB[2] = 0xbb;
+    errorB[3] = 0xcc;
+    PayloadDecodeResult<StocErrorMessagePayload> decodedErrorA =
+        PacketPayloadCodec.DecodeStocErrorMessage(errorA);
+    PayloadDecodeResult<StocErrorMessagePayload> decodedErrorB =
+        PacketPayloadCodec.DecodeStocErrorMessage(errorB);
+    True(decodedErrorA.IsSuccess);
+    True(decodedErrorB.IsSuccess);
+    Equal(decodedErrorA.Value, decodedErrorB.Value);
+    Equal(decodedErrorA.Value.Type, decodedErrorB.Value.Type);
+    Equal(decodedErrorA.Value.Code, decodedErrorB.Value.Code);
+    BytesEqual(
+        decodedErrorA.Value.AdditionalPayload.Bytes.Span,
+        decodedErrorB.Value.AdditionalPayload.Bytes.Span);
+    BytesEqual(
+        errorA,
+        PacketPayloadCodec.EncodeStocErrorMessage(decodedErrorB.Value));
+
+    byte[] hostA = HostGoldenPayload();
+    byte[] hostB = hostA.ToArray();
+    hostB[9] = 0xaa;
+    hostB[10] = 0xbb;
+    hostB[11] = 0xcc;
+    hostB[66] = 0xdd;
+    hostB[67] = 0xee;
+    PayloadDecodeResult<HostInfoPayload> decodedHostA =
+        PacketPayloadCodec.DecodeStocJoinGame(hostA);
+    PayloadDecodeResult<HostInfoPayload> decodedHostB =
+        PacketPayloadCodec.DecodeStocJoinGame(hostB);
+    True(decodedHostA.IsSuccess);
+    True(decodedHostB.IsSuccess);
+    Equal(decodedHostA.Value, decodedHostB.Value);
+    BytesEqual(
+        hostA,
+        PacketPayloadCodec.EncodeStocJoinGame(decodedHostB.Value));
+
+    byte[] playerA = new byte[42];
+    playerA[0] = (byte)'P';
+    playerA[2] = (byte)'1';
+    playerA[40] = 0x03;
+    byte[] playerB = playerA.ToArray();
+    playerB[41] = 0xcc;
+    PayloadDecodeResult<StocHsPlayerEnterPayload> decodedPlayerA =
+        PacketPayloadCodec.DecodeStocHsPlayerEnter(playerA);
+    PayloadDecodeResult<StocHsPlayerEnterPayload> decodedPlayerB =
+        PacketPayloadCodec.DecodeStocHsPlayerEnter(playerB);
+    True(decodedPlayerA.IsSuccess);
+    True(decodedPlayerB.IsSuccess);
+    Equal(decodedPlayerA.Value, decodedPlayerB.Value);
+    BytesEqual(
+        playerA,
+        PacketPayloadCodec.EncodeStocHsPlayerEnter(decodedPlayerB.Value));
 }
 
 static void TestTypedPayloads()
@@ -381,15 +500,13 @@ static void TestTypedPayloads()
 
     CtosJoinGamePayload join = new(
         0x1354,
-        0xaa,
-        0xbb,
         0x11223344,
         "room-secret",
         new ProtocolClientVersion(41, 0, 11, 0));
     byte[] joinBytes = PacketPayloadCodec.EncodeJoinGame(join);
     BytesEqual(
         Hex(
-            "54 13 aa bb 44 33 22 11 " +
+            "54 13 00 00 44 33 22 11 " +
             "72 00 6f 00 6f 00 6d 00 2d 00 73 00 65 00 63 00 72 00 65 00 74 00 " +
             "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 " +
             "29 00 0b 00"),
@@ -430,13 +547,10 @@ static void TestTypedPayloads()
 
     StocErrorMessagePayload error = new(
         ErrorType.DeckError,
-        0xaa,
-        0xbb,
-        0xcc,
         0x11223344,
         new OpaquePayload(Hex("55 66")));
     byte[] errorBytes = PacketPayloadCodec.EncodeStocErrorMessage(error);
-    BytesEqual(Hex("02 aa bb cc 44 33 22 11 55 66"), errorBytes);
+    BytesEqual(Hex("02 00 00 00 44 33 22 11 55 66"), errorBytes);
     PayloadDecodeResult<StocErrorMessagePayload> errorDecoded =
         PacketPayloadCodec.DecodeStocErrorMessage(errorBytes);
     True(errorDecoded.IsSuccess);
@@ -450,9 +564,6 @@ static void TestTypedPayloads()
         PacketPayloadCodec.EncodeStocErrorMessage(
             new StocErrorMessagePayload(
                 errorDecoded.Value.Type,
-                errorDecoded.Value.Reserved0,
-                errorDecoded.Value.Reserved1,
-                errorDecoded.Value.Reserved2,
                 errorDecoded.Value.Code,
                 errorDecoded.Value.AdditionalPayload)));
 
@@ -463,9 +574,6 @@ static void TestTypedPayloads()
         0x07,
         0x08,
         0x09,
-        0x0a,
-        0x0b,
-        0x0c,
         0x0d0e0f10,
         0x11,
         0x12,
@@ -481,13 +589,11 @@ static void TestTypedPayloads()
         0x3536,
         new DeckSizeLimits(0x3738, 0x393a),
         new DeckSizeLimits(0x3b3c, 0x3d3e),
-        new DeckSizeLimits(0x3f40, 0x4142),
-        0x00,
-        0x00);
+        new DeckSizeLimits(0x3f40, 0x4142));
     byte[] hostBytes = PacketPayloadCodec.EncodeStocJoinGame(host);
     BytesEqual(
         Hex(
-            "04 03 02 01 05 06 07 08 09 0a 0b 0c " +
+            "04 03 02 01 05 06 07 08 09 00 00 00 " +
             "10 0f 0e 0d 11 12 14 13 18 17 16 15 " +
             "1c 1b 1a 19 1d 1e 1f 20 " +
             "24 23 22 21 28 27 26 25 2c 2b 2a 29 " +
@@ -512,21 +618,20 @@ static void TestTypedPayloads()
         typeChange,
         PacketPayloadCodec.DecodeStocTypeChange(Hex("a5")).Value);
 
-    StocTimeLimitPayload time = new(0x02, 0xaa, 0x1234);
+    StocTimeLimitPayload time = new(0x02, 0x1234);
     BytesEqual(
-        Hex("02 aa 34 12"),
+        Hex("02 00 34 12"),
         PacketPayloadCodec.EncodeStocTimeLimit(time));
     Equal(
         time,
-        PacketPayloadCodec.DecodeStocTimeLimit(Hex("02 aa 34 12")).Value);
+        PacketPayloadCodec.DecodeStocTimeLimit(Hex("02 00 34 12")).Value);
 
-    StocHsPlayerEnterPayload playerEnter = new("P1", 0x03, 0xcc);
+    StocHsPlayerEnterPayload playerEnter = new("P1", 0x03);
     byte[] playerEnterBytes = PacketPayloadCodec.EncodeStocHsPlayerEnter(playerEnter);
     byte[] playerEnterExpected = new byte[42];
     playerEnterExpected[0] = 0x50;
     playerEnterExpected[2] = 0x31;
     playerEnterExpected[40] = 0x03;
-    playerEnterExpected[41] = 0xcc;
     BytesEqual(playerEnterExpected, playerEnterBytes);
     Equal(
         playerEnter,
@@ -606,6 +711,17 @@ static void TestNegativePayloads()
     Equal(
         ProtocolErrorCode.PayloadLengthMismatch,
         PacketPayloadCodec.DecodeStocErrorMessage(new byte[7]).Error);
+    Equal(
+        11,
+        (byte)PacketPayloadCodec.DecodeStocErrorMessage(
+            Hex("99 00 00 00 00 00 00 00")).Error);
+    ProtocolCodecException unknownError = AssertThrows<ProtocolCodecException>(
+        () => PacketPayloadCodec.EncodeStocErrorMessage(
+            new StocErrorMessagePayload(
+                (ErrorType)0x99,
+                0,
+                new OpaquePayload(ReadOnlySpan<byte>.Empty))));
+    Equal(ProtocolErrorCode.UnknownErrorType, unknownError.Code);
 
     byte[] updateCountMismatch = Hex("01 00 00 00 00 00 00 00");
     Equal(
@@ -621,8 +737,10 @@ static void TestNegativePayloads()
             Hex("ff ff ff ff 00 00 00 00")).Error);
 
     byte[] stringTrailing = new byte[40];
-    stringTrailing[0] = (byte)'A';
-    stringTrailing[4] = (byte)'B';
+    for (int offset = 0; offset < stringTrailing.Length; offset += 2)
+    {
+        stringTrailing[offset] = (byte)'A';
+    }
     Equal(
         ProtocolErrorCode.InvalidFixedString,
         PacketPayloadCodec.DecodePlayerInfo(stringTrailing).Error);
@@ -658,6 +776,167 @@ static void TestDeterminism()
         FrameReadResult<CtosFrame> result = WireFrameCodec.TryReadCtos(expected);
         AssertCtosSuccess(result, expected.Length);
         BytesEqual(payload, result.Frame!.Payload.Span);
+    }
+}
+
+static void TestTypeAwareValidation()
+{
+    byte[] playerInfo = PacketPayloadCodec.EncodePlayerInfo(
+        new CtosPlayerInfoPayload("Ignis"));
+    byte[] joinGame = PacketPayloadCodec.EncodeJoinGame(
+        new CtosJoinGamePayload(
+            0x1354,
+            0x11223344,
+            "room-secret",
+            new ProtocolClientVersion(41, 0, 11, 0)));
+    byte[] updateDeck = PacketPayloadCodec.EncodeUpdateDeck(
+        new CtosUpdateDeckPayload(new uint[] { 1 }, Array.Empty<uint>()));
+
+    var ctosCases = new (CtosPacketType Type, byte[] Payload, PayloadContractKind Contract)[]
+    {
+        (CtosPacketType.Response, Hex("aa"), PayloadContractKind.Opaque),
+        (CtosPacketType.UpdateDeck, updateDeck, PayloadContractKind.ExactTypedLayout),
+        (CtosPacketType.HandResult, Hex("01"), PayloadContractKind.ExactTypedLayout),
+        (CtosPacketType.TpResult, Hex("01"), PayloadContractKind.ExactTypedLayout),
+        (CtosPacketType.PlayerInfo, playerInfo, PayloadContractKind.ExactTypedLayout),
+        (CtosPacketType.JoinGame, joinGame, PayloadContractKind.ExactTypedLayout),
+        (CtosPacketType.LeaveGame, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
+        (CtosPacketType.Surrender, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
+        (CtosPacketType.TimeConfirm, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
+        (CtosPacketType.HsReady, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
+        (CtosPacketType.HsNotReady, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
+        (CtosPacketType.HsStart, Array.Empty<byte>(), PayloadContractKind.ExactEmpty)
+    };
+    Equal(12, ctosCases.Length);
+    foreach ((CtosPacketType type, byte[] payload, PayloadContractKind contract) in ctosCases)
+    {
+        byte[] frame = WireFrameCodec.EncodeCtos(type, payload);
+        FrameReadResult<ValidatedCtosPacket> result =
+            PacketPayloadValidator.TryReadValidatedCtos(frame);
+        AssertValidatedCtos(result, frame.Length, type, contract);
+    }
+
+    foreach (CtosPacketType type in new[]
+    {
+        CtosPacketType.LeaveGame,
+        CtosPacketType.Surrender,
+        CtosPacketType.TimeConfirm,
+        CtosPacketType.HsReady,
+        CtosPacketType.HsNotReady,
+        CtosPacketType.HsStart
+    })
+    {
+        FrameReadResult<ValidatedCtosPacket> invalid =
+            PacketPayloadValidator.TryReadValidatedCtos(
+                WireFrameCodec.EncodeCtos(type, Hex("ff")));
+        Equal(FrameReadStatus.Invalid, invalid.Status);
+        Equal(ProtocolErrorCode.TrailingPayloadBytes, invalid.Error);
+    }
+
+    byte[] error = PacketPayloadCodec.EncodeStocErrorMessage(
+        new StocErrorMessagePayload(
+            ErrorType.DeckError,
+            0x11223344,
+            new OpaquePayload(Hex("01"))));
+    byte[] time = PacketPayloadCodec.EncodeStocTimeLimit(
+        new StocTimeLimitPayload(0x02, 0x1234));
+    byte[] playerEnter = PacketPayloadCodec.EncodeStocHsPlayerEnter(
+        new StocHsPlayerEnterPayload("P1", 0x03));
+    byte[] watch = PacketPayloadCodec.EncodeStocHsWatchChange(
+        new StocHsWatchChangePayload(0x1234));
+
+    var stocCases = new (StocPacketType Type, byte[] Payload, PayloadContractKind Contract)[]
+    {
+        (StocPacketType.GameMsg, Hex("aa"), PayloadContractKind.Opaque),
+        (StocPacketType.ErrorMsg, error, PayloadContractKind.ExactTypedLayout),
+        (StocPacketType.SelectHand, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
+        (StocPacketType.SelectTp, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
+        (StocPacketType.HandResult, Hex("01 02"), PayloadContractKind.ExactTypedLayout),
+        (StocPacketType.TpResult, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
+        (StocPacketType.JoinGame, HostGoldenPayload(), PayloadContractKind.ExactTypedLayout),
+        (StocPacketType.TypeChange, Hex("a5"), PayloadContractKind.ExactTypedLayout),
+        (StocPacketType.LeaveGame, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
+        (StocPacketType.DuelStart, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
+        (StocPacketType.DuelEnd, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
+        (StocPacketType.TimeLimit, time, PayloadContractKind.ExactTypedLayout),
+        (StocPacketType.HsPlayerEnter, playerEnter, PayloadContractKind.ExactTypedLayout),
+        (StocPacketType.HsPlayerChange, Hex("a1"), PayloadContractKind.ExactTypedLayout),
+        (StocPacketType.HsWatchChange, watch, PayloadContractKind.ExactTypedLayout)
+    };
+    Equal(15, stocCases.Length);
+    foreach ((StocPacketType type, byte[] payload, PayloadContractKind contract) in stocCases)
+    {
+        byte[] frame = WireFrameCodec.EncodeStoc(type, payload);
+        FrameReadResult<ValidatedStocPacket> result =
+            PacketPayloadValidator.TryReadValidatedStoc(frame);
+        AssertValidatedStoc(result, frame.Length, type, contract);
+    }
+
+    foreach (StocPacketType type in new[]
+    {
+        StocPacketType.SelectHand,
+        StocPacketType.SelectTp,
+        StocPacketType.TpResult,
+        StocPacketType.LeaveGame,
+        StocPacketType.DuelStart,
+        StocPacketType.DuelEnd
+    })
+    {
+        FrameReadResult<ValidatedStocPacket> invalid =
+            PacketPayloadValidator.TryReadValidatedStoc(
+                WireFrameCodec.EncodeStoc(type, Hex("ff")));
+        Equal(FrameReadStatus.Invalid, invalid.Status);
+        Equal(ProtocolErrorCode.TrailingPayloadBytes, invalid.Error);
+    }
+
+    FrameReadResult<ValidatedStocPacket> unknownError =
+        PacketPayloadValidator.TryReadValidatedStoc(
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.ErrorMsg,
+                Hex("99 00 00 00 00 00 00 00")));
+    Equal(FrameReadStatus.Invalid, unknownError.Status);
+    Equal(ProtocolErrorCode.UnknownErrorType, unknownError.Error);
+}
+
+static void AssertValidatedCtos(
+    FrameReadResult<ValidatedCtosPacket> result,
+    int consumedBytes,
+    CtosPacketType type,
+    PayloadContractKind contract)
+{
+    Equal(FrameReadStatus.Success, result.Status);
+    Equal(consumedBytes, result.ConsumedBytes);
+    NotNull(result.Frame);
+    Equal(type, result.Frame!.Type);
+    Equal(contract, result.Frame.PayloadContract);
+    if (contract == PayloadContractKind.ExactEmpty)
+    {
+        Equal<object?>(null, result.Frame.Payload);
+    }
+    else
+    {
+        NotNull(result.Frame.Payload);
+    }
+}
+
+static void AssertValidatedStoc(
+    FrameReadResult<ValidatedStocPacket> result,
+    int consumedBytes,
+    StocPacketType type,
+    PayloadContractKind contract)
+{
+    Equal(FrameReadStatus.Success, result.Status);
+    Equal(consumedBytes, result.ConsumedBytes);
+    NotNull(result.Frame);
+    Equal(type, result.Frame!.Type);
+    Equal(contract, result.Frame.PayloadContract);
+    if (contract == PayloadContractKind.ExactEmpty)
+    {
+        Equal<object?>(null, result.Frame.Payload);
+    }
+    else
+    {
+        NotNull(result.Frame.Payload);
     }
 }
 
@@ -700,6 +979,15 @@ static byte[] Concat(params byte[][] parts)
 
     return result;
 }
+
+static byte[] HostGoldenPayload() =>
+    Hex(
+        "04 03 02 01 05 06 07 08 09 00 00 00 " +
+        "10 0f 0e 0d 11 12 14 13 18 17 16 15 " +
+        "1c 1b 1a 19 1d 1e 1f 20 " +
+        "24 23 22 21 28 27 26 25 2c 2b 2a 29 " +
+        "30 2f 2e 2d 34 33 32 31 36 35 " +
+        "38 37 3a 39 3c 3b 3e 3d 40 3f 42 41 00 00");
 
 static void BytesEqual(ReadOnlySpan<byte> expected, ReadOnlySpan<byte> actual)
 {
