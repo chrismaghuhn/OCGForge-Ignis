@@ -210,6 +210,19 @@ static void TestScriptedTransportAndReceiveBuffer()
 
 static void TestStatesChoicesLobbyAndHandoffValues()
 {
+    Null(typeof(I2SessionRunner).GetProperty(
+        nameof(I2SessionRunner.RuntimeHandoff),
+        System.Reflection.BindingFlags.Instance |
+        System.Reflection.BindingFlags.Public));
+    Null(typeof(GameplayHandoffOfferV1).GetProperty(
+        "Transport",
+        System.Reflection.BindingFlags.Instance |
+        System.Reflection.BindingFlags.Public));
+    Null(typeof(GameplayHandoffLeaseV1).GetProperty(
+        "Transport",
+        System.Reflection.BindingFlags.Instance |
+        System.Reflection.BindingFlags.Public));
+
     Equal(I2SessionState.Created, I2SessionState.Created);
     Equal(I2SessionState.WaitingForTpRequest, I2SessionState.WaitingForTpRequest);
     Equal(I2SessionState.HandedOff, I2SessionState.HandedOff);
@@ -256,13 +269,15 @@ static void TestStatesChoicesLobbyAndHandoffValues()
     Equal(2, session.Events.Count);
 
     ScriptedTransport transport = new(Array.Empty<byte[]>());
-    GameplayTransportHandoffV1 handoff = new(
-        transport,
+    GameplayHandoffOfferV1 handoff = new(
+        (IByteTransport)transport,
         session,
         new byte[] { 0xaa, 0xbb });
-    BytesEqual(new byte[] { 0xaa, 0xbb }, handoff.PendingBytes.Span);
-    Equal(I2ErrorCode.None, handoff.Claim().Error);
-    Equal(I2ErrorCode.TransportOwnershipError, handoff.Claim().Error);
+    GameplayHandoffClaimResult claim = handoff.TryClaim();
+    BytesEqual(new byte[] { 0xaa, 0xbb }, claim.Lease!.PendingBytes.Span);
+    Equal(I2ErrorCode.None, claim.Error);
+    Equal(I2ErrorCode.TransportOwnershipError, handoff.TryClaim().Error);
+    claim.Lease.CloseOwnedTransportAsync().GetAwaiter().GetResult();
 }
 
 static void TestPreDuelStateMachineTransitions()
@@ -566,12 +581,15 @@ static void TestSessionRunnerTranscript()
         .IsSuccess);
     Equal(I2SessionState.HandedOff, runner.State);
     NotNull(runner.RuntimeHandoff);
-    BytesEqual(Array.Empty<byte>(), runner.RuntimeHandoff!.PendingBytes.Span);
+    GameplayHandoffClaimResult handoffClaim = runner.RuntimeHandoff!.TryClaim();
+    True(handoffClaim.IsSuccess);
+    GameplayHandoffLeaseV1 handoffLease = handoffClaim.Lease!;
+    BytesEqual(Array.Empty<byte>(), handoffLease.PendingBytes.Span);
     Equal(0, transport.CloseCallCount);
 
     transport.Enqueue(gameMessage);
     byte[] futureGameMessage = new byte[gameMessage.Length];
-    int futureBytes = runner.RuntimeHandoff!.Transport.ReadAsync(
+    int futureBytes = handoffLease.ReadAsync(
             futureGameMessage,
             CancellationToken.None)
         .GetAwaiter()
@@ -969,8 +987,11 @@ static void TestRpsLossHandoff()
     True(loss.IsSuccess);
     Equal(I2SessionState.HandedOff, runner.State);
     NotNull(runner.RuntimeHandoff);
-    Equal(PreDuelOutcome.RpsLoss, runner.RuntimeHandoff!.PublicSession.Outcome);
-    BytesEqual(gameMessage, runner.RuntimeHandoff.PendingBytes.Span);
+    GameplayHandoffClaimResult lossClaim = runner.RuntimeHandoff!.TryClaim();
+    True(lossClaim.IsSuccess);
+    GameplayHandoffLeaseV1 lossLease = lossClaim.Lease!;
+    Equal(PreDuelOutcome.RpsLoss, lossLease.PublicSession.Outcome);
+    BytesEqual(gameMessage, lossLease.PendingBytes.Span);
     Equal(6, transport.Writes.Count);
     Equal(CtosPacketType.HandResult, ReadCtos(transport.Writes[^1]).Type);
     Equal(
@@ -1582,7 +1603,7 @@ static (I2SessionState State, string Events, string Writes, byte[] Pending)
         runner.State,
         string.Join("|", runner.Events.Select(@event => @event.ToString())),
         string.Join("|", transport.Writes.Select(Convert.ToHexString)),
-        runner.RuntimeHandoff!.PendingBytes.ToArray());
+        runner.RuntimeHandoff!.TryClaim().Lease!.PendingBytes.ToArray());
 }
 
 static void PumpStage(
@@ -1856,6 +1877,15 @@ static void NotNull<T>(T? value)
     if (value is null)
     {
         throw new InvalidOperationException("Expected a non-null value.");
+    }
+}
+
+static void Null<T>(T? value)
+    where T : class
+{
+    if (value is not null)
+    {
+        throw new InvalidOperationException("Expected a null value.");
     }
 }
 

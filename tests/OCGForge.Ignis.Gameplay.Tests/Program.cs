@@ -15,6 +15,8 @@ var tests = new (string Name, Action Body)[]
     ("handoff claims exactly once", TestHandoffClaimExactlyOnce),
     ("pending bytes are processed before reads", TestPendingBytesFirst),
     ("partial pending frame continues through I1", TestPartialPendingFrame),
+    ("session drains pending before live transport", TestSessionPendingReadFirst),
+    ("pump and dispose share lifecycle ownership", TestPumpDisposeLifecycle),
     ("outer chunking has identical semantic output", TestChunkingDeterminism),
     ("pending suffix transfers unchanged", TestPendingSuffixTransfer),
     ("failure closes transport exactly once", TestFailureCloseExactlyOnce),
@@ -187,7 +189,7 @@ static void TestModernLocInfo()
 static void TestHandoffClaimExactlyOnce()
 {
     TestTransport transport = new(Array.Empty<byte[]>());
-    GameplayTransportHandoffV1 handoff = CreateHandoff(transport, Array.Empty<byte>());
+    GameplayHandoffOfferV1 handoff = CreateHandoff(transport, Array.Empty<byte>());
 
     GameplayHandoffAcquireResult first = GameplayHandoffConsumerV1.TryCreate(handoff);
     True(first.IsSuccess);
@@ -246,6 +248,76 @@ static void TestPartialPendingFrame()
     True(transport.ReadCallCount > 0);
     acquired.Consumer.DisposeAsync().GetAwaiter().GetResult();
     result.Session!.CloseOwnedTransportAsync().GetAwaiter().GetResult();
+}
+
+static void TestSessionPendingReadFirst()
+{
+    byte[] startFrame = WireFrameCodec.EncodeStoc(
+        StocPacketType.GameMsg,
+        CreateStartBytes(0x00));
+    byte[] futureFrame = WireFrameCodec.EncodeStoc(
+        StocPacketType.GameMsg,
+        new byte[] { 3 });
+    byte[] combined = new byte[startFrame.Length + futureFrame.Length];
+    startFrame.CopyTo(combined, 0);
+    futureFrame.CopyTo(combined, startFrame.Length);
+
+    TestTransport transport = new(new[] { combined });
+    GameplayHandoffAcquireResult acquired = GameplayHandoffConsumerV1.TryCreate(
+        CreateHandoff(transport, Array.Empty<byte>()));
+    GameplayPumpResult result = acquired.Consumer!.PumpAsync(
+        CancellationToken.None).GetAwaiter().GetResult();
+    True(result.IsSuccess);
+
+    byte[] destination = new byte[futureFrame.Length];
+    int readsBeforeSession = transport.ReadCallCount;
+    int pendingCount = result.Session!.ReadAsync(
+            destination,
+            CancellationToken.None)
+        .GetAwaiter()
+        .GetResult();
+    Equal(futureFrame.Length, pendingCount);
+    BytesEqual(futureFrame, destination);
+    Equal(readsBeforeSession, transport.ReadCallCount);
+
+    transport.Enqueue(new byte[] { 0xa1 });
+    int liveCount = result.Session.ReadAsync(
+            destination.AsMemory(0, 1),
+            CancellationToken.None)
+        .GetAwaiter()
+        .GetResult();
+    Equal(1, liveCount);
+    Equal(readsBeforeSession + 1, transport.ReadCallCount);
+
+    acquired.Consumer.DisposeAsync().GetAwaiter().GetResult();
+    result.Session.CloseOwnedTransportAsync().GetAwaiter().GetResult();
+}
+
+static void TestPumpDisposeLifecycle()
+{
+    byte[] frame = WireFrameCodec.EncodeStoc(
+        StocPacketType.GameMsg,
+        CreateStartBytes(0x00));
+    const int pendingLength = 3;
+    LifecycleRaceTransport transport = new(frame.AsSpan(pendingLength).ToArray());
+    GameplayHandoffAcquireResult acquired = GameplayHandoffConsumerV1.TryCreate(
+        CreateHandoff(transport, frame.AsSpan(0, pendingLength)));
+    True(acquired.IsSuccess);
+
+    Task<GameplayPumpResult> pumpTask = Task.Run(async () =>
+        await acquired.Consumer!.PumpAsync(CancellationToken.None));
+    True(transport.ReadStarted.Wait(TimeSpan.FromSeconds(5)));
+
+    Task disposeTask = acquired.Consumer!.DisposeAsync().AsTask();
+    transport.Release();
+
+    GameplayPumpResult result = pumpTask.GetAwaiter().GetResult();
+    disposeTask.GetAwaiter().GetResult();
+    True(result.IsSuccess);
+    Equal(0, transport.CloseCallCount);
+
+    result.Session!.CloseOwnedTransportAsync().GetAwaiter().GetResult();
+    Equal(1, transport.CloseCallCount);
 }
 
 static void TestChunkingDeterminism()
@@ -386,8 +458,8 @@ static string RunChunking(byte[][] chunks, out TestTransport transport)
     return semantic;
 }
 
-static GameplayTransportHandoffV1 CreateHandoff(
-    TestTransport transport,
+static GameplayHandoffOfferV1 CreateHandoff(
+    IGameplayTransportV1 transport,
     ReadOnlySpan<byte> pendingBytes)
 {
     PreDuelSessionV1 publicSession = new(
@@ -396,7 +468,7 @@ static GameplayTransportHandoffV1 CreateHandoff(
         false,
         PreDuelOutcome.RpsLoss,
         Array.Empty<I2Event>());
-    return new GameplayTransportHandoffV1(transport, publicSession, pendingBytes);
+    return new GameplayHandoffOfferV1(transport, publicSession, pendingBytes);
 }
 
 static byte[] CreateStartBytes(byte playerType)
@@ -468,7 +540,7 @@ static void BytesEqual(ReadOnlySpan<byte> expected, ReadOnlySpan<byte> actual)
         $"expected {Convert.ToHexString(expected)}; actual {Convert.ToHexString(actual)}");
 }
 
-internal sealed class TestTransport : IByteTransport
+internal sealed class TestTransport : IByteTransport, IGameplayTransportV1
 {
     private readonly Queue<byte[]> chunks;
     private byte[]? current;
@@ -483,6 +555,14 @@ internal sealed class TestTransport : IByteTransport
     internal int ReadCallCount { get; private set; }
 
     internal int CloseCallCount { get; private set; }
+
+    internal void Enqueue(params byte[][] additionalChunks)
+    {
+        foreach (byte[] chunk in additionalChunks)
+        {
+            chunks.Enqueue(chunk.ToArray());
+        }
+    }
 
     public ValueTask ConnectAsync(
         string host,
@@ -531,6 +611,51 @@ internal sealed class TestTransport : IByteTransport
         {
             closed = true;
             CloseCallCount++;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync() => CloseAsync();
+}
+
+internal sealed class LifecycleRaceTransport : IGameplayTransportV1
+{
+    private readonly byte[] remainder;
+    private readonly TaskCompletionSource<bool> readStarted =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<bool> release =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int closeCallCount;
+    private bool closed;
+
+    internal LifecycleRaceTransport(byte[] remainder)
+    {
+        this.remainder = remainder.ToArray();
+    }
+
+    internal Task ReadStarted => readStarted.Task;
+
+    internal int CloseCallCount => closeCallCount;
+
+    internal void Release() => release.TrySetResult(true);
+
+    public async ValueTask<int> ReadAsync(
+        Memory<byte> destination,
+        CancellationToken cancellationToken)
+    {
+        readStarted.TrySetResult(true);
+        await release.Task.WaitAsync(cancellationToken);
+        remainder.CopyTo(destination);
+        return remainder.Length;
+    }
+
+    public ValueTask CloseAsync()
+    {
+        if (!closed)
+        {
+            closed = true;
+            Interlocked.Increment(ref closeCallCount);
         }
 
         return ValueTask.CompletedTask;

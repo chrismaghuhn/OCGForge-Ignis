@@ -1,6 +1,6 @@
 using OCGForge.Ignis.Client;
 
-internal sealed class ScriptedTransport : IByteTransport
+internal sealed class ScriptedTransport : IByteTransport, IGameplayTransportV1
 {
     private readonly Queue<byte[]> chunks;
     private byte[]? currentChunk;

@@ -5,53 +5,39 @@ namespace OCGForge.Ignis.Gameplay;
 
 public sealed class GameplayHandoffConsumerV1 : IAsyncDisposable
 {
-    private readonly GameplayTransportHandoffV1 handoff;
+    private readonly GameplayHandoffLeaseV1 lease;
     private readonly GameplayMessageDecoderV1 decoder = new();
+    private readonly SemaphoreSlim lifecycleGate = new(1, 1);
     private readonly byte[] receiveBuffer = new byte[
         ProtocolContractV1.MaxPacketLength +
         ProtocolContractV1.LengthPrefixSize];
     private int receiveCount;
     private int terminal;
-    private int operation;
 
-    private GameplayHandoffConsumerV1(GameplayTransportHandoffV1 handoff)
+    private GameplayHandoffConsumerV1(GameplayHandoffLeaseV1 lease)
     {
-        this.handoff = handoff;
-        ReadOnlyMemory<byte> pending = handoff.PendingBytes;
-        pending.CopyTo(receiveBuffer);
-        receiveCount = pending.Length;
+        this.lease = lease;
     }
 
     public static GameplayHandoffAcquireResult TryCreate(
-        GameplayTransportHandoffV1 handoff)
+        GameplayHandoffOfferV1 offer)
     {
-        ArgumentNullException.ThrowIfNull(handoff);
-        if (handoff.PendingBytes.Length >
-            ProtocolContractV1.MaxPacketLength + ProtocolContractV1.LengthPrefixSize)
-        {
-            return GameplayHandoffAcquireResult.Failure(
-                GameplayErrorCode.InvalidHandoff);
-        }
-
-        I2Result claim = handoff.Claim();
-        if (!claim.IsSuccess)
+        ArgumentNullException.ThrowIfNull(offer);
+        GameplayHandoffClaimResult claim = offer.TryClaim();
+        if (!claim.IsSuccess || claim.Lease is null)
         {
             return GameplayHandoffAcquireResult.Failure(
                 GameplayErrorCode.HandoffAlreadyClaimed);
         }
 
         return GameplayHandoffAcquireResult.Success(
-            new GameplayHandoffConsumerV1(handoff));
+            new GameplayHandoffConsumerV1(claim.Lease));
     }
 
     public async ValueTask<GameplayPumpResult> PumpAsync(
         CancellationToken cancellationToken)
     {
-        if (Interlocked.Exchange(ref operation, 1) != 0)
-        {
-            return GameplayPumpResult.Failure(GameplayErrorCode.InvalidState);
-        }
-
+        await lifecycleGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
             if (Volatile.Read(ref terminal) != 0)
@@ -108,9 +94,9 @@ public sealed class GameplayHandoffConsumerV1 : IAsyncDisposable
                         GameplayPerspectiveV1 establishedPerspective =
                             decoded.Perspective!;
                         GameplaySessionV1 session = new(
-                            handoff,
+                            lease,
                             establishedPerspective,
-                            handoff.PublicSession,
+                            lease.PublicSession,
                             receiveBuffer.AsSpan(0, receiveCount));
                         Volatile.Write(ref terminal, 1);
                         return GameplayPumpResult.Success(
@@ -131,7 +117,7 @@ public sealed class GameplayHandoffConsumerV1 : IAsyncDisposable
                 int readCount;
                 try
                 {
-                    readCount = await handoff.Transport.ReadAsync(
+                    readCount = await lease.ReadAsync(
                             receiveBuffer.AsMemory(receiveCount, available),
                             cancellationToken)
                         .ConfigureAwait(false);
@@ -169,18 +155,27 @@ public sealed class GameplayHandoffConsumerV1 : IAsyncDisposable
         }
         finally
         {
-            Volatile.Write(ref operation, 0);
+            lifecycleGate.Release();
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref terminal, 2) == 1)
+        await lifecycleGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
         {
-            return;
-        }
+            if (Volatile.Read(ref terminal) == 1)
+            {
+                return;
+            }
 
-        await handoff.CloseOwnedTransportAsync().ConfigureAwait(false);
+            Volatile.Write(ref terminal, 2);
+            await lease.CloseOwnedTransportAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            lifecycleGate.Release();
+        }
     }
 
     private void Consume(int count)
@@ -199,7 +194,7 @@ public sealed class GameplayHandoffConsumerV1 : IAsyncDisposable
     {
         if (Interlocked.Exchange(ref terminal, 2) == 0)
         {
-            await handoff.CloseOwnedTransportAsync().ConfigureAwait(false);
+            await lease.CloseOwnedTransportAsync().ConfigureAwait(false);
         }
 
         return GameplayPumpResult.Failure(error);

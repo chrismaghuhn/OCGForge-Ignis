@@ -175,11 +175,11 @@ public sealed class GameplayPumpResult
 
 public sealed class GameplaySessionV1 : IAsyncDisposable
 {
-    private readonly GameplayTransportHandoffV1 ownership;
+    private readonly GameplayHandoffLeaseV1 ownership;
     private readonly byte[] pendingBytes;
 
     internal GameplaySessionV1(
-        GameplayTransportHandoffV1 ownership,
+        GameplayHandoffLeaseV1 ownership,
         GameplayPerspectiveV1 perspective,
         PreDuelSessionV1 publicSession,
         ReadOnlySpan<byte> pendingBytes)
@@ -200,7 +200,7 @@ public sealed class GameplaySessionV1 : IAsyncDisposable
     public ValueTask<int> ReadAsync(
         Memory<byte> destination,
         CancellationToken cancellationToken) =>
-        ownership.Transport.ReadAsync(destination, cancellationToken);
+        ReadPendingOrTransportAsync(destination, cancellationToken);
 
     public ReadOnlyMemory<byte> PendingBytes => pendingBytes;
 
@@ -211,4 +211,27 @@ public sealed class GameplaySessionV1 : IAsyncDisposable
     {
         await CloseOwnedTransportAsync().ConfigureAwait(false);
     }
+
+    private ValueTask<int> ReadPendingOrTransportAsync(
+        Memory<byte> destination,
+        CancellationToken cancellationToken)
+    {
+        if (destination.IsEmpty)
+        {
+            return ValueTask.FromResult(0);
+        }
+
+        int pendingCount = pendingBytes.Length - pendingOffset;
+        if (pendingCount > 0)
+        {
+            int count = Math.Min(destination.Length, pendingCount);
+            pendingBytes.AsMemory(pendingOffset, count).CopyTo(destination);
+            pendingOffset += count;
+            return ValueTask.FromResult(count);
+        }
+
+        return ownership.ReadAsync(destination, cancellationToken);
+    }
+
+    private int pendingOffset;
 }
