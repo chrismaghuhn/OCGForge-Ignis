@@ -96,7 +96,7 @@ host flag, RPS outcome, or TP choice.
 
 - [ ] **Step 1: Write RED mirror tests.** Start from an established `GameplayPerspectiveV1` and assert participant roles `Self`/`Opponent`, LP, turn player/count, phase, deck/extra/hand/grave/banished counts, field slots, controller/owner distinction, and chain/public relationship values. Assert that every value has an explicit provenance class and that absent knowledge is not represented by a magic card code.
 
-- [ ] **Step 2: Implement a single-owner reducer.** Consume only I3A validated messages. Use fixed participant and zone order, explicit state transitions, exact source/destination validation, and immutable result snapshots. `MSG_UPDATE_DATA` and `MSG_UPDATE_CARD` may publish only query fields proven by the modern query stream; unrecognized flags and incomplete query records fail closed.
+- [ ] **Step 2: Implement a single-owner reducer.** Consume only I3A validated messages. Use fixed participant and zone order, explicit state transitions, exact source/destination validation, and immutable result snapshots. `MSG_UPDATE_CARD` uses the single `ModernQueryV1` suffix; `MSG_UPDATE_DATA` uses the `u32_le total_query_bytes`-prefixed `ModernQueryStreamV1` suffix. Their flag-specific query union remains unfrozen until its owning contract is accepted; unrecognized flags and incomplete query records fail closed.
 
 - [ ] **Step 3: Implement required public state families.** Cover the inventory's I3B-required families: `MSG_START`, `MSG_WIN`, `MSG_UPDATE_DATA`, `MSG_UPDATE_CARD`, `MSG_MOVE`, `MSG_POS_CHANGE`, `MSG_SET` as a consume-only presentation event with no mirror mutation, `MSG_SWAP`, `MSG_NEW_TURN`, `MSG_NEW_PHASE`, LP changes, required chain messages, target relations, and equipment relations. Keep prompt families at the I4/I5 boundary and do not apply presentation/summon notifications a second time when MOVE/query messages own the state change.
 
@@ -147,7 +147,7 @@ runtime implementation and must be independently reviewed before I3C.
 
 - [ ] **Step 2: Write RED locator lifecycle tests.** Assert deterministic create/retain/move/rebind/destroy/replace behavior, distinct locators for duplicate public card codes, no code-as-locator shortcut, no pointer/object/PID/path/time inputs, and no dependence on unordered iteration.
 
-- [ ] **Step 3: Implement knowledge-destroying transitions.** For `MSG_SHUFFLE_DECK`, `MSG_SHUFFLE_HAND`, `MSG_SHUFFLE_EXTRA`, `MSG_SHUFFLE_SET_CARD`, `MSG_REVERSE_DECK`, `MSG_REFRESH_DECK`, `MSG_SWAP_GRAVE_DECK`, ambiguous randomized movement, and ambiguous reorder, destroy stale hidden continuity. Retain identity only when a complete perspective-legitimate mapping is explicitly proven.
+- [ ] **Step 3: Implement knowledge-destroying transitions.** For `MSG_SHUFFLE_DECK`, `MSG_SHUFFLE_HAND`, `MSG_SHUFFLE_EXTRA`, `MSG_SHUFFLE_SET_CARD`, `MSG_REVERSE_DECK`, `MSG_SWAP_GRAVE_DECK`, ambiguous randomized movement, and ambiguous reorder, destroy stale hidden continuity. `MSG_REFRESH_DECK` is consumed as an exact empty presentation/control signal and supplies no player-scoped mutation. Retain identity only when a complete perspective-legitimate mapping is explicitly proven.
 
 - [ ] **Step 4: Add metamorphic privacy tests.** Mutate hidden opponent identities, hidden deck order, stale post-reveal identities, equal-code duplicate histories, and ambiguous source locators. Require the same public locator table and public meaning where legitimate public knowledge is unchanged; require old hidden locators to disappear after destruction.
 

@@ -151,6 +151,24 @@ u32_le sequence
 u32_le position
 ```
 
+The two modern query suffixes are distinct wire grammars:
+
+```text
+ModernQueryV1:
+  repeated u16_le item_size; u32_le query_flag; flag-specific payload
+  terminated by QUERY_END
+
+ModernQueryStreamV1:
+  u32_le total_query_bytes
+  followed by ModernQueryV1 query records within that byte count
+```
+
+`MSG_UPDATE_CARD` uses `ModernQueryV1` after its proven
+`u8 player; u8 location; u8 sequence` prefix. `MSG_UPDATE_DATA` uses
+`ModernQueryStreamV1` after its proven `u8 player; u8 location` prefix. The
+flag-specific query union remains unfrozen in I3A0; these outer grammars are
+nevertheless frozen and must never be swapped.
+
 The modern `MSG_START` payload is frozen exactly as:
 
 ```text
@@ -331,7 +349,8 @@ entities:
 | `MSG_SHUFFLE_EXTRA` | invalidate hidden Extra Deck ordering and associations |
 | `MSG_SHUFFLE_SET_CARD` | invalidate affected hidden set-card continuity unless the protocol-provided record mapping proves the same entity |
 | `MSG_REVERSE_DECK` | invalidate hidden ordering continuity unless the mirror has an independently proven complete mapping; never expose a guessed mapping |
-| `MSG_REFRESH_DECK` / `MSG_SWAP_GRAVE_DECK` | invalidate any hidden locator relationship that the new representation does not prove |
+| `MSG_REFRESH_DECK` | consume the exact empty message as a presentation/control signal; it carries no player field and performs no mirror or knowledge mutation |
+| `MSG_SWAP_GRAVE_DECK` | invalidate any hidden locator relationship that the new representation does not prove |
 | hidden randomized movement | destroy continuity when source-to-destination identity is not proven |
 | hidden reorder with ambiguity | destroy the old association and create explicit unknowns as needed |
 
@@ -596,6 +615,11 @@ that record-ordinal pairing is allowed. Zone-array order, cached object
 identity, timing, card-code uniqueness, deck composition, probability, and
 model output remain forbidden identity evidence.
 
+`MSG_REFRESH_DECK` is not player-mapped in V1. Its exact empty payload is
+consumed once, and no player or card effect may be inferred from the message;
+any later player-scoped refresh must come from its own authoritative query
+message.
+
 ## 16. GAME_MSG support matrix
 
 The full machine-readable matrix is
@@ -632,7 +656,7 @@ The following ledger is normative for agreement checking; entries are ordered by
 | 31 | MSG_CONFIRM_CARDS | OPTIONAL | UNFROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3C |
 | 32 | MSG_SHUFFLE_DECK | REQUIRED | FROZEN | PLAYER_MAPPED | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_HIDDEN | KNOWLEDGE_BOUNDARY | NONE | I3C |
 | 33 | MSG_SHUFFLE_HAND | REQUIRED | FROZEN | PLAYER_MAPPED | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_HIDDEN | KNOWLEDGE_BOUNDARY | NONE | I3C |
-| 34 | MSG_REFRESH_DECK | OPTIONAL | FROZEN | PLAYER_MAPPED | KNOWLEDGE_MUTATING | DESTROY_IF_AMBIGUOUS | INVALIDATE_OR_REBIND | KNOWLEDGE_BOUNDARY | NONE | I3C |
+| 34 | MSG_REFRESH_DECK | OPTIONAL | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | NONE | PRESENTATION_ONLY | NONE | I3C |
 | 35 | MSG_SWAP_GRAVE_DECK | OPTIONAL | UNFROZEN | NONE | STATE_AND_KNOWLEDGE_MUTATING | DESTROY_IF_AMBIGUOUS | INVALIDATE_OR_REBIND | GAMEPLAY_STATE | NONE | I3B/I3C |
 | 36 | MSG_SHUFFLE_SET_CARD | REQUIRED | FROZEN | LOCATOR_MAPPED | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_OR_REBIND | KNOWLEDGE_BOUNDARY | PREVIOUS_I_TO_CURRENT_I_PROTOCOL | I3C |
 | 37 | MSG_REVERSE_DECK | REQUIRED | FROZEN | NONE | KNOWLEDGE_MUTATING | DESTROY_HIDDEN_CONTINUITY | INVALIDATE_HIDDEN | KNOWLEDGE_BOUNDARY | NONE | I3C |

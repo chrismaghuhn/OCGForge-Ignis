@@ -33,7 +33,7 @@
       "byte_length": 10,
       "encoding": "EXPLICIT_LITTLE_ENDIAN"
     },
-    "modern_query_stream": {
+    "ModernQueryV1": {
       "item_fields": [
         "u16_le item_size",
         "u32_le query_flag",
@@ -41,6 +41,14 @@
       ],
       "terminator": "QUERY_END",
       "length_rule": "ITEM_TERMINATED",
+      "unknown_flag_behavior": "UNFROZEN_UNTIL_FLAG_CONTRACT"
+    },
+    "ModernQueryStreamV1": {
+      "prefix_fields": [
+        "u32_le total_query_bytes"
+      ],
+      "repeated_item": "ModernQueryV1",
+      "length_rule": "TOTAL_BYTES_THEN_QUERY_RECORDS",
       "unknown_flag_behavior": "UNFROZEN_UNTIL_FLAG_CONTRACT"
     }
   },
@@ -50,7 +58,7 @@
         "u8 player",
         "u8 location"
       ],
-      "suffix": "modern_query_stream",
+      "suffix": "ModernQueryStreamV1",
       "status": "PREFIX_PROVEN_FULL_LAYOUT_UNFROZEN"
     },
     "MSG_UPDATE_CARD": {
@@ -59,7 +67,7 @@
         "u8 location",
         "u8 sequence"
       ],
-      "suffix": "modern_query_stream",
+      "suffix": "ModernQueryV1",
       "status": "PREFIX_PROVEN_FULL_LAYOUT_UNFROZEN"
     }
   },
@@ -1194,15 +1202,15 @@
       "message_id": 34,
       "symbolic_name": "MSG_REFRESH_DECK",
       "support_status": "OPTIONAL",
-      "semantic_category": "KNOWLEDGE_RESET",
+      "semantic_category": "PRESENTATION_ONLY",
       "planned_slice": "I3C",
       "layout_status": "FROZEN",
       "wire_layout_id": "MSG_REFRESH_DECK_V1",
-      "perspective_effect": "PLAYER_MAPPED",
-      "state_effect": "KNOWLEDGE_MUTATING",
-      "knowledge_effect": "DESTROY_IF_AMBIGUOUS",
-      "locator_effect": "INVALIDATE_OR_REBIND",
-      "boundary_kind": "KNOWLEDGE_BOUNDARY",
+      "perspective_effect": "NONE",
+      "state_effect": "MUST_CONSUME_NO_STATE",
+      "knowledge_effect": "NONE",
+      "locator_effect": "NONE",
+      "boundary_kind": "PRESENTATION_ONLY",
       "pairing_rule": "NONE",
       "upstream_reference_ids": [
         "CORE_MESSAGE_IDS",
