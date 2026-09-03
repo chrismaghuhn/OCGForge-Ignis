@@ -115,6 +115,8 @@ an invalid response, or use a fallback policy.
 | --- | --- |
 | EDOPro release | 41.0.2, Bagooska |
 | EDOPro commit | 30935e847165a9ef0e547fb51a43f36168fab7c7 |
+| EDOPro ocgcore gitlink | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 |
+| ygopro-core research reference | e747e1771fcf91dd7c53a5950f030012229e66e4; not the V1 runtime core |
 | Protocol version | PRO_VERSION=0x1354 |
 | ocgcore API | 11 |
 | Room type | pre-created local or private room |

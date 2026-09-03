@@ -10,6 +10,8 @@ Date: 2026-09-03
 | --- | --- |
 | Repository | https://github.com/edo9300/edopro |
 | EDOPro commit | 30935e847165a9ef0e547fb51a43f36168fab7c7 |
+| EDOPro ocgcore gitlink | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 |
+| ygopro-core research reference | e747e1771fcf91dd7c53a5950f030012229e66e4 |
 | Release label | 41.0.2, Bagooska |
 | PRO_VERSION | 0x1354 |
 | ocgcore API | 11 |
@@ -22,6 +24,13 @@ the intended repository at bootstrap. The current upstream default-branch HEAD
 was also checked and is recorded as provenance in
 [PROTOCOL_PROVENANCE.md](../../PROTOCOL_PROVENANCE.md); it never replaces this
 pin automatically.
+
+The V1 runtime core is the ocgcore gitlink recorded by the pinned EDOPro tree:
+46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57. The separately researched
+ygopro-core commit e747e1771fcf91dd7c53a5950f030012229e66e4 is a research
+reference only. It is not the EDOPro gitlink and must not be silently
+substituted as the V1 runtime core. An intentional core override requires a
+separate explicit identity and acceptance decision.
 
 ## Integration scope
 

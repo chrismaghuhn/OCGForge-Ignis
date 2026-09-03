@@ -35,23 +35,35 @@ construction, model inference, response selection, and error recovery.
 
 ## Candidate completeness
 
-For a supported original prompt with N external legal options:
+For a flat one-to-one prompt:
 
 ~~~text
-N external options
+N protocol options
 = N adapter candidates
 = N model candidate rows
 = N model scores
 ~~~
 
-The candidates preserve the authoritative source order and retain the semantic
+For an adapter-local combinatorial continuation:
+
+~~~text
+N current semantic continuation actions
+= N model candidate rows
+= N model scores
+~~~
+
+Every current continuation domain must be complete for the current continuation
+state. Prior picks may legitimately constrain the next current domain. No legal
+terminal completion consistent with the choices already made may be silently
+truncated, fabricated, deduplicated, or made unreachable.
+
+Candidates preserve the authoritative source order and retain the semantic
 identity needed for deterministic selection. Candidate rows do not contain
 private response bytes or hidden object identity.
 
 An adapter-local continuation may expose a sequence of intermediate domains.
-In that case, each current continuation domain must itself be complete for the
-current local continuation state. Continuation steps do not reduce or reorder
-the original legal space.
+Each intermediate domain is evaluated under the same current-domain rule; the
+continuation does not invent an action or hide a legal completion.
 
 ## Response routing
 

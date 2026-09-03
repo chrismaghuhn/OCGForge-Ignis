@@ -12,9 +12,9 @@ runtime and evaluation configuration:
 ~~~text
 ignis_runtime_bundle_id = H(
   identity_schema,
-  EDOPro commit,
+  EDOPro source commit,
+  EDOPro ocgcore gitlink,
   protocol target/version,
-  ocgcore commit,
   CardScripts commit,
   all CDB identities,
   banlist identity,
@@ -28,12 +28,30 @@ The final canonical encoding, hash algorithm, field ordering, and digest
 domain must be versioned before an implementation claims a concrete digest.
 I0 defines the input set but does not publish a runtime-bundle digest.
 
+## EDOPro and ocgcore coherence
+
+For V1 the runtime core is the exact submodule gitlink recorded by the pinned
+EDOPro source commit:
+
+~~~text
+EDOPRO_SOURCE_COMMIT=30935e847165a9ef0e547fb51a43f36168fab7c7
+EDOPRO_OCGCORE_GITLINK=46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57
+YGOPRO_CORE_RESEARCH_REFERENCE=e747e1771fcf91dd7c53a5950f030012229e66e4
+~~~
+
+The research reference is a separately resolved ygopro-core commit. It is not
+the EDOPro V1 runtime core and is not a substitute for the gitlink. It may
+remain in provenance records, but it must not be treated as the runtime core
+identity. Any deliberate core override requires a separate versioned identity
+and acceptance decision.
+
 ## Required inputs
 
 The identity must bind, at minimum:
 
-- the exact EDOPro commit and target protocol version;
-- the exact ocgcore commit and API expectation;
+- the exact EDOPro source commit and target protocol version;
+- the exact ocgcore gitlink used by that EDOPro source commit and its API
+  expectation;
 - the exact CardScripts commit;
 - every CDB identity or content digest used by the runtime;
 - banlist identity;
