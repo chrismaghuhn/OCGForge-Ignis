@@ -31,6 +31,7 @@ CTOS_PLAYER_INFO(name=Ignis)
 CTOS_JOIN_GAME(protocol=0x1354, client/core=41.0/11.0)
 STOC_JOIN_GAME(team1=1, team2=1, mode=0, duel_flag_low=0,
                best_of=1, handshake=4043399681)
+                 accepted as non-actionable JoinAccepted
 STOC_TYPE_CHANGE(type=0x10)                 own pre-duel position 0, host
 STOC_HS_PLAYER_ENTER(pos=0, name=Ignis)
 STOC_HS_PLAYER_ENTER(pos=1, name=Opponent)
@@ -45,13 +46,13 @@ CTOS_HAND_RESULT(value=1)
 STOC_HAND_RESULT(res1=1, res2=3)              recipient-relative own WIN
 STOC_SELECT_TP
 CTOS_TP_RESULT(value=0)
-STOC_GAME_MSG(opaque bytes)                   next-layer suffix
+future STOC_GAME_MSG(opaque bytes)            read by next layer
 ```
 
-The `STOC_SELECT_TP` frame and the first `STOC_GAME_MSG` frame are delivered
-in one scripted read. I2 stops parsing at the choice boundary, then transfers
-the exact game-message bytes with the live transport after the successful TP
-write.
+The `STOC_SELECT_TP` frame is delivered without a pre-response
+`STOC_GAME_MSG`. I2 stops at the choice boundary, sends exactly one TP result,
+and transfers the live transport; a future game-message frame is read by the
+next layer, not by I2.
 
 ## Loss and tie transcripts
 
@@ -62,6 +63,10 @@ RPS loss:  STOC_HAND_RESULT(1,2) → HandedOff
 RPS tie:   STOC_HAND_RESULT(1,1) → DuelStarted
            next STOC_SELECT_HAND → new choice token ordinal
            previous token remains stale
+
+Already-received `STOC_HAND_RESULT` after `STOC_SELECT_HAND`, or already-
+received `STOC_GAME_MSG` after `STOC_SELECT_TP`, fails closed rather than being
+deferred across the caller response.
 ```
 
 The recipient-relative result table is:
@@ -84,9 +89,15 @@ The test executable covers:
 - own `STOC_TYPE_CHANGE` observer position `7`;
 - duplicate join, type-change before join, duel-start before readiness, and
   packets after `Failed`/`Closed`;
+- `STOC_JOIN_GAME` alone remains `JoinAccepted` and cannot enable deck upload;
+  observer `STOC_TYPE_CHANGE=7` fails before any deck/readiness packet;
 - `ReadyRequested` without server confirmation, `NotReadyRequested` without
   server confirmation, duplicate ready/not-ready commands, and host start
   while not-ready is pending;
+- remote NOTREADY/LEAVE/OBSERVE while `Starting` returns to `Ready` when our
+  own readiness remains authoritative, allowing an explicit retry;
+- `LeaveAsync` closes the owned transport without emitting
+  `CTOS_LEAVE_GAME`;
 - remote password/version/deck/side errors, unsupported STOC, truncated EOF,
   remote close, cancellation, stale choices, and invalid RPS bytes.
 

@@ -146,34 +146,6 @@ internal sealed class PreDuelStateMachine
             : I2ErrorCode.None;
     }
 
-    internal I2ErrorCode ValidateLeave() =>
-        state is I2SessionState.PlayerInfoSent or
-            I2SessionState.JoinRequestSent or
-            I2SessionState.LobbyJoined or
-            I2SessionState.DeckSubmitted or
-            I2SessionState.ReadyRequested or
-            I2SessionState.Ready or
-            I2SessionState.NotReadyRequested or
-            I2SessionState.Starting or
-            I2SessionState.DuelStarted or
-            I2SessionState.WaitingForHandChoice or
-            I2SessionState.WaitingForHandResult or
-            I2SessionState.WaitingForTpRequest or
-            I2SessionState.WaitingForTpChoice
-            ? I2ErrorCode.None
-            : I2ErrorCode.InvalidStateTransition;
-
-    internal I2TransitionResult MarkLeaveSent()
-    {
-        if (ValidateLeave() != I2ErrorCode.None)
-        {
-            return Fail(I2ErrorCode.InvalidStateTransition);
-        }
-
-        state = I2SessionState.Closed;
-        return Succeed(new I2Event(I2EventKind.Closed));
-    }
-
     internal I2TransitionResult MarkDuelStartRequested()
     {
         if (ValidateDuelStartRequest() != I2ErrorCode.None)
@@ -350,13 +322,14 @@ internal sealed class PreDuelStateMachine
         }
 
         lobby.HostInfo = hostInfo;
-        state = I2SessionState.LobbyJoined;
-        return Succeed(new I2Event(I2EventKind.LobbyJoined));
+        state = I2SessionState.JoinAccepted;
+        return Succeed();
     }
 
     private I2TransitionResult ApplyTypeChange(object? payload)
     {
-        if (!IsLobbyState() || payload is not StocTypeChangePayload typeChange)
+        if (state != I2SessionState.JoinAccepted ||
+            payload is not StocTypeChangePayload typeChange)
         {
             return Fail(I2ErrorCode.InvalidStateTransition);
         }
@@ -369,11 +342,13 @@ internal sealed class PreDuelStateMachine
 
         lobby.PreDuelLobbyPosition = position;
         lobby.IsHost = (typeChange.Type & 0xf0) != 0;
+        state = I2SessionState.LobbyJoined;
         return Succeed(
             new I2Event(
                 I2EventKind.OwnTypeChanged,
                 Position: position,
-                Value: lobby.IsHost ? (byte)1 : (byte)0));
+                Value: lobby.IsHost ? (byte)1 : (byte)0),
+            new I2Event(I2EventKind.LobbyJoined));
     }
 
     private I2TransitionResult ApplyPlayerEntered(object? payload)
@@ -462,6 +437,13 @@ internal sealed class PreDuelStateMachine
             }
 
             lobby.RemovePlayer(oldPosition);
+            I2ErrorCode recovery =
+                RecoverStartingAfterRemoteInvalidation(oldPosition, newValue);
+            if (recovery != I2ErrorCode.None)
+            {
+                return Fail(recovery);
+            }
+
             return Succeed(
                 new I2Event(
                     I2EventKind.PlayerStatusChanged,
@@ -519,6 +501,13 @@ internal sealed class PreDuelStateMachine
         else
         {
             lobby.ApplyPlayerStatus(oldPosition, newValue);
+        }
+
+        I2ErrorCode startingRecovery =
+            RecoverStartingAfterRemoteInvalidation(oldPosition, newValue);
+        if (startingRecovery != I2ErrorCode.None)
+        {
+            return Fail(startingRecovery);
         }
 
         return Succeed(
@@ -649,6 +638,27 @@ internal sealed class PreDuelStateMachine
         lobby.TryGetPlayer(position, out LobbyPlayerSnapshot player) &&
         player.IsOccupied &&
         player.IsReady;
+
+    private I2ErrorCode RecoverStartingAfterRemoteInvalidation(
+        byte changedPosition,
+        byte newValue)
+    {
+        if (state != I2SessionState.Starting ||
+            lobby.PreDuelLobbyPosition == changedPosition ||
+            newValue is not (0x08 or 0x0a or 0x0b))
+        {
+            return I2ErrorCode.None;
+        }
+
+        if (lobby.PreDuelLobbyPosition is not byte ownPosition ||
+            !IsReady(ownPosition))
+        {
+            return I2ErrorCode.InvalidStateTransition;
+        }
+
+        state = I2SessionState.Ready;
+        return I2ErrorCode.None;
+    }
 
     private bool IsLobbyState() => state is
         I2SessionState.LobbyJoined or

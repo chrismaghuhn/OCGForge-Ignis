@@ -152,6 +152,7 @@ parser, or control flow is copied.
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp | HandResult validates values 1..3, retries on ties, sends recipient-relative hand results, and sends STOC_SELECT_TP only to the winner | 2026-09-03 | observed behavior |
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp | TPResult uses 0/1, enters the active duel path, and is followed by gameplay-message generation rather than a required STOC_TP_RESULT acknowledgement | 2026-09-03 | observed behavior |
 | EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp | Player-change status low nibbles 0..5 encode duelist position moves while 0x8..0xb encode observe/ready/not-ready/leave | 2026-09-03 | wire layout/observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/netserver.cpp | EOF/error closes an unjoined player through DisconnectPlayer and routes an already-joined player through LeaveGame; an explicit CTOS_LEAVE_GAME is dispatched to LeaveGame when a duel mode exists | 2026-09-03 | observed behavior |
 
 ## Provenance boundaries
 

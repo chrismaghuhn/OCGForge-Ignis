@@ -309,30 +309,7 @@ public sealed class I2SessionRunner : IAsyncDisposable
                         : I2ErrorCode.InvalidStateTransition);
             }
 
-            I2ErrorCode validation = stateMachine.ValidateLeave();
-            if (validation != I2ErrorCode.None)
-            {
-                return await FailAndCloseAsync(validation).ConfigureAwait(false);
-            }
-
-            try
-            {
-                await WriteCtosAsync(
-                        CtosPacketType.LeaveGame,
-                        ReadOnlyMemory<byte>.Empty,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return await CloseForCancellationAsync().ConfigureAwait(false);
-            }
-            catch
-            {
-                return await FailAndCloseAsync(I2ErrorCode.SendFailed).ConfigureAwait(false);
-            }
-
-            I2TransitionResult result = stateMachine.MarkLeaveSent();
+            I2TransitionResult result = stateMachine.MarkClosed();
             await CloseTransportOnceAsync().ConfigureAwait(false);
             return result.IsSuccess
                 ? I2Result.Success()
@@ -459,74 +436,68 @@ public sealed class I2SessionRunner : IAsyncDisposable
             }
 
             List<I2Event> newEvents = new();
-            I2PumpResult? bufferedResult =
-                await ProcessBufferedFramesAsync(newEvents).ConfigureAwait(false);
-            if (bufferedResult is not null)
+            while (true)
             {
-                return bufferedResult;
-            }
+                I2PumpResult? bufferedResult =
+                    await ProcessBufferedFramesAsync(newEvents)
+                        .ConfigureAwait(false);
+                if (bufferedResult is not null)
+                {
+                    return bufferedResult;
+                }
 
-            int readCount;
-            try
-            {
-                int available = receiveBuffer.Capacity - receiveBuffer.Count;
-                if (available == 0)
+                int readCount;
+                try
+                {
+                    int available = receiveBuffer.Capacity - receiveBuffer.Count;
+                    if (available == 0)
+                    {
+                        return await PumpFailureAsync(
+                                I2ErrorCode.ReceiveBufferOverflow)
+                            .ConfigureAwait(false);
+                    }
+
+                    readCount = await transport.ReadAsync(
+                            readStorage.AsMemory(0, available),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return await ClosePumpForCancellationAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    return await PumpFailureAsync(I2ErrorCode.ConnectionFailed)
+                        .ConfigureAwait(false);
+                }
+
+                if (readCount < 0 ||
+                    readCount > receiveBuffer.Capacity - receiveBuffer.Count)
                 {
                     return await PumpFailureAsync(
                             I2ErrorCode.ReceiveBufferOverflow)
                         .ConfigureAwait(false);
                 }
 
-                readCount = await transport.ReadAsync(
-                        readStorage.AsMemory(0, available),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return await ClosePumpForCancellationAsync().ConfigureAwait(false);
-            }
-            catch
-            {
-                return await PumpFailureAsync(I2ErrorCode.ConnectionFailed)
-                    .ConfigureAwait(false);
+                if (readCount == 0)
+                {
+                    return await PumpFailureAsync(
+                            receiveBuffer.Count == 0
+                                ? I2ErrorCode.RemoteClosed
+                                : I2ErrorCode.TruncatedStream)
+                        .ConfigureAwait(false);
+                }
+
+                I2Result appended = receiveBuffer.Append(
+                    readStorage.AsSpan(0, readCount));
+                if (!appended.IsSuccess)
+                {
+                    return await PumpFailureAsync(appended.Error)
+                        .ConfigureAwait(false);
+                }
             }
 
-            if (readCount < 0 ||
-                readCount > receiveBuffer.Capacity - receiveBuffer.Count)
-            {
-                return await PumpFailureAsync(
-                        I2ErrorCode.ReceiveBufferOverflow)
-                    .ConfigureAwait(false);
-            }
-
-            if (readCount == 0)
-            {
-                return await PumpFailureAsync(
-                        receiveBuffer.Count == 0
-                            ? I2ErrorCode.RemoteClosed
-                            : I2ErrorCode.TruncatedStream)
-                    .ConfigureAwait(false);
-            }
-
-            I2Result appended = receiveBuffer.Append(readStorage.AsSpan(0, readCount));
-            if (!appended.IsSuccess)
-            {
-                return await PumpFailureAsync(appended.Error).ConfigureAwait(false);
-            }
-
-            I2PumpResult? receivedResult =
-                await ProcessBufferedFramesAsync(newEvents).ConfigureAwait(false);
-            if (receivedResult is not null)
-            {
-                return receivedResult;
-            }
-
-            return I2PumpResult.Success(
-                stateMachine.State,
-                newEvents,
-                stateMachine.PendingChoice,
-                runtimeHandoff);
         }
         finally
         {
@@ -804,6 +775,14 @@ public sealed class I2SessionRunner : IAsyncDisposable
 
             if (stateMachine.PendingChoice is not null)
             {
+                if (receiveBuffer.Count > 0)
+                {
+                    return await PumpFailureAsync(
+                            I2ErrorCode.UnexpectedPacketForState,
+                            newEvents)
+                        .ConfigureAwait(false);
+                }
+
                 return I2PumpResult.Success(
                     stateMachine.State,
                     newEvents,
@@ -823,6 +802,7 @@ public sealed class I2SessionRunner : IAsyncDisposable
 
     private bool CanPumpRead() => stateMachine.State is
         I2SessionState.JoinRequestSent or
+        I2SessionState.JoinAccepted or
         I2SessionState.LobbyJoined or
         I2SessionState.DeckSubmitted or
         I2SessionState.ReadyRequested or

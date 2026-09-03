@@ -18,12 +18,19 @@ Execution status: IMPLEMENTED_PENDING_PR_REVIEW
 - Protocol contract: `ocgforge-ignis.protocol.wire.v1`.
 - Client contract: `ocgforge-ignis.client.preduel.v1`.
 - Topology: exactly one duelist at position `0` and one at position `1`.
+- `STOC_JOIN_GAME` enters non-actionable `JoinAccepted`; valid own
+  `STOC_TYPE_CHANGE` is required before action-ready `LobbyJoined`.
 - Relay gate: reject `(HostInfo.DuelFlagLow & 0x00000080u) != 0`.
 - Series gate: reject `HostInfo.BestOf != 1`.
 - Server handshake: require `HostInfo.Handshake == 4043399681u`.
 - RPS domain: `{1, 2, 3}`; TP domain: `{0, 1}`.
 - Choice tokens: request ordinals `0, 1, 2, ...`, checked `ulong` increment.
 - `STOC_DUEL_START` is a nonterminal marker. Win handoff follows successful `CTOS_TP_RESULT`; loss handoff follows non-tied recipient-relative `STOC_HAND_RESULT`.
+- An incomplete I1 frame blocks the pump until completion/EOF/error/cancellation;
+  already-read bytes after a pending choice fail closed.
+- Explicit leave closes the owned transport and never sends `CTOS_LEAVE_GAME`.
+- Remote readiness invalidation while `Starting` returns to `Ready` when own
+  readiness remains authoritative.
 - `Failed`/`Closed` close the owned transport exactly once. `HandedOff` transfers it exactly once and does not close it.
 - `STOC_GAME_MSG` is never parsed by I2; unread bytes transfer unchanged.
 
@@ -104,7 +111,7 @@ public interface IByteTransport : IAsyncDisposable
 
 - [ ] **Step 1: Write RED tests.** Assert explicit states, duplicate names keyed by position, immutable legal domains, token ordinals, stale-token inequality, value-only public handoff, exact pending bytes, one-time transport ownership, and absence of password/endpoint/socket/PID/time/chunk metadata from public values.
 - [ ] **Step 2: Verify RED.** Run the Client executable; missing value types must fail the build.
-- [ ] **Step 3: Implement the models.** Use states `Created`, `Connecting`, `TransportConnected`, `PlayerInfoSent`, `JoinRequestSent`, `LobbyJoined`, `DeckSubmitted`, `ReadyRequested`, `Ready`, `NotReadyRequested`, `Starting`, `DuelStarted`, `WaitingForHandChoice`, `WaitingForHandResult`, `WaitingForTpRequest`, `WaitingForTpChoice`, `HandedOff`, `Closed`, and `Failed`. Define events exactly once for successful ready/not-ready sends as `ReadyRequested`/`NotReadyRequested`; do not add separate sent-event names. Position-key lobby snapshots are sorted by position. `PreDuelChoiceTokenV1` stores only `ulong Ordinal`. `PreDuelSessionV1` contains `HostInfo`, `PreDuelLobbyPosition`, host flag, public outcome, and copied events; it contains no final gameplay perspective. Internal `GameplayTransportHandoffV1` owns the live transport, public facts, and exact unread bytes and rejects a second transfer.
+- [ ] **Step 3: Implement the models.** Use states `Created`, `Connecting`, `TransportConnected`, `PlayerInfoSent`, `JoinRequestSent`, `JoinAccepted`, `LobbyJoined`, `DeckSubmitted`, `ReadyRequested`, `Ready`, `NotReadyRequested`, `Starting`, `DuelStarted`, `WaitingForHandChoice`, `WaitingForHandResult`, `WaitingForTpRequest`, `WaitingForTpChoice`, `HandedOff`, `Closed`, and `Failed`. Define events exactly once for successful ready/not-ready sends as `ReadyRequested`/`NotReadyRequested`; do not add separate sent-event names. Position-key lobby snapshots are sorted by position. `PreDuelChoiceTokenV1` stores only `ulong Ordinal`. `PreDuelSessionV1` contains `HostInfo`, `PreDuelLobbyPosition`, host flag, public outcome, and copied events; it contains no final gameplay perspective. Internal `GameplayTransportHandoffV1` owns the live transport, public facts, and exact unread bytes and rejects a second transfer.
 - [ ] **Step 4: Verify green.** Run value tests and I1 regression.
 
 ## Task 4: Pure state-machine reducer
@@ -135,17 +142,17 @@ ValueTask<I2PumpResult> PumpReadAsync(CancellationToken cancellationToken);
 ValueTask<I2Result> CloseAsync();
 ```
 
-Serialize all calls with one operation gate. `StartAsync` validates configuration, connects, sends player info and join using I1. `PumpReadAsync` appends one transport chunk, repeatedly calls `PacketPayloadValidator.TryReadValidatedStoc`, removes exact consumed frames, and stops at a choice boundary or handoff boundary. Every I1 error maps to a stable I2 failure. Failed sessions stop reads/writes and close once; cancellation closes without a remote-error event; EOF with pending bytes is `TruncatedStream`; EOF without pending bytes is `RemoteClosed`; no retry/reconnect exists. The runner never exposes a generic packet sender.
+Serialize all calls with one operation gate. `StartAsync` validates configuration, connects, sends player info and join using I1. `PumpReadAsync` repeatedly calls `PacketPayloadValidator.TryReadValidatedStoc`, removes exact consumed frames, waits through incomplete frames, and stops only at a causal choice boundary or handoff boundary. Any bytes already buffered after a published choice fail closed. Every I1 error maps to a stable I2 failure. Failed sessions stop reads/writes and close once; cancellation closes without a remote-error event; EOF with pending bytes is `TruncatedStream`; EOF without pending bytes is `RemoteClosed`; no retry/reconnect exists. The runner never exposes a generic packet sender, and explicit leave closes the transport without sending `CTOS_LEAVE_GAME`.
 - [ ] **Step 4: Verify green.** Run runner tests, I1 tests, and forbidden-symbol/secret scans.
 
 ## Task 6: Transcript, handoff-boundary, and chunking evidence
 
 **Files:** `tests/OCGForge.Ignis.Client.Tests/Program.cs` and `fixtures/client/v1/README.md`.
 
-- [ ] **Step 1: Add successful 1v1 transcript.** Use valid V1 HostInfo, own type `0x10`, player positions 0/1, deck upload, server-confirmed READY for both, host start, `STOC_DUEL_START`, `STOC_SELECT_HAND`, RPS choice, recipient-relative win `(1,3)`, `STOC_SELECT_TP`, TP choice `0`, and a coalesced trailing `STOC_GAME_MSG`. Assert exact CTOS frame bytes and exact unread handoff suffix.
+- [ ] **Step 1: Add successful 1v1 transcript.** Use valid V1 HostInfo, own type `0x10`, player positions 0/1, deck upload, server-confirmed READY for both, host start, `STOC_DUEL_START`, `STOC_SELECT_HAND`, RPS choice, recipient-relative win `(1,3)`, `STOC_SELECT_TP`, TP choice `0`, and a future `STOC_GAME_MSG` read by the transferred transport. Assert exact CTOS frame bytes and no pre-response game-message suffix.
 - [ ] **Step 2: Add loss/tie transcripts.** Loss `(1,2)` hands off after `STOC_HAND_RESULT`; tie `(1,1)` returns to `DuelStarted`, requires a new select-hand, and produces a new token. Assert old-token rejection.
 - [ ] **Step 3: Add chunking metamorphisms.** Execute the same byte transcript as one-byte chunks, one-frame chunks, all coalesced, and irregular `[1,2,5,3,8,13,21]`; compare semantic states/events, outbound CTOS bytes, terminal result, and pending suffix, never read counts/timing.
-- [ ] **Step 4: Add failure/terminal tests.** Cover topology/relay/best-of/observer, duplicate and reordered packets, invalid RPS, stale choices, `Failed` close-once/no-later-read, `Closed`, cancellation, duplicate terminal markers, and post-handoff bytes belonging only to the next layer.
+- [ ] **Step 4: Add failure/terminal tests.** Cover topology/relay/best-of/observer, duplicate and reordered packets, incomplete-frame action barriers, pre-response choice bytes, invalid RPS, stale choices, transport-close leave, `Starting` invalidation/retry, `Failed` close-once/no-later-read, `Closed`, cancellation, duplicate terminal markers, and post-handoff bytes belonging only to the next layer.
 - [ ] **Step 5: Verify twice.** Run Client and I1 executables in two fresh processes and compare complete outputs.
 
 ## Task 7: Provenance, CI, full gates, commit, and PR

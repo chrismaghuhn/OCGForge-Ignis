@@ -9,6 +9,7 @@ I3 authorization: I3_AUTHORIZED=NO
 Transport decision: I2_TRANSPORT_DECISION=ACCEPTED
 I2_RPS_WIN_TERMINAL_AFTER=CTOS_TP_RESULT_SENT
 I2_RPS_LOSS_TERMINAL_AFTER=NON_TIED_STOC_HAND_RESULT
+I2_EXPLICIT_LEAVE=TRANSPORT_CLOSE
 DUEL_RELAY_FLAG=0x00000080
 BEST_OF_REQUIRED=1
 Client contract ID: ocgforge-ignis.client.preduel.v1
@@ -56,6 +57,13 @@ After validated `STOC_JOIN_GAME`, the session rejects `HostInfo.team1 != 1`,
 `HostInfo.best_of != BEST_OF_REQUIRED` as `UNSUPPORTED_ROOM_TOPOLOGY`. A
 joiner that receives observer type `7` is also rejected; I2 does not operate
 an observer session. `HostInfo.mode` is not the current V1 relay detector.
+
+`STOC_JOIN_GAME` records validated `HostInfo` and enters `JoinAccepted`, which
+is a non-actionable boundary. Deck submission, readiness, and start commands
+remain illegal until a subsequent own `STOC_TYPE_CHANGE` proves duelist
+position `0` or `1`. Only then does the session enter action-ready
+`LobbyJoined`; observer type `7` therefore fails before any deck or readiness
+packet can be emitted.
 
 The pinned current EDOPro creator sets `HostInfo.mode=0` and represents relay
 through `duel_flag_low & DUEL_RELAY`. `MODE_SINGLE=0x0` and `MODE_RELAY=0x3`
@@ -124,6 +132,7 @@ Connecting
 TransportConnected
 PlayerInfoSent
 JoinRequestSent
+JoinAccepted
 LobbyJoined
 DeckSubmitted
 ReadyRequested
@@ -153,7 +162,8 @@ Created
   → TransportConnected
   → PlayerInfoSent       [CTOS_PLAYER_INFO]
   → JoinRequestSent      [CTOS_JOIN_GAME]
-  → LobbyJoined          [validated STOC_JOIN_GAME]
+  → JoinAccepted         [validated STOC_JOIN_GAME; HostInfo stored]
+  → LobbyJoined          [validated own STOC_TYPE_CHANGE; duelist position proven]
   → DeckSubmitted        [CTOS_UPDATE_DECK]
   → ReadyRequested       [CTOS_HS_READY]
   → Ready                [own STOC_HS_PLAYER_CHANGE READY]
@@ -162,6 +172,9 @@ Created
   ├─→ Starting            [host-only CTOS_HS_START after both required slots are ready]
   │   └─→ DuelStarted     [validated STOC_DUEL_START]
   └─→ DuelStarted         [validated server start for non-host]
+
+Starting
+  → Ready                 [remote duelist NOTREADY, LEAVE, or OBSERVE before duel start]
 
 DuelStarted
   → WaitingForHandChoice [validated STOC_SELECT_HAND]
@@ -188,7 +201,9 @@ server-confirmed ready. A host cannot start merely because its own deck was
 accepted. `CTOS_HS_NOTREADY` changes the state to `NotReadyRequested`, not
 `DeckSubmitted`; only the own-position `PLAYERCHANGE_NOTREADY` event confirms
 the return to `DeckSubmitted`. While `NotReadyRequested`, another not-ready
-request and host start are both illegal.
+request and host start are both illegal. A remote readiness/occupancy
+invalidation while `Starting` returns to `Ready` only when this client's own
+ready status remains authoritative; otherwise the session fails closed.
 
 If this client wins a non-tied RPS result, the opponent receives no TP request
 for this session until the server sends `STOC_SELECT_TP` to the winner. I2
@@ -217,7 +232,8 @@ The Client API exposes narrow operations rather than a generic packet sender:
   both required duelists are server-confirmed ready;
 - submit a caller-provided pre-duel choice only while its matching request is
   pending;
-- leave explicitly before handoff;
+- close the owned transport explicitly before handoff; I2 does not send
+  `CTOS_LEAVE_GAME`;
 - cancel or close explicitly.
 
 All outgoing packets are constructed with accepted I1 DTO encoders and
@@ -282,7 +298,8 @@ The validated handlers cover the accepted pre-duel control surface:
   `SERVER_HANDSHAKE_MISMATCH` or
   `UNSUPPORTED_ROOM_TOPOLOGY` and never enables legacy compatibility mode or
   HostInfo reinterpretation. A matching packet records validated public
-  `HostInfo` and enters the lobby;
+  `HostInfo` and enters non-actionable `JoinAccepted`; only a subsequent valid
+  own `STOC_TYPE_CHANGE` enters action-ready `LobbyJoined`;
 - `STOC_TYPE_CHANGE`, `STOC_HS_PLAYER_ENTER`,
   `STOC_HS_PLAYER_CHANGE`, and `STOC_HS_WATCH_CHANGE` update lobby facts;
 - `STOC_DUEL_START` enters the nonterminal `DuelStarted` marker state;
@@ -344,6 +361,13 @@ previous token remains stale. Overflow fails closed. Token construction never
 uses a GUID, RNG, timestamp, PID, thread/task ID, object identity, or transport
 identity.
 
+A pending choice is a causal protocol boundary. After `STOC_SELECT_HAND` or
+`STOC_SELECT_TP` publishes a request, any bytes already present after that
+frame are not deferred across the caller's response: I2 fails closed with
+`UNEXPECTED_PACKET_FOR_STATE`. Thus an already-received `STOC_HAND_RESULT`
+before `CTOS_HAND_RESULT`, or an already-received `STOC_GAME_MSG` before
+`CTOS_TP_RESULT`, cannot be made legal by the later state transition.
+
 ## Receive buffering and failures
 
 The bounded receive buffer retains incomplete bytes exactly and repeatedly
@@ -352,12 +376,25 @@ one at a time using I1's exact consumed-byte count. The buffer is bounded by
 the largest representable I1 frame plus its length prefix; malformed growth
 fails closed before allocation or publication.
 
+`PumpReadAsync` does not return a normal successful semantic boundary while an
+I1 frame is incomplete. It continues reading until the current frame is
+complete, EOF/error/cancellation occurs, or the session fails. EOF with pending
+bytes is `TRUNCATED_STREAM`; no caller action may be submitted in the middle
+of that frame.
+
 Transport errors map to stable I2 codes such as
 `CONNECTION_FAILED`, `CONNECTION_TIMEOUT`, `REMOTE_CLOSED`,
 `TRUNCATED_STREAM`, and `SEND_FAILED`. I1 validation errors map to
 `PROTOCOL_FAILURE`, `VERSION_MISMATCH`, `JOIN_REJECTED`, `DECK_REJECTED`,
 `UNSUPPORTED_PACKET`, or `UNEXPECTED_PACKET_FOR_STATE` as appropriate.
 `SIDEERROR` fails closed because siding is outside I2 V1.
+
+While `Starting`, a remote duelist `NOTREADY`, `LEAVE`, or `OBSERVE` status
+updates the authoritative lobby and returns the session to `Ready` if this
+client remains server-confirmed ready. The host may then issue a new explicit
+start request only after both required positions are occupied and ready again.
+The session never fabricates `DuelStarted`; an own readiness loss fails closed
+or follows only an explicitly justified authoritative transition.
 
 Cancellation closes the transport, stops pending read/write work, emits one
 deterministic `Closed` outcome, and leaves no receive loop alive. Cancellation
@@ -366,6 +403,10 @@ failure, stops all further reads and writes, closes/disposes the owned
 transport exactly once, leaves no background mutation, and cannot retry or
 reconnect. A failed connection attempt is final for that session; a caller must
 create a new session explicitly.
+
+`I2_EXPLICIT_LEAVE=TRANSPORT_CLOSE`: `LeaveAsync` closes the owned transport and
+enters `Closed` without sending `CTOS_LEAVE_GAME`. This applies before handoff;
+I1 may still encode the packet, but I2 does not use it for explicit leave.
 
 `HandedOff` is the only exception to transport closure: the live transport and
 exact pending-byte suffix transfer exactly once to
@@ -389,9 +430,11 @@ The public handoff is paired with an internal, one-time
 `GameplayTransportHandoffV1` owned by the session runner. The internal value
 contains the same live `IByteTransport`, the immutable `PreDuelSessionV1`, and
 an exact owned copy of every unread receive-buffer byte. On handoff, I2 stops
-parsing immediately, transfers transport ownership exactly once, and neither
-consumes, rejects, nor discards a trailing `STOC_GAME_MSG`. The first
-`STOC_GAME_MSG` belongs to the future gameplay consumer; I2 never parses it.
+parsing immediately, transfers transport ownership exactly once, and preserves
+an unread suffix only when no pending choice boundary has been crossed. The
+first future `STOC_GAME_MSG` belongs to the gameplay consumer; I2 never parses
+it. A `STOC_GAME_MSG` already buffered after `STOC_SELECT_TP` fails closed
+instead of being carried across the caller's TP response.
 
 The handoff is emitted exactly once. The winning-RPS path emits it only after
 the single `CTOS_TP_RESULT` write succeeds. The losing-RPS path emits it after
@@ -418,14 +461,19 @@ terminal handoff.
 Failure transcripts cover password rejection, version rejection, deck
 rejection, unexpected ordering, truncated stream, remote close, unsupported
 STOC, handshake mismatch, invalid commands, duplicate packets, stale choices,
-unsupported position moves, cancellation, post-terminal input, and a
-coalesced final pre-duel frame plus first `STOC_GAME_MSG` boundary.
+unsupported position moves, cancellation, post-terminal input, explicit
+transport-close leave, partial-frame action barriers, choice-causal violations,
+and a coalesced loss-path final pre-duel frame plus first `STOC_GAME_MSG`
+boundary. The winning path delivers `STOC_SELECT_TP` without a pre-response
+game-message suffix; a future `STOC_GAME_MSG` is read only by the transferred
+transport owner.
 They explicitly include `team1 != 1`, `team2 != 1`, the `DUEL_RELAY` bit set
 with `mode=0`, `best_of != 1`, observer self-type `7`, duplicate
 `STOC_HAND_RESULT` while
 `WaitingForTpRequest`, `STOC_SELECT_HAND`/TP results in the wrong states,
 `CTOS_HS_NOTREADY` while `NotReadyRequested`, and host start while
-`NotReadyRequested`.
+`NotReadyRequested`. They also cover the `JoinAccepted` action barrier and
+remote readiness invalidation while `Starting`.
 
 RPS evidence enumerates all recipient-relative outcomes: ties `(1,1)`,
 `(2,2)`, `(3,3)`; wins `(1,3)`, `(2,1)`, `(3,2)`; losses `(1,2)`,

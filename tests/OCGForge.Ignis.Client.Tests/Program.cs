@@ -18,7 +18,8 @@ var tests = new (string Name, Action Body)[]
     ("RPS loss handoff", TestRpsLossHandoff),
     ("transport failure mapping", TestTransportFailureMapping),
     ("explicit leave lifecycle", TestExplicitLeaveLifecycle),
-    ("buffered input and serialized cancellation", TestBufferedInputAndSerializedCancellation)
+    ("buffered input and serialized cancellation", TestBufferedInputAndSerializedCancellation),
+    ("I2 remediation barriers", TestI2RemediationBarriers)
 };
 
 int passed = 0;
@@ -270,7 +271,7 @@ static void TestPreDuelStateMachineTransitions()
     I2TransitionResult joined = machine.ApplyPacket(
         ValidatedStoc(StocPacketType.JoinGame, ValidHostInfoPayload()));
     True(joined.IsSuccess);
-    Equal(I2SessionState.LobbyJoined, machine.State);
+    Equal(I2SessionState.JoinAccepted, machine.State);
 
     True(machine.ApplyPacket(
         ValidatedStoc(
@@ -543,9 +544,7 @@ static void TestSessionRunnerTranscript()
         StocPacketType.GameMsg,
         new byte[] { 0x99, 0x88, 0x77 });
     transport.Enqueue(
-        Concat(
-            StocFrame(StocPacketType.SelectTp, Array.Empty<byte>()),
-            gameMessage));
+        StocFrame(StocPacketType.SelectTp, Array.Empty<byte>()));
     I2PumpResult tpRequest = runner.PumpReadAsync(CancellationToken.None)
         .GetAwaiter()
         .GetResult();
@@ -567,8 +566,18 @@ static void TestSessionRunnerTranscript()
         .IsSuccess);
     Equal(I2SessionState.HandedOff, runner.State);
     NotNull(runner.RuntimeHandoff);
-    BytesEqual(gameMessage, runner.RuntimeHandoff!.PendingBytes.Span);
+    BytesEqual(Array.Empty<byte>(), runner.RuntimeHandoff!.PendingBytes.Span);
     Equal(0, transport.CloseCallCount);
+
+    transport.Enqueue(gameMessage);
+    byte[] futureGameMessage = new byte[gameMessage.Length];
+    int futureBytes = runner.RuntimeHandoff!.Transport.ReadAsync(
+            futureGameMessage,
+            CancellationToken.None)
+        .GetAwaiter()
+        .GetResult();
+    Equal(gameMessage.Length, futureBytes);
+    BytesEqual(gameMessage, futureGameMessage);
 }
 
 static void TestIllegalCommandsDoNotSendPackets()
@@ -707,10 +716,6 @@ static void TestFailureOwnershipAndCancellation()
         new byte[] { 0x05, 0x00, (byte)StocPacketType.DuelStart }
     });
     I2SessionRunner truncatedRunner = NewStartedRunner(truncatedTransport);
-    True(truncatedRunner.PumpReadAsync(CancellationToken.None)
-        .GetAwaiter()
-        .GetResult()
-        .IsSuccess);
     I2PumpResult truncated = truncatedRunner.PumpReadAsync(CancellationToken.None)
         .GetAwaiter()
         .GetResult();
@@ -744,7 +749,7 @@ static void TestChunkingMetamorphicTranscript()
     (I2SessionState State, string Events, string Writes, byte[] Pending) baseline =
         RunChunkedWinner(ChunkingMode.AllCoalesced);
     BytesEqual(
-        StocFrame(StocPacketType.GameMsg, new byte[] { 0x99, 0x88, 0x77 }),
+        Array.Empty<byte>(),
         baseline.Pending);
 
     foreach (ChunkingMode mode in new[]
@@ -789,6 +794,11 @@ static void TestLobbyMessagesAndPacketFailures()
     PreDuelStateMachine unsupportedMoveMachine = NewJoinRequestMachine();
     True(unsupportedMoveMachine.ApplyPacket(
         ValidatedStoc(StocPacketType.JoinGame, ValidHostInfoPayload())).IsSuccess);
+    True(unsupportedMoveMachine.ApplyPacket(
+        ValidatedStoc(
+            StocPacketType.TypeChange,
+            PacketPayloadCodec.EncodeStocTypeChange(
+                new StocTypeChangePayload(0x10)))).IsSuccess);
     True(unsupportedMoveMachine.ApplyPacket(
         ValidatedStoc(
             StocPacketType.HsPlayerEnter,
@@ -1051,6 +1061,28 @@ static void TestTransportFailureMapping()
 
 static void TestExplicitLeaveLifecycle()
 {
+    ScriptedTransport rejectedTransport = new(Array.Empty<byte[]>());
+    I2SessionRunner rejectedRunner = NewStartedRunner(rejectedTransport);
+    rejectedTransport.Enqueue(
+        StocFrame(
+            StocPacketType.ErrorMsg,
+            PacketPayloadCodec.EncodeStocErrorMessage(
+                new JoinErrorPayload(JoinErrorCode.Password))));
+    Equal(
+        I2ErrorCode.JoinRejected,
+        rejectedRunner.PumpReadAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult()
+            .Error);
+    int rejectedWrites = rejectedTransport.Writes.Count;
+    Equal(
+        I2ErrorCode.InvalidStateTransition,
+        rejectedRunner.LeaveAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult()
+            .Error);
+    Equal(rejectedWrites, rejectedTransport.Writes.Count);
+
     ScriptedTransport transport = new(Array.Empty<byte[]>());
     I2SessionRunner runner = NewStartedRunner(transport);
     I2Result leave = runner.LeaveAsync(CancellationToken.None)
@@ -1058,8 +1090,7 @@ static void TestExplicitLeaveLifecycle()
         .GetResult();
     True(leave.IsSuccess);
     Equal(I2SessionState.Closed, runner.State);
-    Equal(3, transport.Writes.Count);
-    Equal(CtosPacketType.LeaveGame, ReadCtos(transport.Writes[^1]).Type);
+    Equal(2, transport.Writes.Count);
     Equal(1, transport.CloseCallCount);
     int reads = transport.ReadCallCount;
     Equal(
@@ -1135,6 +1166,7 @@ static void TestBufferedInputAndSerializedCancellation()
         .GetAwaiter()
         .GetResult()
         .IsSuccess);
+    int writesBeforeCausalBoundary = bufferedTransport.Writes.Count;
 
     bufferedTransport.Enqueue(
         Concat(
@@ -1147,23 +1179,12 @@ static void TestBufferedInputAndSerializedCancellation()
     I2PumpResult choice = bufferedRunner.PumpReadAsync(CancellationToken.None)
         .GetAwaiter()
         .GetResult();
-    True(choice.IsSuccess);
-    Equal(I2SessionState.WaitingForHandChoice, bufferedRunner.State);
-    True(bufferedRunner.SubmitChoiceAsync(
-            choice.ChoiceRequest!.Token,
-            1,
-            CancellationToken.None)
-        .GetAwaiter()
-        .GetResult()
-        .IsSuccess);
-    int readsBeforeBufferedProcessing = bufferedTransport.ReadCallCount;
-    I2PumpResult bufferedResult = bufferedRunner
-        .PumpReadAsync(CancellationToken.None)
-        .GetAwaiter()
-        .GetResult();
-    True(bufferedResult.IsSuccess);
-    Equal(I2SessionState.WaitingForTpRequest, bufferedRunner.State);
-    Equal(readsBeforeBufferedProcessing, bufferedTransport.ReadCallCount);
+    False(choice.IsSuccess);
+    Equal(I2ErrorCode.UnexpectedPacketForState, choice.Error);
+    Equal(I2SessionState.Failed, bufferedRunner.State);
+    Equal(1, bufferedRunner.Events.Count(@event =>
+        @event.Kind == I2EventKind.RpsRequested));
+    Equal(writesBeforeCausalBoundary, bufferedTransport.Writes.Count);
 
     BlockingTransport gateTransport = new();
     I2SessionRunner gateRunner = NewStartedRunner(gateTransport);
@@ -1188,6 +1209,281 @@ static void TestBufferedInputAndSerializedCancellation()
     Equal(1, gateTransport.CloseCallCount);
 }
 
+static void TestI2RemediationBarriers()
+{
+    ScriptedTransport joinOnlyTransport = new(Array.Empty<byte[]>());
+    I2SessionRunner joinOnlyRunner = NewStartedRunner(joinOnlyTransport);
+    joinOnlyTransport.Enqueue(
+        StocFrame(StocPacketType.JoinGame, ValidHostInfoPayload()));
+    I2PumpResult joinOnly = joinOnlyRunner
+        .PumpReadAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult();
+    True(joinOnly.IsSuccess);
+    Equal(I2SessionState.JoinAccepted, joinOnlyRunner.State);
+    Equal(
+        I2ErrorCode.InvalidStateTransition,
+        joinOnlyRunner.SubmitDeckAsync(
+                new PrevalidatedProtocolDeck(
+                    new uint[] { 1 },
+                    Array.Empty<uint>()),
+                CancellationToken.None)
+            .GetAwaiter()
+            .GetResult()
+            .Error);
+    Equal(2, joinOnlyTransport.Writes.Count);
+
+    byte[] joinFrame = StocFrame(
+        StocPacketType.JoinGame,
+        ValidHostInfoPayload());
+    byte[] observerFrame = StocFrame(
+        StocPacketType.TypeChange,
+        PacketPayloadCodec.EncodeStocTypeChange(
+            new StocTypeChangePayload(7)));
+    foreach (byte[][] chunks in new[]
+    {
+        new[] { Concat(joinFrame, observerFrame) },
+        new[] { joinFrame, observerFrame }
+    })
+    {
+        ScriptedTransport observerTransport = new(Array.Empty<byte[]>());
+        I2SessionRunner observerRunner = NewStartedRunner(observerTransport);
+        observerTransport.Enqueue(chunks);
+        I2PumpResult observer = observerRunner
+            .PumpReadAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+        if (observer.IsSuccess)
+        {
+            Equal(I2SessionState.JoinAccepted, observerRunner.State);
+            Equal(2, observerTransport.Writes.Count);
+            observer = observerRunner
+                .PumpReadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
+        False(observer.IsSuccess);
+        Equal(I2ErrorCode.UnsupportedRoomTopology, observer.Error);
+        Equal(2, observerTransport.Writes.Count);
+    }
+
+    (I2ErrorCode WholeError, I2ErrorCode ByteError, string WholeWrites, string ByteWrites) race =
+        RunReadyNotReadyRace();
+    Equal(race.WholeError, race.ByteError);
+    Equal(race.WholeWrites, race.ByteWrites);
+
+    ScriptedTransport tpTransport = new(Array.Empty<byte[]>());
+    I2SessionRunner tpRunner = NewRunnerAtTpRequest(tpTransport);
+    byte[] earlyGameMessage = StocFrame(
+        StocPacketType.GameMsg,
+        new byte[] { 0xde, 0xad });
+    tpTransport.Enqueue(
+        Concat(
+            StocFrame(StocPacketType.SelectTp, Array.Empty<byte>()),
+            earlyGameMessage));
+    I2PumpResult earlyGame = tpRunner
+        .PumpReadAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult();
+    False(earlyGame.IsSuccess);
+    Equal(I2ErrorCode.UnexpectedPacketForState, earlyGame.Error);
+    Equal(I2SessionState.Failed, tpRunner.State);
+    Equal(
+        0,
+        tpTransport.Writes.Count(frame =>
+            ReadCtos(frame).Type == CtosPacketType.TpResult));
+
+    ScriptedTransport startingTransport = new(Array.Empty<byte[]>());
+    I2SessionRunner startingRunner = NewReadyRunner(startingTransport);
+    True(startingRunner.RequestDuelStartAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    startingTransport.Enqueue(
+        StocFrame(
+            StocPacketType.HsPlayerChange,
+            PacketPayloadCodec.EncodeStocHsPlayerChange(
+                new StocHsPlayerChangePayload(0x1a))));
+    I2PumpResult invalidated = startingRunner
+        .PumpReadAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult();
+    True(invalidated.IsSuccess);
+    Equal(I2SessionState.Ready, startingRunner.State);
+    startingTransport.Enqueue(
+        StocFrame(
+            StocPacketType.HsPlayerChange,
+            PacketPayloadCodec.EncodeStocHsPlayerChange(
+                new StocHsPlayerChangePayload(0x19))));
+    True(startingRunner.PumpReadAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    True(startingRunner.RequestDuelStartAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    Equal(I2SessionState.Starting, startingRunner.State);
+
+    ScriptedTransport leaveTransport = new(Array.Empty<byte[]>());
+    I2SessionRunner leaveRunner = NewReadyRunner(leaveTransport);
+    True(leaveRunner.RequestDuelStartAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    leaveTransport.Enqueue(
+        StocFrame(
+            StocPacketType.HsPlayerChange,
+            PacketPayloadCodec.EncodeStocHsPlayerChange(
+                new StocHsPlayerChangePayload(0x1b))));
+    True(leaveRunner.PumpReadAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    Equal(I2SessionState.Ready, leaveRunner.State);
+    False(leaveRunner.Lobby.SnapshotPlayers().Any(player =>
+        player.Position == ClientContractV1.SecondDuelistPosition &&
+        player.IsOccupied));
+
+    ScriptedTransport observeTransport = new(Array.Empty<byte[]>());
+    I2SessionRunner observeRunner = NewReadyRunner(observeTransport);
+    True(observeRunner.RequestDuelStartAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    observeTransport.Enqueue(
+        StocFrame(
+            StocPacketType.HsPlayerChange,
+            PacketPayloadCodec.EncodeStocHsPlayerChange(
+                new StocHsPlayerChangePayload(0x18))));
+    True(observeRunner.PumpReadAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    Equal(I2SessionState.Ready, observeRunner.State);
+    False(observeRunner.Lobby.SnapshotPlayers().Any(player =>
+        player.Position == ClientContractV1.SecondDuelistPosition &&
+        player.IsOccupied));
+}
+
+static (I2ErrorCode WholeError, I2ErrorCode ByteError, string WholeWrites, string ByteWrites)
+    RunReadyNotReadyRace()
+{
+    static (I2ErrorCode Error, string Writes) Run(bool oneByte)
+    {
+        ScriptedTransport transport = new(Array.Empty<byte[]>());
+        I2SessionRunner runner = NewReadyRunner(transport);
+        byte[] notReady = StocFrame(
+            StocPacketType.HsPlayerChange,
+            PacketPayloadCodec.EncodeStocHsPlayerChange(
+                new StocHsPlayerChangePayload(0x1a)));
+        transport.Enqueue(oneByte
+            ? notReady.Select(value => new[] { value }).ToArray()
+            : new[] { notReady });
+        True(runner.PumpReadAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult()
+            .IsSuccess);
+        I2Result start = runner.RequestDuelStartAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+        return (
+            start.Error,
+            string.Join("|", transport.Writes.Select(Convert.ToHexString)));
+    }
+
+    (I2ErrorCode wholeError, string wholeWrites) = Run(false);
+    (I2ErrorCode byteError, string byteWrites) = Run(true);
+    return (wholeError, byteError, wholeWrites, byteWrites);
+}
+
+static I2SessionRunner NewReadyRunner(ScriptedTransport transport)
+{
+    I2SessionRunner runner = NewStartedRunner(transport);
+    transport.Enqueue(
+        Concat(
+            StocFrame(StocPacketType.JoinGame, ValidHostInfoPayload()),
+            StocFrame(
+                StocPacketType.TypeChange,
+                PacketPayloadCodec.EncodeStocTypeChange(
+                    new StocTypeChangePayload(0x10))),
+            StocFrame(
+                StocPacketType.HsPlayerEnter,
+                PacketPayloadCodec.EncodeStocHsPlayerEnter(
+                    new StocHsPlayerEnterPayload("Ignis", 0))),
+            StocFrame(
+                StocPacketType.HsPlayerEnter,
+                PacketPayloadCodec.EncodeStocHsPlayerEnter(
+                    new StocHsPlayerEnterPayload("Opponent", 1)))));
+    True(runner.PumpReadAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    True(runner.SubmitDeckAsync(
+            new PrevalidatedProtocolDeck(
+                new uint[] { 1 },
+                Array.Empty<uint>()),
+            CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    True(runner.RequestReadyAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    transport.Enqueue(
+        Concat(
+            StocFrame(
+                StocPacketType.HsPlayerChange,
+                PacketPayloadCodec.EncodeStocHsPlayerChange(
+                    new StocHsPlayerChangePayload(0x09))),
+            StocFrame(
+                StocPacketType.HsPlayerChange,
+                PacketPayloadCodec.EncodeStocHsPlayerChange(
+                    new StocHsPlayerChangePayload(0x19)))));
+    True(runner.PumpReadAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    Equal(I2SessionState.Ready, runner.State);
+    return runner;
+}
+
+static I2SessionRunner NewRunnerAtTpRequest(ScriptedTransport transport)
+{
+    I2SessionRunner runner = NewReadyRunner(transport);
+    True(runner.RequestDuelStartAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    transport.Enqueue(
+        Concat(
+            StocFrame(StocPacketType.DuelStart, Array.Empty<byte>()),
+            StocFrame(StocPacketType.SelectHand, Array.Empty<byte>())));
+    I2PumpResult handRequest = runner.PumpReadAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult();
+    True(handRequest.IsSuccess);
+    True(runner.SubmitChoiceAsync(
+            handRequest.ChoiceRequest!.Token,
+            1,
+            CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    transport.Enqueue(
+        StocFrame(
+            StocPacketType.HandResult,
+            PacketPayloadCodec.EncodeStocHandResult(
+                new StocHandResultPayload(1, 3))));
+    True(runner.PumpReadAsync(CancellationToken.None)
+        .GetAwaiter()
+        .GetResult()
+        .IsSuccess);
+    Equal(I2SessionState.WaitingForTpRequest, runner.State);
+    return runner;
+}
+
 static (I2SessionState State, string Events, string Writes, byte[] Pending)
     RunChunkedWinner(ChunkingMode mode)
 {
@@ -1210,7 +1506,9 @@ static (I2SessionState State, string Events, string Writes, byte[] Pending)
             StocFrame(
                 StocPacketType.HsPlayerEnter,
                 PacketPayloadCodec.EncodeStocHsPlayerEnter(
-                    new StocHsPlayerEnterPayload("Opponent", 1)))));
+                    new StocHsPlayerEnterPayload("Opponent", 1)))),
+        static current => current.State == I2SessionState.LobbyJoined &&
+            current.Lobby.SnapshotPlayers().Count == 2);
     True(runner.SubmitDeckAsync(
             new PrevalidatedProtocolDeck(
                 new uint[] { 0x11223344 },
@@ -1235,7 +1533,10 @@ static (I2SessionState State, string Events, string Writes, byte[] Pending)
             StocFrame(
                 StocPacketType.HsPlayerChange,
                 PacketPayloadCodec.EncodeStocHsPlayerChange(
-                    new StocHsPlayerChangePayload(0x19)))));
+                    new StocHsPlayerChangePayload(0x19)))),
+        static current => current.State == I2SessionState.Ready &&
+            current.Lobby.SnapshotPlayers().Count == 2 &&
+            current.Lobby.SnapshotPlayers().All(player => player.IsReady));
     True(runner.RequestDuelStartAsync(CancellationToken.None)
         .GetAwaiter()
         .GetResult()
@@ -1247,7 +1548,7 @@ static (I2SessionState State, string Events, string Writes, byte[] Pending)
             mode,
             StocFrame(StocPacketType.DuelStart, Array.Empty<byte>()),
             StocFrame(StocPacketType.SelectHand, Array.Empty<byte>())),
-        I2SessionState.WaitingForHandChoice);
+        static current => current.PendingChoice is not null);
     PreDuelChoiceTokenV1 handToken = runner.PendingChoice!.Token;
     True(runner.SubmitChoiceAsync(handToken, 1, CancellationToken.None)
         .GetAwaiter()
@@ -1261,19 +1562,16 @@ static (I2SessionState State, string Events, string Writes, byte[] Pending)
             StocFrame(
                 StocPacketType.HandResult,
                 PacketPayloadCodec.EncodeStocHandResult(
-                    new StocHandResultPayload(1, 3)))));
+                    new StocHandResultPayload(1, 3)))),
+        static current => current.State == I2SessionState.WaitingForTpRequest);
 
-    byte[] gameMessage = StocFrame(
-        StocPacketType.GameMsg,
-        new byte[] { 0x99, 0x88, 0x77 });
     PumpStage(
         runner,
         transport,
         ChunkStage(
             mode,
-            StocFrame(StocPacketType.SelectTp, Array.Empty<byte>()),
-            gameMessage),
-        I2SessionState.WaitingForTpChoice);
+            StocFrame(StocPacketType.SelectTp, Array.Empty<byte>())),
+        static current => current.PendingChoice is not null);
     PreDuelChoiceTokenV1 tpToken = runner.PendingChoice!.Token;
     True(runner.SubmitChoiceAsync(tpToken, 0, CancellationToken.None)
         .GetAwaiter()
@@ -1291,20 +1589,24 @@ static void PumpStage(
     I2SessionRunner runner,
     ScriptedTransport transport,
     byte[][] chunks,
-    I2SessionState? stopState = null)
+    Func<I2SessionRunner, bool> completed)
 {
+    ArgumentNullException.ThrowIfNull(completed);
     transport.Enqueue(chunks);
-    foreach (byte[] _ in chunks)
+    int maximumAttempts = Math.Max(chunks.Length + 1, 1);
+    for (int attempt = 0; attempt < maximumAttempts; attempt++)
     {
         I2PumpResult result = runner.PumpReadAsync(CancellationToken.None)
             .GetAwaiter()
             .GetResult();
         True(result.IsSuccess);
-        if (stopState is I2SessionState expected && runner.State == expected)
+        if (completed(runner))
         {
-            break;
+            return;
         }
     }
+
+    throw new InvalidOperationException("The scripted stage did not complete.");
 }
 
 static byte[][] ChunkStage(ChunkingMode mode, params byte[][] frames)
