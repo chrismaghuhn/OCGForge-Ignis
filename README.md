@@ -11,7 +11,9 @@ dependency direction never points back from OCGForge to this repository.
 
 ## Current status
 
-This commit is the I0 repository bootstrap:
+The merged `main` baseline contains the I0 repository bootstrap and the final
+I1 deterministic protocol codec. This branch contains the separately
+authorized I2 Client implementation for independent review.
 
 - repository charter and governance;
 - frozen V1 architecture;
@@ -20,11 +22,14 @@ This commit is the I0 repository bootstrap:
 - runtime-bundle identity contract;
 - accepted integration and process ADRs;
 - third-party and clean-room protocol provenance records;
-- repository hygiene configuration.
+- repository hygiene configuration;
+- the I1 platform-neutral protocol library and deterministic tests;
+- the I2 headless 1v1 local/private connection and pre-duel Client under review.
 
-I0 contains no production implementation. In particular, there is no src/
-directory, networking code, model-runner code, C# project, vendored source, or
-external runtime asset.
+The original I0 commit contained no production implementation. The current
+I2 scope contains only the Protocol and Client projects; it does not contain
+model-runner code, WPF/UI code, gameplay state, copied source, or external
+runtime assets.
 
 The user-authorized I0 evidence records the accepted OCGForge recovery head as
 f13d19cab2b3677149f4caa25ef3c755623ded41 with:

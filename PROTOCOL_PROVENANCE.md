@@ -1,6 +1,6 @@
 # Protocol Provenance and Clean-Room Ledger
 
-Status: I0 provenance freeze
+Status: I2 implementation provenance ledger
 Date inspected: 2026-09-03
 
 ## Clean-room discipline
@@ -133,6 +133,25 @@ they were verified.
 The I1 wire-codec task must add the exact packet facts it implements and must
 preserve the I0 prohibition on source copying. I1 is not authorized by this
 bootstrap.
+
+## I2 implemented facts
+
+The I2 implementation uses only the following additional facts from the pinned
+EDOPro commit. They are independently implemented; no upstream source,
+parser, or control flow is copied.
+
+| External repository | Exact commit | Source path | Fact learned | Date | Classification |
+| --- | --- | --- | --- | --- | --- |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/ocgapi_constants.h | DUEL_RELAY is the modern duel flag 0x80 | 2026-09-03 | numeric constant |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/network.h | HostInfo carries team1, team2, best_of, duel_flag_low, handshake, and the public duelist/observer position and lobby status encodings | 2026-09-03 | wire layout/numeric constant |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp | On a successful TCP connection the current client sends CTOS_PLAYER_INFO before CTOS_JOIN_GAME; the modern creator sets mode independently from duel_flag_low and best_of | 2026-09-03 | observed behavior/wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp | A modern HostInfo relay indication is read from duel_flag_low & DUEL_RELAY; mode is not used as the current relay detector | 2026-09-03 | observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/netserver.cpp | The server passes the relay flag from duel_flag_low and best_of independently into GenericDuel construction | 2026-09-03 | observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/netserver.h | ReSendToPlayer resends the most recently sent packet to the other player, so the initial STOC_SELECT_HAND reaches both 1v1 participants | 2026-09-03 | observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp | CheckReady, PlayerReady, and StartDuel require authoritative server readiness; current 1v1 I2 scope has both positions occupied and ready before host start | 2026-09-03 | observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp | HandResult validates values 1..3, retries on ties, sends recipient-relative hand results, and sends STOC_SELECT_TP only to the winner | 2026-09-03 | observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp | TPResult uses 0/1, enters the active duel path, and is followed by gameplay-message generation rather than a required STOC_TP_RESULT acknowledgement | 2026-09-03 | observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/generic_duel.cpp | Player-change status low nibbles 0..5 encode duelist position moves while 0x8..0xb encode observe/ready/not-ready/leave | 2026-09-03 | wire layout/observed behavior |
 
 ## Provenance boundaries
 
