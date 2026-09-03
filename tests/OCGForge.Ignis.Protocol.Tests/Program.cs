@@ -18,7 +18,9 @@ var tests = new (string Name, Action Body)[]
     ("negative typed payloads", TestNegativePayloads),
     ("unsupported outgoing packet types", TestUnsupportedOutgoingTypes),
     ("repeated encode/decode determinism", TestDeterminism),
-    ("type-aware packet validation surface", TestTypeAwareValidation)
+    ("type-aware packet validation surface", TestTypeAwareValidation),
+    ("discriminated error payloads", TestErrorPayloads),
+    ("validated V1 version compatibility", TestValidatedVersionCompatibility)
 };
 
 int passed = 0;
@@ -424,23 +426,20 @@ static void TestPaddingIsNonSemantic()
     Equal(decodedJoinA.Value, decodedJoinB.Value);
     BytesEqual(joinA, PacketPayloadCodec.EncodeJoinGame(decodedJoinB.Value));
 
-    byte[] errorA = Hex("02 00 00 00 44 33 22 11 55 66");
+    byte[] errorA = Hex(
+        "02 00 00 00 05 00 00 00 06 00 00 00 28 00 00 00 " +
+        "3c 00 00 00 44 33 22 11");
     byte[] errorB = errorA.ToArray();
     errorB[1] = 0xaa;
     errorB[2] = 0xbb;
     errorB[3] = 0xcc;
-    PayloadDecodeResult<StocErrorMessagePayload> decodedErrorA =
+    PayloadDecodeResult<StocErrorPayload> decodedErrorA =
         PacketPayloadCodec.DecodeStocErrorMessage(errorA);
-    PayloadDecodeResult<StocErrorMessagePayload> decodedErrorB =
+    PayloadDecodeResult<StocErrorPayload> decodedErrorB =
         PacketPayloadCodec.DecodeStocErrorMessage(errorB);
     True(decodedErrorA.IsSuccess);
     True(decodedErrorB.IsSuccess);
     Equal(decodedErrorA.Value, decodedErrorB.Value);
-    Equal(decodedErrorA.Value.Type, decodedErrorB.Value.Type);
-    Equal(decodedErrorA.Value.Code, decodedErrorB.Value.Code);
-    BytesEqual(
-        decodedErrorA.Value.AdditionalPayload.Bytes.Span,
-        decodedErrorB.Value.AdditionalPayload.Bytes.Span);
     BytesEqual(
         errorA,
         PacketPayloadCodec.EncodeStocErrorMessage(decodedErrorB.Value));
@@ -545,27 +544,25 @@ static void TestTypedPayloads()
     BytesEqual(Hex("01"), PacketPayloadCodec.EncodeCtosTpResult(tp));
     Equal(tp, PacketPayloadCodec.DecodeCtosTpResult(Hex("01")).Value);
 
-    StocErrorMessagePayload error = new(
-        ErrorType.DeckError,
-        0x11223344,
-        new OpaquePayload(Hex("55 66")));
+    StocErrorPayload error = new DeckErrorPayload(
+        DeckErrorCode.CardCount,
+        6,
+        40,
+        60,
+        0x11223344);
     byte[] errorBytes = PacketPayloadCodec.EncodeStocErrorMessage(error);
-    BytesEqual(Hex("02 00 00 00 44 33 22 11 55 66"), errorBytes);
-    PayloadDecodeResult<StocErrorMessagePayload> errorDecoded =
+    BytesEqual(
+        Hex(
+            "02 00 00 00 05 00 00 00 06 00 00 00 28 00 00 00 " +
+            "3c 00 00 00 44 33 22 11"),
+        errorBytes);
+    PayloadDecodeResult<StocErrorPayload> errorDecoded =
         PacketPayloadCodec.DecodeStocErrorMessage(errorBytes);
     True(errorDecoded.IsSuccess);
-    Equal(error.Type, errorDecoded.Value.Type);
-    Equal(error.Code, errorDecoded.Value.Code);
-    BytesEqual(
-        error.AdditionalPayload.Bytes.Span,
-        errorDecoded.Value.AdditionalPayload.Bytes.Span);
+    Equal(error, errorDecoded.Value);
     BytesEqual(
         errorBytes,
-        PacketPayloadCodec.EncodeStocErrorMessage(
-            new StocErrorMessagePayload(
-                errorDecoded.Value.Type,
-                errorDecoded.Value.Code,
-                errorDecoded.Value.AdditionalPayload)));
+        PacketPayloadCodec.EncodeStocErrorMessage(errorDecoded.Value));
 
     HostInfoPayload host = new(
         0x01020304,
@@ -710,19 +707,12 @@ static void TestNegativePayloads()
         PacketPayloadCodec.DecodeStocTimeLimit(new byte[5]).Error);
     Equal(
         ProtocolErrorCode.PayloadLengthMismatch,
-        PacketPayloadCodec.DecodeStocErrorMessage(new byte[7]).Error);
+        PacketPayloadCodec.DecodeStocErrorMessage(
+            Hex("01 00 00 00 01 00 00")).Error);
     Equal(
-        11,
-        (byte)PacketPayloadCodec.DecodeStocErrorMessage(
+        ProtocolErrorCode.UnknownErrorType,
+        PacketPayloadCodec.DecodeStocErrorMessage(
             Hex("99 00 00 00 00 00 00 00")).Error);
-    ProtocolCodecException unknownError = AssertThrows<ProtocolCodecException>(
-        () => PacketPayloadCodec.EncodeStocErrorMessage(
-            new StocErrorMessagePayload(
-                (ErrorType)0x99,
-                0,
-                new OpaquePayload(ReadOnlySpan<byte>.Empty))));
-    Equal(ProtocolErrorCode.UnknownErrorType, unknownError.Code);
-
     byte[] updateCountMismatch = Hex("01 00 00 00 00 00 00 00");
     Equal(
         ProtocolErrorCode.PayloadLengthMismatch,
@@ -834,10 +824,12 @@ static void TestTypeAwareValidation()
     }
 
     byte[] error = PacketPayloadCodec.EncodeStocErrorMessage(
-        new StocErrorMessagePayload(
-            ErrorType.DeckError,
-            0x11223344,
-            new OpaquePayload(Hex("01"))));
+        new DeckErrorPayload(
+            DeckErrorCode.CardCount,
+            6,
+            40,
+            60,
+            0x11223344));
     byte[] time = PacketPayloadCodec.EncodeStocTimeLimit(
         new StocTimeLimitPayload(0x02, 0x1234));
     byte[] playerEnter = PacketPayloadCodec.EncodeStocHsPlayerEnter(
@@ -853,7 +845,7 @@ static void TestTypeAwareValidation()
         (StocPacketType.SelectTp, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
         (StocPacketType.HandResult, Hex("01 02"), PayloadContractKind.ExactTypedLayout),
         (StocPacketType.TpResult, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
-        (StocPacketType.JoinGame, HostGoldenPayload(), PayloadContractKind.ExactTypedLayout),
+        (StocPacketType.JoinGame, HostV1GoldenPayload(), PayloadContractKind.ExactTypedLayout),
         (StocPacketType.TypeChange, Hex("a5"), PayloadContractKind.ExactTypedLayout),
         (StocPacketType.LeaveGame, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
         (StocPacketType.DuelStart, Array.Empty<byte>(), PayloadContractKind.ExactEmpty),
@@ -896,6 +888,157 @@ static void TestTypeAwareValidation()
                 Hex("99 00 00 00 00 00 00 00")));
     Equal(FrameReadStatus.Invalid, unknownError.Status);
     Equal(ProtocolErrorCode.UnknownErrorType, unknownError.Error);
+}
+
+static void TestErrorPayloads()
+{
+    var cases = new (StocErrorPayload Payload, string Expected)[]
+    {
+        (
+            new JoinErrorPayload(JoinErrorCode.Password),
+            "01 00 00 00 01 00 00 00"),
+        (
+            new DeckErrorPayload(DeckErrorCode.CardCount, 6, 40, 60, 0x11223344),
+            "02 00 00 00 05 00 00 00 06 00 00 00 28 00 00 00 " +
+            "3c 00 00 00 44 33 22 11"),
+        (
+            new SideErrorPayload(0x11223344),
+            "03 00 00 00 44 33 22 11"),
+        (
+            new LegacyVersionErrorPayload(0x11223344),
+            "04 00 00 00 44 33 22 11"),
+        (
+            new VersionError2Payload(new ProtocolClientVersion(41, 0, 11, 0)),
+            "05 00 00 00 29 00 0b 00")
+    };
+
+    foreach ((StocErrorPayload payload, string expected) in cases)
+    {
+        byte[] encoded = PacketPayloadCodec.EncodeStocErrorMessage(payload);
+        BytesEqual(Hex(expected), encoded);
+        PayloadDecodeResult<StocErrorPayload> decoded =
+            PacketPayloadCodec.DecodeStocErrorMessage(encoded);
+        True(decoded.IsSuccess);
+        Equal(payload, decoded.Value);
+        BytesEqual(encoded, PacketPayloadCodec.EncodeStocErrorMessage(decoded.Value));
+    }
+
+    var malformed = new (byte[] Payload, ProtocolErrorCode Error)[]
+    {
+        (Hex("01 00 00 00 01 00 00"), ProtocolErrorCode.PayloadLengthMismatch),
+        (Hex("01 00 00 00 01 00 00 00 00"), ProtocolErrorCode.TrailingPayloadBytes),
+        (Hex("02 00 00 00 05 00 00 00"), ProtocolErrorCode.PayloadLengthMismatch),
+        (
+            Hex(
+                "02 00 00 00 05 00 00 00 06 00 00 00 28 00 00 00 " +
+                "3c 00 00 00 44 33 22 11 aa"),
+            ProtocolErrorCode.TrailingPayloadBytes),
+        (Hex("03 00 00 00 44 33 22"), ProtocolErrorCode.PayloadLengthMismatch),
+        (Hex("03 00 00 00 44 33 22 11 00"), ProtocolErrorCode.TrailingPayloadBytes),
+        (Hex("04 00 00 00 44 33 22"), ProtocolErrorCode.PayloadLengthMismatch),
+        (Hex("04 00 00 00 44 33 22 11 00"), ProtocolErrorCode.TrailingPayloadBytes),
+        (Hex("05 00 00 00 29 00 0b"), ProtocolErrorCode.PayloadLengthMismatch),
+        (Hex("05 00 00 00 29 00 0b 00 00"), ProtocolErrorCode.TrailingPayloadBytes)
+    };
+
+    foreach ((byte[] payload, ProtocolErrorCode error) in malformed)
+    {
+        Equal(error, PacketPayloadCodec.DecodeStocErrorMessage(payload).Error);
+    }
+
+    Equal(
+        ProtocolErrorCode.UnknownErrorType,
+        PacketPayloadCodec.DecodeStocErrorMessage(
+            Hex("99 00 00 00 00 00 00 00")).Error);
+
+    Equal(
+        ProtocolErrorCode.UnknownErrorCode,
+        PacketPayloadCodec.DecodeStocErrorMessage(
+            Hex("01 00 00 00 ff ff ff ff")).Error);
+    Equal(
+        ProtocolErrorCode.UnknownErrorCode,
+        PacketPayloadCodec.DecodeStocErrorMessage(
+            Hex(
+                "02 00 00 00 ff ff ff ff 06 00 00 00 28 00 00 00 " +
+                "3c 00 00 00 44 33 22 11")).Error);
+
+    FrameReadResult<ValidatedStocPacket> malformedDeck =
+        PacketPayloadValidator.TryReadValidatedStoc(
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.ErrorMsg,
+                Hex("02 00 00 00 05 00 00 00")));
+    Equal(FrameReadStatus.Invalid, malformedDeck.Status);
+    Equal(ProtocolErrorCode.PayloadLengthMismatch, malformedDeck.Error);
+}
+
+static void TestValidatedVersionCompatibility()
+{
+    byte[] validJoin = PacketPayloadCodec.EncodeJoinGame(
+        new CtosJoinGamePayload(
+            0x1354,
+            0x11223344,
+            "room-secret",
+            new ProtocolClientVersion(41, 0, 11, 0)));
+    FrameReadResult<ValidatedCtosPacket> valid =
+        PacketPayloadValidator.TryReadValidatedCtos(
+            WireFrameCodec.EncodeCtos(CtosPacketType.JoinGame, validJoin));
+    Equal(FrameReadStatus.Success, valid.Status);
+
+    byte[] wrongProtocol = validJoin.ToArray();
+    wrongProtocol[0] = 0x55;
+    wrongProtocol[1] = 0x13;
+    FrameReadResult<CtosFrame> rawWrongProtocol =
+        WireFrameCodec.TryReadCtos(
+            WireFrameCodec.EncodeCtos(CtosPacketType.JoinGame, wrongProtocol));
+    Equal(FrameReadStatus.Success, rawWrongProtocol.Status);
+    AssertUnsupportedJoinVersion(wrongProtocol);
+
+    byte[] wrongClient = validJoin.ToArray();
+    wrongClient[48] = 40;
+    AssertUnsupportedJoinVersion(wrongClient);
+
+    byte[] wrongCore = validJoin.ToArray();
+    wrongCore[50] = 10;
+    AssertUnsupportedJoinVersion(wrongCore);
+
+    FrameReadResult<ValidatedStocPacket> validHost =
+        PacketPayloadValidator.TryReadValidatedStoc(
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.JoinGame,
+                HostV1GoldenPayload()));
+    Equal(FrameReadStatus.Success, validHost.Status);
+
+    byte[] wrongHostClient = HostV1GoldenPayload();
+    wrongHostClient[28] = 40;
+    FrameReadResult<StocFrame> rawWrongHostClient =
+        WireFrameCodec.TryReadStoc(
+            WireFrameCodec.EncodeStoc(StocPacketType.JoinGame, wrongHostClient));
+    Equal(FrameReadStatus.Success, rawWrongHostClient.Status);
+    AssertUnsupportedHostVersion(wrongHostClient);
+
+    byte[] wrongHostCore = HostV1GoldenPayload();
+    wrongHostCore[30] = 10;
+    AssertUnsupportedHostVersion(wrongHostCore);
+}
+
+static void AssertUnsupportedHostVersion(byte[] payload)
+{
+    FrameReadResult<ValidatedStocPacket> result =
+        PacketPayloadValidator.TryReadValidatedStoc(
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.JoinGame,
+                payload));
+    Equal(FrameReadStatus.Invalid, result.Status);
+    Equal(ProtocolErrorCode.UnsupportedVersion, result.Error);
+}
+
+static void AssertUnsupportedJoinVersion(byte[] payload)
+{
+    FrameReadResult<ValidatedCtosPacket> result =
+        PacketPayloadValidator.TryReadValidatedCtos(
+            WireFrameCodec.EncodeCtos(CtosPacketType.JoinGame, payload));
+    Equal(FrameReadStatus.Invalid, result.Status);
+    Equal(ProtocolErrorCode.UnsupportedVersion, result.Error);
 }
 
 static void AssertValidatedCtos(
@@ -988,6 +1131,16 @@ static byte[] HostGoldenPayload() =>
         "24 23 22 21 28 27 26 25 2c 2b 2a 29 " +
         "30 2f 2e 2d 34 33 32 31 36 35 " +
         "38 37 3a 39 3c 3b 3e 3d 40 3f 42 41 00 00");
+
+static byte[] HostV1GoldenPayload()
+{
+    byte[] payload = HostGoldenPayload();
+    payload[28] = 0x29;
+    payload[29] = 0x00;
+    payload[30] = 0x0b;
+    payload[31] = 0x00;
+    return payload;
+}
 
 static void BytesEqual(ReadOnlySpan<byte> expected, ReadOnlySpan<byte> actual)
 {

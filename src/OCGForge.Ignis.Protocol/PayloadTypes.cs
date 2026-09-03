@@ -17,6 +17,12 @@ public static class VersionRecognition
         clientVersion == ProtocolContractV1.ExpectedClientVersion
             ? ProtocolErrorCode.None
             : ProtocolErrorCode.UnsupportedVersion;
+
+    public static ProtocolErrorCode ValidateClientVersionV1(
+        ProtocolClientVersion clientVersion) =>
+        clientVersion == ProtocolContractV1.ExpectedClientVersion
+            ? ProtocolErrorCode.None
+            : ProtocolErrorCode.UnsupportedVersion;
 }
 
 public enum ErrorType : byte
@@ -26,6 +32,31 @@ public enum ErrorType : byte
     SideError = 0x03,
     VersionError = 0x04,
     VersionError2 = 0x05
+}
+
+public enum JoinErrorCode : uint
+{
+    Unable = 0,
+    Password = 1,
+    Refused = 2
+}
+
+public enum DeckErrorCode : uint
+{
+    None = 0,
+    Lflist = 1,
+    OcgOnly = 2,
+    TcgOnly = 3,
+    UnknownCard = 4,
+    CardCount = 5,
+    MainCount = 6,
+    ExtraCount = 7,
+    SideCount = 8,
+    ForbiddenType = 9,
+    UnofficialCard = 10,
+    InvalidSize = 11,
+    TooManyLegends = 12,
+    TooManySkills = 13
 }
 
 public readonly record struct DeckSizeLimits(ushort Min, ushort Max);
@@ -123,51 +154,35 @@ public sealed class StocGameMessagePayload : OpaquePayload
     }
 }
 
-public sealed class StocErrorMessagePayload :
-    IEquatable<StocErrorMessagePayload>
+public abstract record StocErrorPayload
 {
-    public StocErrorMessagePayload(
-        ErrorType type,
-        uint code,
-        OpaquePayload additionalPayload)
+    protected StocErrorPayload(ErrorType type)
     {
-        ArgumentNullException.ThrowIfNull(additionalPayload);
         Type = type;
-        Code = code;
-        AdditionalPayload = additionalPayload;
     }
 
     public ErrorType Type { get; }
-
-    public uint Code { get; }
-
-    public OpaquePayload AdditionalPayload { get; }
-
-    public bool Equals(StocErrorMessagePayload? other) =>
-        other is not null &&
-        Type == other.Type &&
-        Code == other.Code &&
-        AdditionalPayload.Equals(other.AdditionalPayload);
-
-    public override bool Equals(object? obj) =>
-        obj is StocErrorMessagePayload other && Equals(other);
-
-    public override int GetHashCode()
-    {
-        uint hash = 2166136261;
-        hash = (hash ^ (byte)Type) * 16777619;
-        hash = (hash ^ (Code & 0xff)) * 16777619;
-        hash = (hash ^ ((Code >> 8) & 0xff)) * 16777619;
-        hash = (hash ^ ((Code >> 16) & 0xff)) * 16777619;
-        hash = (hash ^ ((Code >> 24) & 0xff)) * 16777619;
-        foreach (byte value in AdditionalPayload.Bytes.Span)
-        {
-            hash = (hash ^ value) * 16777619;
-        }
-
-        return unchecked((int)hash);
-    }
 }
+
+public sealed record JoinErrorPayload(JoinErrorCode Error) :
+    StocErrorPayload(ErrorType.JoinError);
+
+public sealed record DeckErrorPayload(
+    DeckErrorCode Error,
+    uint Current,
+    uint Minimum,
+    uint Maximum,
+    uint CardCode) :
+    StocErrorPayload(ErrorType.DeckError);
+
+public sealed record SideErrorPayload(uint Code) :
+    StocErrorPayload(ErrorType.SideError);
+
+public sealed record LegacyVersionErrorPayload(uint VersionCode) :
+    StocErrorPayload(ErrorType.VersionError);
+
+public sealed record VersionError2Payload(ProtocolClientVersion Version) :
+    StocErrorPayload(ErrorType.VersionError2);
 
 public readonly record struct HostInfoPayload(
     uint BanlistId,

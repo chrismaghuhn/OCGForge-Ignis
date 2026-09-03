@@ -71,10 +71,7 @@ public static class PacketPayloadValidator
                 frame.Type,
                 PayloadContractKind.ExactTypedLayout,
                 PacketPayloadCodec.DecodePlayerInfo(frame.Payload.Span)),
-            CtosPacketType.JoinGame => Typed(
-                frame.Type,
-                PayloadContractKind.ExactTypedLayout,
-                PacketPayloadCodec.DecodeJoinGame(frame.Payload.Span)),
+            CtosPacketType.JoinGame => ValidateCtosJoinGame(frame),
             CtosPacketType.LeaveGame or
             CtosPacketType.Surrender or
             CtosPacketType.TimeConfirm or
@@ -111,10 +108,7 @@ public static class PacketPayloadValidator
                 frame.Type,
                 PayloadContractKind.ExactTypedLayout,
                 PacketPayloadCodec.DecodeStocHandResult(frame.Payload.Span)),
-            StocPacketType.JoinGame => Typed(
-                frame.Type,
-                PayloadContractKind.ExactTypedLayout,
-                PacketPayloadCodec.DecodeStocJoinGame(frame.Payload.Span)),
+            StocPacketType.JoinGame => ValidateStocJoinGame(frame),
             StocPacketType.TypeChange => Typed(
                 frame.Type,
                 PayloadContractKind.ExactTypedLayout,
@@ -153,6 +147,47 @@ public static class PacketPayloadValidator
                     null))
             : PayloadDecodeResults.Failure<ValidatedCtosPacket>(
                 ProtocolErrorCode.TrailingPayloadBytes);
+
+    private static PayloadDecodeResult<ValidatedCtosPacket> ValidateCtosJoinGame(
+        CtosFrame frame)
+    {
+        PayloadDecodeResult<CtosJoinGamePayload> decoded =
+            PacketPayloadCodec.DecodeJoinGame(frame.Payload.Span);
+        if (!decoded.IsSuccess)
+        {
+            return PayloadDecodeResults.Failure<ValidatedCtosPacket>(decoded.Error);
+        }
+
+        ProtocolErrorCode versionError = VersionRecognition.ValidateV1(
+            decoded.Value.ProtocolVersion,
+            decoded.Value.ClientVersion);
+        return versionError == ProtocolErrorCode.None
+            ? Typed(
+                frame.Type,
+                PayloadContractKind.ExactTypedLayout,
+                decoded)
+            : PayloadDecodeResults.Failure<ValidatedCtosPacket>(versionError);
+    }
+
+    private static PayloadDecodeResult<ValidatedStocPacket> ValidateStocJoinGame(
+        StocFrame frame)
+    {
+        PayloadDecodeResult<HostInfoPayload> decoded =
+            PacketPayloadCodec.DecodeStocJoinGame(frame.Payload.Span);
+        if (!decoded.IsSuccess)
+        {
+            return PayloadDecodeResults.Failure<ValidatedStocPacket>(decoded.Error);
+        }
+
+        ProtocolErrorCode versionError =
+            VersionRecognition.ValidateClientVersionV1(decoded.Value.Version);
+        return versionError == ProtocolErrorCode.None
+            ? Typed(
+                frame.Type,
+                PayloadContractKind.ExactTypedLayout,
+                decoded)
+            : PayloadDecodeResults.Failure<ValidatedStocPacket>(versionError);
+    }
 
     private static PayloadDecodeResult<ValidatedStocPacket> ExactEmptyStoc(
         StocFrame frame) =>

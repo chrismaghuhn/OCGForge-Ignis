@@ -160,11 +160,60 @@ Packet type: STOC_ERROR_MSG, 0x02
 Frame hex:
 
 ~~~text
-0b 00 02 02 00 00 00 44 33 22 11 55 66
+19 00 02 02 00 00 00 05 00 00 00 06 00 00 00
+28 00 00 00 3c 00 00 00 44 33 22 11
 ~~~
 
-Expected decode: error type DeckError, raw code 0x11223344, and opaque
-additional payload 55 66. The three alignment bytes are canonical zero padding.
+Expected decode: DeckError with subtype CardCount, current 6, minimum 40,
+maximum 60, and card code 0x11223344. The three alignment bytes are
+canonical zero padding.
+
+The other supported discriminated error payloads have these exact positive
+frame vectors:
+
+#### 10a. JoinError
+
+Frame hex:
+
+~~~text
+09 00 02 01 00 00 00 01 00 00 00
+~~~
+
+Expected decode: JoinError with error Password. The three alignment bytes are
+canonical zero padding.
+
+#### 10b. SIDEERROR / STOC_ErrorMsg
+
+Frame hex:
+
+~~~text
+09 00 02 03 00 00 00 44 33 22 11
+~~~
+
+Expected decode: SideError with code 0x11223344. The three alignment bytes are
+canonical zero padding.
+
+#### 10c. Legacy VERERROR / STOC_ErrorMsg
+
+Frame hex:
+
+~~~text
+09 00 02 04 00 00 00 44 33 22 11
+~~~
+
+Expected decode: LegacyVersionError with version code 0x11223344. The three
+alignment bytes are canonical zero padding.
+
+#### 10d. VERERROR2 / VersionError
+
+Frame hex:
+
+~~~text
+09 00 02 05 00 00 00 29 00 0b 00
+~~~
+
+Expected decode: VersionError2 with client/core version 41.0/11.0. The three
+alignment bytes are canonical zero padding.
 
 ### 11. STOC join game / HostInfo
 

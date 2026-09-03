@@ -9,6 +9,8 @@ public static class PacketPayloadCodec
     public const int TimeLimitPayloadLength = 4;
     public const int HsPlayerEnterPayloadLength = 42;
     public const int HostInfoPayloadLength = 68;
+    public const int SmallErrorPayloadLength = 8;
+    public const int DeckErrorPayloadLength = 24;
 
     public static byte[] EncodePlayerInfo(CtosPlayerInfoPayload value) =>
         FixedUtf16String.Encode(value.Name, ProtocolContractV1.FixedTextCodeUnits);
@@ -177,57 +179,177 @@ public static class PacketPayloadCodec
             : PayloadDecodeResults.Failure<CtosTpResultPayload>(
                 ExactLengthError(payload.Length, 1));
 
-    public static byte[] EncodeStocErrorMessage(StocErrorMessagePayload value)
+    public static byte[] EncodeStocErrorMessage(StocErrorPayload value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        if (!IsKnownErrorType((byte)value.Type))
+
+        return value switch
         {
-            throw new ProtocolCodecException(
+            JoinErrorPayload joinError => EncodeJoinError(joinError),
+            DeckErrorPayload deckError => EncodeDeckError(deckError),
+            SideErrorPayload sideError => EncodeSmallError(
+                ErrorType.SideError,
+                sideError.Code),
+            LegacyVersionErrorPayload legacyVersionError => EncodeSmallError(
+                ErrorType.VersionError,
+                legacyVersionError.VersionCode),
+            VersionError2Payload versionError2 => EncodeVersionError2(versionError2),
+            _ => throw new ProtocolCodecException(
                 ProtocolErrorCode.UnknownErrorType,
-                "The error-message type is not part of the frozen V1 set.");
-        }
-
-        int payloadLength;
-        try
-        {
-            payloadLength = checked(8 + value.AdditionalPayload.Length);
-        }
-        catch (OverflowException exception)
-        {
-            throw new ProtocolCodecException(
-                ProtocolErrorCode.IntegerOverflow,
-                "The error-message payload length overflowed an integer.",
-                exception);
-        }
-
-        EnsurePayloadLength(payloadLength);
-        byte[] payload = new byte[payloadLength];
-        payload[0] = (byte)value.Type;
-        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4, 4), value.Code);
-        value.AdditionalPayload.AsSpan().CopyTo(payload.AsSpan(8));
-        return payload;
+                "The error payload type is not part of the frozen V1 union.")
+        };
     }
 
-    public static PayloadDecodeResult<StocErrorMessagePayload> DecodeStocErrorMessage(
+    public static PayloadDecodeResult<StocErrorPayload> DecodeStocErrorMessage(
         ReadOnlySpan<byte> payload)
     {
-        if (payload.Length < 8)
+        if (payload.Length < 1)
         {
-            return PayloadDecodeResults.Failure<StocErrorMessagePayload>(
+            return PayloadDecodeResults.Failure<StocErrorPayload>(
                 ProtocolErrorCode.PayloadLengthMismatch);
         }
 
-        if (!IsKnownErrorType(payload[0]))
+        return (ErrorType)payload[0] switch
         {
-            return PayloadDecodeResults.Failure<StocErrorMessagePayload>(
-                ProtocolErrorCode.UnknownErrorType);
+            ErrorType.JoinError => DecodeJoinError(payload),
+            ErrorType.DeckError => DecodeDeckError(payload),
+            ErrorType.SideError => DecodeSmallSideError(payload),
+            ErrorType.VersionError => DecodeLegacyVersionError(payload),
+            ErrorType.VersionError2 => DecodeVersionError2(payload),
+            _ => PayloadDecodeResults.Failure<StocErrorPayload>(
+                ProtocolErrorCode.UnknownErrorType)
+        };
+    }
+
+    private static byte[] EncodeJoinError(JoinErrorPayload value)
+    {
+        ValidateJoinErrorCode(value.Error);
+        byte[] payload = new byte[SmallErrorPayloadLength];
+        payload[0] = (byte)ErrorType.JoinError;
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            payload.AsSpan(4, 4),
+            (uint)value.Error);
+        return payload;
+    }
+
+    private static byte[] EncodeDeckError(DeckErrorPayload value)
+    {
+        ValidateDeckErrorCode(value.Error);
+        byte[] payload = new byte[DeckErrorPayloadLength];
+        payload[0] = (byte)ErrorType.DeckError;
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            payload.AsSpan(4, 4),
+            (uint)value.Error);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            payload.AsSpan(8, 4),
+            value.Current);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            payload.AsSpan(12, 4),
+            value.Minimum);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            payload.AsSpan(16, 4),
+            value.Maximum);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            payload.AsSpan(20, 4),
+            value.CardCode);
+        return payload;
+    }
+
+    private static byte[] EncodeSmallError(ErrorType type, uint code)
+    {
+        byte[] payload = new byte[SmallErrorPayloadLength];
+        payload[0] = (byte)type;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4, 4), code);
+        return payload;
+    }
+
+    private static byte[] EncodeVersionError2(VersionError2Payload value)
+    {
+        byte[] payload = new byte[SmallErrorPayloadLength];
+        payload[0] = (byte)ErrorType.VersionError2;
+        WriteClientVersion(payload, 4, value.Version);
+        return payload;
+    }
+
+    private static PayloadDecodeResult<StocErrorPayload> DecodeJoinError(
+        ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length != SmallErrorPayloadLength)
+        {
+            return ErrorLengthFailure(payload.Length, SmallErrorPayloadLength);
         }
 
-        return PayloadDecodeResults.Success(
-            new StocErrorMessagePayload(
-                (ErrorType)payload[0],
-                BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(4, 4)),
-                new OpaquePayload(payload[8..])));
+        uint rawError = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(4, 4));
+        if (rawError > (uint)JoinErrorCode.Refused)
+        {
+            return PayloadDecodeResults.Failure<StocErrorPayload>(
+                ProtocolErrorCode.UnknownErrorCode);
+        }
+
+        return PayloadDecodeResults.Success<StocErrorPayload>(
+            new JoinErrorPayload((JoinErrorCode)rawError));
+    }
+
+    private static PayloadDecodeResult<StocErrorPayload> DecodeDeckError(
+        ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length != DeckErrorPayloadLength)
+        {
+            return ErrorLengthFailure(payload.Length, DeckErrorPayloadLength);
+        }
+
+        uint rawError = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(4, 4));
+        if (rawError > (uint)DeckErrorCode.TooManySkills)
+        {
+            return PayloadDecodeResults.Failure<StocErrorPayload>(
+                ProtocolErrorCode.UnknownErrorCode);
+        }
+
+        return PayloadDecodeResults.Success<StocErrorPayload>(
+            new DeckErrorPayload(
+                (DeckErrorCode)rawError,
+                BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(8, 4)),
+                BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(12, 4)),
+                BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(16, 4)),
+                BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(20, 4))));
+    }
+
+    private static PayloadDecodeResult<StocErrorPayload> DecodeSmallSideError(
+        ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length != SmallErrorPayloadLength)
+        {
+            return ErrorLengthFailure(payload.Length, SmallErrorPayloadLength);
+        }
+
+        return PayloadDecodeResults.Success<StocErrorPayload>(
+            new SideErrorPayload(
+                BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(4, 4))));
+    }
+
+    private static PayloadDecodeResult<StocErrorPayload> DecodeLegacyVersionError(
+        ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length != SmallErrorPayloadLength)
+        {
+            return ErrorLengthFailure(payload.Length, SmallErrorPayloadLength);
+        }
+
+        return PayloadDecodeResults.Success<StocErrorPayload>(
+            new LegacyVersionErrorPayload(
+                BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(4, 4))));
+    }
+
+    private static PayloadDecodeResult<StocErrorPayload> DecodeVersionError2(
+        ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length != SmallErrorPayloadLength)
+        {
+            return ErrorLengthFailure(payload.Length, SmallErrorPayloadLength);
+        }
+
+        return PayloadDecodeResults.Success<StocErrorPayload>(
+            new VersionError2Payload(ReadClientVersion(payload, 4)));
     }
 
     public static byte[] EncodeStocJoinGame(HostInfoPayload value)
@@ -428,9 +550,31 @@ public static class PacketPayloadCodec
             ? ProtocolErrorCode.TrailingPayloadBytes
             : ProtocolErrorCode.PayloadLengthMismatch;
 
-    private static bool IsKnownErrorType(byte rawType) =>
-        rawType >= (byte)ErrorType.JoinError &&
-        rawType <= (byte)ErrorType.VersionError2;
+    private static PayloadDecodeResult<StocErrorPayload> ErrorLengthFailure(
+        int actual,
+        int expected) =>
+        PayloadDecodeResults.Failure<StocErrorPayload>(
+            ExactLengthError(actual, expected));
+
+    private static void ValidateJoinErrorCode(JoinErrorCode error)
+    {
+        if ((uint)error > (uint)JoinErrorCode.Refused)
+        {
+            throw new ProtocolCodecException(
+                ProtocolErrorCode.UnknownErrorCode,
+                "The join-error code is not part of the frozen V1 set.");
+        }
+    }
+
+    private static void ValidateDeckErrorCode(DeckErrorCode error)
+    {
+        if ((uint)error > (uint)DeckErrorCode.TooManySkills)
+        {
+            throw new ProtocolCodecException(
+                ProtocolErrorCode.UnknownErrorCode,
+                "The deck-error code is not part of the frozen V1 set.");
+        }
+    }
 
     private static void WriteClientVersion(
         Span<byte> destination,
