@@ -1,8 +1,11 @@
 # OCGForge-Ignis I2 Connection, Lobby, and Pre-Duel Design
 
 Status: DESIGN_APPROVED=YES
+Latest spec remediation: SPEC_REMEDIATION_02=APPLIED
+Independent spec review: SPEC_REVIEWED=NO
 Transport decision: I2_TRANSPORT_DECISION=ACCEPTED
-Terminal decision: I2_TERMINAL_AFTER=CTOS_TP_RESULT_SENT
+I2_RPS_WIN_TERMINAL_AFTER=CTOS_TP_RESULT_SENT
+I2_RPS_LOSS_TERMINAL_AFTER=NON_TIED_STOC_HAND_RESULT
 Client contract ID: ocgforge-ignis.client.preduel.v1
 Accepted main base: fff3269918f7f9120e815b900d8cc2e14e1bc52d
 Expected server handshake: EXPECTED_SERVER_HANDSHAKE=4043399681
@@ -32,6 +35,21 @@ test server and no public-network test.
 The only runtime endpoint is supplied by `ConnectionConfigurationV1`; the
 repository contains no public-server preset, discovery, fallback, retry, or
 reconnect behavior.
+
+I2 V1 freezes the room topology to one duelist per side:
+
+```text
+I2_ROOM_TOPOLOGY=1V1_ONLY
+TEAM1_REQUIRED=1
+TEAM2_REQUIRED=1
+DUEL_RELAY=FORBIDDEN
+OBSERVER_ROLE=UNSUPPORTED
+```
+
+After validated `STOC_JOIN_GAME`, the session rejects `HostInfo.team1 != 1`,
+`HostInfo.team2 != 1`, and any non-single/relay topology as
+`UNSUPPORTED_ROOM_TOPOLOGY`. A joiner that receives observer type `7` is also
+rejected; I2 does not operate an observer session.
 
 ## Architecture
 
@@ -99,10 +117,12 @@ LobbyJoined
 DeckSubmitted
 ReadyRequested
 Ready
+NotReadyRequested
 Starting
 DuelStarted
 WaitingForHandChoice
 WaitingForHandResult
+WaitingForTpRequest
 WaitingForTpChoice
 HandedOff
 Closed
@@ -126,15 +146,22 @@ Created
   → DeckSubmitted        [CTOS_UPDATE_DECK]
   → ReadyRequested       [CTOS_HS_READY]
   → Ready                [own STOC_HS_PLAYER_CHANGE READY]
-  ├─→ Starting            [host-only CTOS_HS_START after all required slots are ready]
+  ├─→ NotReadyRequested   [CTOS_HS_NOTREADY]
+  │   └─→ DeckSubmitted   [own STOC_HS_PLAYER_CHANGE NOTREADY]
+  ├─→ Starting            [host-only CTOS_HS_START after both required slots are ready]
   │   └─→ DuelStarted     [validated STOC_DUEL_START]
   └─→ DuelStarted         [validated server start for non-host]
 
 DuelStarted
   → WaitingForHandChoice [validated STOC_SELECT_HAND]
+WaitingForHandChoice
   → WaitingForHandResult [one CTOS_HAND_RESULT]
-  → DuelStarted           [STOC_HAND_RESULT tie; await a new STOC_SELECT_HAND]
-  → WaitingForTpChoice   [validated STOC_SELECT_TP when this client wins]
+WaitingForHandResult
+  → DuelStarted          [STOC_HAND_RESULT tie; await a new STOC_SELECT_HAND]
+  → WaitingForTpRequest  [non-tied STOC_HAND_RESULT; this client wins]
+  → HandedOff            [non-tied STOC_HAND_RESULT; this client loses]
+WaitingForTpRequest
+  → WaitingForTpChoice   [validated STOC_SELECT_TP]
   → HandedOff            [one CTOS_TP_RESULT successfully sent]
 ```
 
@@ -144,14 +171,20 @@ checks deck size and content after that request. Only the own-position
 returns to `DeckSubmitted` without ever passing through `Ready`; a deck error
 terminates the attempt as `DECK_REJECTED` and cannot be repaired implicitly.
 `CTOS_HS_START` is legal only for a proven host whose own status is `Ready` and
-whose required `HostInfo` player slots are all occupied and server-confirmed
-ready. A host cannot start merely because its own deck was accepted.
+whose two required V1 player slots, positions 0 and 1, are occupied and
+server-confirmed ready. A host cannot start merely because its own deck was
+accepted. `CTOS_HS_NOTREADY` changes the state to `NotReadyRequested`, not
+`DeckSubmitted`; only the own-position `PLAYERCHANGE_NOTREADY` event confirms
+the return to `DeckSubmitted`. While `NotReadyRequested`, another not-ready
+request and host start are both illegal.
 
-If this client loses a non-tied RPS result, the opponent receives the TP
-request. In that branch I2 creates the same terminal handoff immediately after
-the validated `STOC_HAND_RESULT`, before the first gameplay message. It does
-not wait for an `STOC_TP_RESULT`, because the pinned server does not send that
-packet after `CTOS_TP_RESULT`.
+If this client wins a non-tied RPS result, the opponent receives no TP request
+for this session until the server sends `STOC_SELECT_TP` to the winner. I2
+therefore uses the explicit `WaitingForTpRequest` state. If this client loses,
+the opponent receives the TP request and I2 creates the terminal handoff
+immediately after the validated `STOC_HAND_RESULT`, before the first gameplay
+message. It does not wait for an `STOC_TP_RESULT`, because the pinned server
+does not send that packet after `CTOS_TP_RESULT`.
 
 Every transition names its source state and trigger. An impossible packet,
 duplicate terminal marker, stale choice, illegal command, or packet after a
@@ -165,10 +198,11 @@ The Client API exposes narrow operations rather than a generic packet sender:
 - submit one `PrevalidatedProtocolDeck` only in `LobbyJoined`;
 - send ready only after deck submission, entering `ReadyRequested` until the
   server confirms the own position as ready;
-- send not-ready only from `Ready`;
+- send not-ready only from `Ready`, entering `NotReadyRequested` until the
+  server confirms the own position as not-ready;
 - request duel start only when the validated type-change state proves this
-  client is host, the session is `Ready`, every required slot is occupied, and
-  every required duelist is server-confirmed ready;
+  client is host, the session is `Ready`, positions 0 and 1 are occupied, and
+  both required duelists are server-confirmed ready;
 - submit a caller-provided pre-duel choice only while its matching request is
   pending;
 - leave explicitly before handoff;
@@ -196,6 +230,7 @@ DeckSubmitted
 ReadyRequested
 ReadySent
 NotReadySent
+NotReadyRequested
 DuelStartRequested
 DuelStarted
 PlayerMoved
@@ -216,20 +251,26 @@ Player-change data uses the encoded position/status values verified from the
 pinned upstream.
 Dictionary or object insertion order is never an identity or ordering source.
 The pinned lobby status values are `OBSERVE=0x8`, `READY=0x9`,
-`NOTREADY=0xa`, and `LEAVE=0xb`; other status values fail closed.
+`NOTREADY=0xa`, and `LEAVE=0xb`; other non-position status values fail closed.
 Low-nibble values `0x0` through `0x5` are valid upstream-defined duelist
 destination positions and produce `PlayerMoved`, not malformed-packet errors.
-An unrepresentable or out-of-scope position move returns the explicit
-`UNSUPPORTED_LOBBY_POSITION_MOVE` failure.
+For I2's 1v1 topology, only moves whose source and destination positions are
+0 or 1 are representable. A valid upstream move involving another duelist
+slot returns `UNSUPPORTED_ROOM_TOPOLOGY`; an unrepresentable move returns the
+explicit `UNSUPPORTED_LOBBY_POSITION_MOVE` failure. Neither is classified as a
+malformed packet. A low-nibble observer type `7` in the own `STOC_TYPE_CHANGE`
+is `UNSUPPORTED_ROOM_TOPOLOGY`.
 
 The validated handlers cover the accepted pre-duel control surface:
 
 - `STOC_ERROR_MSG` maps to structured join, version, deck, or unsupported-side
   failures;
-- `STOC_JOIN_GAME` first requires `HostInfo.handshake == 4043399681`; a mismatch
-  fails closed as `SERVER_HANDSHAKE_MISMATCH` and never enables legacy
-  compatibility mode or HostInfo reinterpretation. A matching packet records
-  validated public `HostInfo` and enters the lobby;
+- `STOC_JOIN_GAME` first requires `HostInfo.handshake == 4043399681`,
+  `HostInfo.team1 == 1`, `HostInfo.team2 == 1`, and single-duel mode. A
+  mismatch fails closed as `SERVER_HANDSHAKE_MISMATCH` or
+  `UNSUPPORTED_ROOM_TOPOLOGY` and never enables legacy compatibility mode or
+  HostInfo reinterpretation. A matching packet records validated public
+  `HostInfo` and enters the lobby;
 - `STOC_TYPE_CHANGE`, `STOC_HS_PLAYER_ENTER`,
   `STOC_HS_PLAYER_CHANGE`, and `STOC_HS_WATCH_CHANGE` update lobby facts;
 - `STOC_DUEL_START` enters the nonterminal `DuelStarted` marker state;
@@ -330,6 +371,11 @@ rejection, unexpected ordering, truncated stream, remote close, unsupported
 STOC, handshake mismatch, invalid commands, duplicate packets, stale choices,
 unsupported position moves, cancellation, post-terminal input, and a
 coalesced final pre-duel frame plus first `STOC_GAME_MSG` boundary.
+They explicitly include `team1 != 1`, `team2 != 1`, relay/single-mode mismatch,
+observer self-type `7`, duplicate `STOC_HAND_RESULT` while
+`WaitingForTpRequest`, `STOC_SELECT_HAND`/TP results in the wrong states,
+`CTOS_HS_NOTREADY` while `NotReadyRequested`, and host start while
+`NotReadyRequested`.
 
 Tests assert that passwords never occur in state, events, exception messages,
 or test diagnostics; that deck order is byte-for-byte preserved; that no
@@ -346,6 +392,12 @@ I2, including the pinned EDOPro `duelclient.cpp`, `generic_duel.cpp`, and
 ready confirmation, player/status/position-move encoding, RPS/TP behavior, and
 the `STOC_DUEL_START`/`STOC_SELECT_HAND` ordering. No external source
 implementation is copied.
+
+The topology lock specifically records `MODE_SINGLE=0x0`, `MODE_RELAY=0x3`,
+duelist positions `0..5`, observer position `7`, and the relay-specific
+first-duel readiness rule from `gframe/network.h` and
+`gframe/generic_duel.cpp`. These facts authorize I2 to reject non-1v1 rooms;
+they do not authorize team or relay implementation.
 
 The hosted workflow runs the accepted I1 build/tests and the I2 Client
 build/tests. It uses no EDOPro download, public network, Localhost server,
