@@ -175,8 +175,8 @@ ModernQueryStreamV1:
 `MSG_UPDATE_CARD` uses `ModernQueryV1` after its proven
 `u8 player; u8 location; u8 sequence` prefix. `MSG_UPDATE_DATA` uses
 `ModernQueryStreamV1` after its proven `u8 player; u8 location` prefix. The
-flag-specific query union remains unfrozen in I3A0; these outer grammars are
-nevertheless frozen and must never be swapped.
+flag-specific query union is frozen by I3B0 below; these outer grammars remain
+owned by I3A0 and must never be swapped or redefined.
 
 The modern `MSG_START` payload is frozen exactly as:
 
@@ -601,12 +601,12 @@ machine-readable `layout_catalog`. `UNFROZEN` means that I3 must not publish a
 message-specific typed value until its owning future slice proves the exact
 layout; the entry is not a speculative codec description.
 
-The inventory separately records proven prefixes for `MSG_UPDATE_DATA` and
+The inventory separately records the proven prefixes for `MSG_UPDATE_DATA` and
 `MSG_UPDATE_CARD`. Their modern prefixes are respectively
 `u8 player; u8 location` and `u8 player; u8 location; u8 sequence`; the
-following query union remains `UNFROZEN` until its flag-specific contract is
-accepted. Those entries therefore remain fail-closed rather than claiming a
-complete typed query layout.
+following query union is the frozen I3B0 flag-specific contract below. The
+message entries now identify the complete wire composition without changing
+the I3A0-owned outer grammars.
 
 Parsing and semantic effects are separate. The inventory's `state_effect`,
 `knowledge_effect`, `locator_effect`, and `boundary_kind` fields are normative
@@ -642,8 +642,8 @@ The following ledger is normative for agreement checking; entries are ordered by
 | 3 | MSG_WAITING | OPTIONAL | FROZEN | NONE | MUST_CONSUME_NO_STATE | NONE | NONE | PRESENTATION_ONLY | NONE | I3B |
 | 4 | MSG_START | REQUIRED | FROZEN | ESTABLISHES | STATE_AND_KNOWLEDGE_MUTATING | PRESERVE | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3A |
 | 5 | MSG_WIN | REQUIRED | FROZEN | PLAYER_MAPPED | STATE_MUTATING | PRESERVE | NONE | GAMEPLAY_STATE | NONE | I3B |
-| 6 | MSG_UPDATE_DATA | REQUIRED | UNFROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3B/I3C |
-| 7 | MSG_UPDATE_CARD | REQUIRED | UNFROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 6 | MSG_UPDATE_DATA | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3B/I3C |
+| 7 | MSG_UPDATE_CARD | REQUIRED | FROZEN | LOCATOR_MAPPED | STATE_AND_KNOWLEDGE_MUTATING | REVEAL | CREATE_OR_UPDATE | GAMEPLAY_STATE | NONE | I3B/I3C |
 | 8 | MSG_REQUEST_DECK | UNSUPPORTED_FAIL_CLOSED | UNFROZEN | NONE | UNSUPPORTED_FAIL_CLOSED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED_FAIL_CLOSED | NONE | I3A |
 | 10 | MSG_SELECT_BATTLECMD | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I4 |
 | 11 | MSG_SELECT_IDLECMD | OUT_OF_SCOPE | UNFROZEN | PROMPT_ONLY | PROMPT_BOUNDARY | DEFERRED | DEFERRED | PROMPT_BOUNDARY | NONE | I4 |
@@ -776,31 +776,154 @@ I3A session; no fallback parser or legacy mode is attempted.
 
 ### I3B0 — query-flag union freeze (documentation only)
 
-Owner: I3 contract governance for the flag-specific query union only. This is
-a documentation-only prerequisite for I3B and does not implement query parsing
-or the state mirror.
+Owner: I3 contract governance for the flag-specific query union only. This
+section is the accepted I3B0 documentation/data-contract freeze. It adds no
+production code, query parser, or state mirror. The implementation dependency
+remains I3B, which is not authorized by this freeze.
 
 I3A0 already freezes the outer `ModernQueryV1` and `ModernQueryStreamV1`
 grammars. Their `item_size==0`/`ONFIELD_SKIPPED`, `QUERY_END==4`, item-size
 arithmetic, stream total-byte boundary, and prefix-exclusion semantics are
-immutable I3B0 inputs. I3B0 must not redefine or revise them.
+immutable I3B0 inputs. I3B0 consumes those rules unchanged and must not
+redefine or revise them.
 
-I3B0 owns and must freeze only:
+#### Complete flag vocabulary and admission
 
-- the complete `QUERY_FLAG` enum set admitted by the slice;
-- the exact payload type and width for every admitted flag;
-- per-flag size bounds and integer-overflow behavior;
-- the relationship between each admitted flag payload and its inherited
-  `item_size`;
-- the unknown-flag policy; and
-- positive, truncated, wrong-size, unknown-flag, trailing-byte, and overflow
-  fixtures for flag-specific validation.
+The pinned modern core defines 26 data flags and one outer-grammar sentinel.
+Every definition is listed below in ascending numeric `u32` order. A normal
+query record admits exactly one data-flag value; zero, an unknown value, or a
+bitwise-composite value is not an admitted flag. Within one query value before
+its `QUERY_END`, each admitted data flag may occur at most once. A duplicate
+admitted occurrence is malformed and fails closed without partial mirror
+mutation. This rule does not prohibit the same flag in two separate query
+values in a `ModernQueryStreamV1`.
 
-Inherited zero-size, `QUERY_END`, and stream-boundary cases may be regression
-fixtures, but their expected semantics belong to I3A0 and cannot be changed
-by I3B0. The flag-specific union is `NOT_FROZEN` in I3A0. I3B may not publish
-a typed query value until I3B0 is accepted. I3B0 adds no production code and
-leaves all I3 implementation gates `NOT_RUN`.
+The exact definition sites are `ocgapi_constants.h#QUERY_*`. The exact modern
+writers are `card.cpp#card::get_infos`; the corresponding reader/size logic is
+`gframe/core_utils.cpp#Query::Parse`, `Query::GenerateBuffer`, and
+`Query::GetFlagSize`. The stream boundary is read/written by
+`gframe/core_utils.cpp#QueryStream::{Parse,GenerateBuffer}` and the two
+message prefixes are constructed by
+`gframe/generic_duel.cpp#GenericDuel::{RefreshLocation,RefreshSingle}` and
+consumed by `gframe/duelclient.cpp#ClientAnalyze`.
+
+| Flag | Numeric value | Admission | Payload contract | Structural role |
+| --- | ---: | --- | --- | --- |
+| `QUERY_CODE` | `0x00000001` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_POSITION` | `0x00000002` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_ALIAS` | `0x00000004` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_TYPE` | `0x00000008` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_LEVEL` | `0x00000010` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_RANK` | `0x00000020` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_ATTRIBUTE` | `0x00000040` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_RACE` | `0x00000080` | `ADMITTED_I3B` | `SCALAR_U64_LE` | scalar query value |
+| `QUERY_ATTACK` | `0x00000100` | `ADMITTED_I3B` | `SCALAR_I32_LE` | scalar query value |
+| `QUERY_DEFENSE` | `0x00000200` | `ADMITTED_I3B` | `SCALAR_I32_LE` | scalar query value |
+| `QUERY_BASE_ATTACK` | `0x00000400` | `ADMITTED_I3B` | `SCALAR_I32_LE` | scalar query value |
+| `QUERY_BASE_DEFENSE` | `0x00000800` | `ADMITTED_I3B` | `SCALAR_I32_LE` | scalar query value |
+| `QUERY_REASON` | `0x00001000` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_REASON_CARD` | `0x00002000` | `ADMITTED_I3B` | `LOC_INFO_V1` | loc_info query value |
+| `QUERY_EQUIP_CARD` | `0x00004000` | `ADMITTED_I3B` | `LOC_INFO_V1` | loc_info query value |
+| `QUERY_TARGET_CARD` | `0x00008000` | `ADMITTED_I3B` | `VECTOR_LOC_INFO_V1` | counted loc_info vector |
+| `QUERY_OVERLAY_CARD` | `0x00010000` | `ADMITTED_I3B` | `VECTOR_U32_LE` | counted `u32` vector |
+| `QUERY_COUNTERS` | `0x00020000` | `ADMITTED_I3B` | `VECTOR_PACKED_U32_LE` | counted packed-`u32` vector |
+| `QUERY_OWNER` | `0x00040000` | `ADMITTED_I3B` | `SCALAR_U8` | scalar query value |
+| `QUERY_STATUS` | `0x00080000` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_IS_PUBLIC` | `0x00100000` | `ADMITTED_I3B` | `SCALAR_U8` | scalar query value |
+| `QUERY_LSCALE` | `0x00200000` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_RSCALE` | `0x00400000` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_LINK` | `0x00800000` | `ADMITTED_I3B` | `LINK_PAIR_U32_LE` | link value/marker pair |
+| `QUERY_IS_HIDDEN` | `0x01000000` | `ADMITTED_I3B` | `SCALAR_U8` | scalar query value |
+| `QUERY_COVER` | `0x02000000` | `ADMITTED_I3B` | `SCALAR_U32_LE` | scalar query value |
+| `QUERY_END` | `0x80000000` | `OUTER_GRAMMAR_SENTINEL` | `QUERY_END_SENTINEL` | outer query terminator |
+
+There are no known current flags in the `KNOWN_UNSUPPORTED_FAIL_CLOSED`
+category: every non-sentinel data flag has an exact modern wire shape above.
+This is a wire admission decision only. It does not make a card code public,
+define knowledge continuity, or authorize any public projection.
+
+#### Exact payload contracts and bounds
+
+All multi-byte values below are little-endian. `loc_info_v1` is exactly
+`u8 controller; u8 location; u32_le sequence; u32_le position`, 10 bytes.
+The `QUERY_COUNTERS` element is one opaque packed `u32_le` wire value; I3B0
+does not assign additional counter semantics.
+
+For every non-sentinel record:
+
+```text
+payload_bytes = item_size - 4
+item_size = 4 + payload_bytes
+0x0004 <= item_size <= 0xffff
+```
+
+The maximum record payload is therefore `65531` bytes. The exact contracts
+are:
+
+| Contract | Payload layout | Payload bytes | Accepted `item_size` |
+| --- | --- | ---: | ---: |
+| `SCALAR_U8` | `u8 value` | exactly 1 | exactly 5 |
+| `SCALAR_U32_LE` | `u32_le value` | exactly 4 | exactly 8 |
+| `SCALAR_I32_LE` | `i32_le value` | exactly 4 | exactly 8 |
+| `SCALAR_U64_LE` | `u64_le value` | exactly 8 | exactly 12 |
+| `LOC_INFO_V1` | `loc_info_v1` | exactly 10 | exactly 14 |
+| `LINK_PAIR_U32_LE` | `u32_le link; u32_le link_marker` | exactly 8 | exactly 12 |
+| `VECTOR_LOC_INFO_V1` | `u32_le count; loc_info_v1[count]` | `4 + 10*count` | `8 + 10*count` |
+| `VECTOR_U32_LE` | `u32_le count; u32_le value[count]` | `4 + 4*count` | `8 + 4*count` |
+| `VECTOR_PACKED_U32_LE` | `u32_le count; u32_le packed_value[count]` | `4 + 4*count` | `8 + 4*count` |
+| `QUERY_END_SENTINEL` | no payload; `u32_le QUERY_END` | exactly 0 | exactly 4 |
+
+For `VECTOR_LOC_INFO_V1`, checked arithmetic requires
+`count <= floor((65531 - 4) / 10) = 6552`; payload is at most 65524 bytes and
+`item_size` is at most 65528. For each four-byte vector, checked arithmetic
+requires `count <= floor((65531 - 4) / 4) = 16381`; payload is at most 65528
+bytes and `item_size` is at most 65532. A zero count is legal. Wire element
+duplicates are legal and element order is preserved; no deduplication or
+semantic reordering is performed by this contract.
+
+The required validation order is: read the inherited `item_size`; reject a
+nonzero value below 4; read exactly the four-byte flag; resolve an exact
+single admitted flag; calculate counted length using checked multiplication
+and addition; reject overflow or a required length greater than
+`item_size - 4` before any vector allocation; decode the exact fields; and
+require zero remaining payload bytes. Truncated, wrong-size, count/length
+mismatch, overflow, and trailing bytes all fail closed. No count is repaired
+from available bytes and no following query record is consumed.
+
+`QUERY_END` is not a flag-specific payload variant. It is valid only as
+`item_size=4`, `query_flag=QUERY_END`, and zero payload bytes. The zero-size
+`ONFIELD_SKIPPED` record has no flag and remains solely an I3A0 outer-grammar
+case.
+
+#### Unknown flags and evidence
+
+An unknown, zero, composite, or known-but-unadmitted flag is
+`FAIL_CLOSED`. It is never skipped, treated as opaque, mapped to a legacy
+width, normalized into another flag, or partially applied.
+
+A second occurrence of an admitted flag within the same `ModernQueryV1`,
+before `QUERY_END`, is also `FAIL_CLOSED`. The first occurrence is not
+committed before this query-level duplicate check can succeed; scalar overwrite
+and vector append behavior are both forbidden. Two separately terminated
+queries in one stream may repeat a flag because their duplicate scope is
+independent.
+
+The machine inventory's `validation_vectors` contains one canonical positive
+record for each of the 26 admitted flags. It also contains shape-complete
+truncated and wrong-size/trailing vectors, counted-vector length-mismatch and
+bound-overflow vectors, two duplicate-occurrence vectors (one scalar and one
+counted vector), two unknown/composite-flag vectors, and inherited
+outer-grammar regressions for `ONFIELD_SKIPPED`, `QUERY_END`, truncated
+nonzero records, exact stream boundaries, and multiple complete records. The
+hex strings are independently constructed record bytes; they are not copied
+serialized packets.
+
+I3B0 freezes wire representation only. The payload values must not be treated
+as public information, semantic locators, hidden-card continuity, or model
+input. I3C/I3C0/I3D0 remain owners of those later decisions.
+
+I3B0 leaves all I3 implementation gates `NOT_RUN`; I3B may consume this
+immutable contract only after separate implementation authorization.
 
 ### I3B — deterministic PerspectiveStateMirror
 
