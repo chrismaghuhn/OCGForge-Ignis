@@ -228,9 +228,9 @@ Status: `NOT_AUTHORIZED`; I3D0 does not start this task.
 - Create future `tests/OCGForge.Ignis.Gameplay.Tests/PublicProjectionPrivacyTests.cs`.
 - Use `fixtures/gameplay/v1/paired-hidden-worlds/` for deterministic fixture descriptions and expected hashes.
 
-- [ ] **Step 1: Add I3D acceptance tests.** Assert the accepted I3C projection and future `public_projection_id` binding remain value-owned, stable under source mutation, perspective-safe, and free of raw/control/model data.
+- [ ] **Step 1: Add I3D acceptance tests.** Assert the accepted I3C `PublicStateProjectionResultV1` and future `public_projection_id` binding remain value-owned, stable under source mutation, perspective-safe, and free of raw/control/model data.
 
-- [ ] **Step 2: Implement the remaining identity boundary.** Consume the accepted `PublicStateSnapshotV1` and bind the separately frozen `public_projection_id`; do not change canonical JSON, add a second codec, or create a second projection type.
+- [ ] **Step 2: Implement the remaining identity boundary.** Consume only a successful accepted I3C `PublicStateProjectionResultV1` (or an exactly equivalent non-separable bound result carrying its snapshot, canonical bytes, and raw digest) and bind `PUBLIC_PROJECTION_ID_PREFIX + exact result.Sha256`; do not consume the mirror as a second projection authority, accept caller-supplied bytes/digest, change canonical JSON, add a second codec, or create a second projection type.
 
 - [ ] **Step 3: Preserve the accepted codec.** I3D must use the I3D0 field order, null encoding, ordinal sorting, raw digest, and identity prefix exactly; it must not use map iteration or mutable aliases.
 

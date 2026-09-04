@@ -482,6 +482,11 @@ evidence.
 
 ## 11. Normative information-flow table
 
+This table defines information-flow eligibility, not V1 schema membership. For
+accepted V1 membership and canonical bytes,
+`ocgforge-ignis.public-state-projection.v1` is authoritative. A field marked
+`PUBLIC_PROJECTION_ALLOWED` may still be absent from V1.
+
 The default for an unlisted field is fail closed, not public.
 
 | Category | `RAW_ONLY` | `PRIVATE_MIRROR_ALLOWED` | `PUBLIC_PROJECTION_ALLOWED` | `MODEL_ALLOWED_LATER` | `PUBLIC_AUDIT_ALLOWED_LATER` |
@@ -1111,13 +1116,24 @@ owner of implementation and paired-world acceptance.
 
 Owner: I3 public projection/identity boundary.
 
-Inputs: only the accepted perspective-safe mirror, the accepted I3C0 locator
-codec, and the accepted I3D0 projection identity/codec contract.
+I3D does not project the mirror again. Its identity input is only a successful
+accepted I3C `PublicStateProjectionResultV1`, or an exactly equivalent
+non-separable bound result carrying the accepted snapshot, canonical bytes, and
+raw digest together.
+
+```text
+I3D_IDENTITY_INPUT=successful accepted I3C PublicStateProjectionResultV1
+public_projection_id=PUBLIC_PROJECTION_ID_PREFIX + exact result.Sha256
+I3D_REENCODES_CANONICAL_JSON=NO
+I3D_REHASHES_INDEPENDENT_SNAPSHOT=NO
+I3D_ACCEPTS_CALLER_SUPPLIED_DIGEST=NO
+I3D_ACCEPTS_CALLER_SUPPLIED_CANONICAL_BYTES=NO
+```
 
 Outputs: the remaining I3 privacy/acceptance closure and the separately
 implemented and bound `public_projection_id`, exactly as frozen by I3D0. I3D
 adds no new byte-level identity decision and does not add a separate V1 locator
-table.
+table. A failed I3C result produces no `public_projection_id`.
 
 Required negative tests include all information-flow rows marked non-public,
 paired hidden worlds A–E, raw metadata scan, projection mutation/aliasing,

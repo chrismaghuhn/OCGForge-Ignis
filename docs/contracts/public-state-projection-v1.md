@@ -24,6 +24,25 @@ I3D0 freezes the existing representation and defines the versioned
 `public_projection_id`. It does not authorize the earlier I3C implementation
 retroactively, add a second codec, or add a production identity property.
 
+## I3D identity ownership
+
+I3D receives identity input only from a successful accepted I3C
+`PublicStateProjectionResultV1`, or from an exactly equivalent non-separable
+bound result that carries the accepted snapshot, canonical bytes, and raw
+digest together. The mirror is not an I3D projection authority.
+
+```text
+I3D_IDENTITY_INPUT=successful accepted I3C PublicStateProjectionResultV1
+public_projection_id=PUBLIC_PROJECTION_ID_PREFIX + exact result.Sha256
+I3D_REENCODES_CANONICAL_JSON=NO
+I3D_REHASHES_INDEPENDENT_SNAPSHOT=NO
+I3D_ACCEPTS_CALLER_SUPPLIED_DIGEST=NO
+I3D_ACCEPTS_CALLER_SUPPLIED_CANONICAL_BYTES=NO
+```
+
+I3D does not re-project the mirror, re-encode the JSON, accept a separately
+supplied digest or byte buffer, or assign an identity to a failed I3C result.
+
 ## Boundary and meaning
 
 `public` means safe to cross the model-facing boundary for the established
