@@ -71,9 +71,28 @@ Expected:
 C:/Users/chris/Documents/OCGForge-Ignis
 ```
 
-The worktree must be clean before implementation edits begin. `HEAD` is the
-current approved design commit; record its value from `git rev-parse HEAD`
-instead of hard-coding a future commit identity.
+The worktree must be clean before implementation edits begin. `HEAD` must
+equal the committed `PLAN_HEAD`, not the design commit. Resolve the exact
+committed plan head from the plan path and fail closed if it differs:
+
+```powershell
+$planPath = 'docs/superpowers/plans/2026-09-04-i4a-simple-flat-prompts-plan.md'
+$designHead = '60c738b78540cc3fb4e2483b20c66221b7c49265'
+$planHead = (git log -1 --format='%H' -- $planPath).Trim()
+$head = (git rev-parse HEAD).Trim()
+if ($head -ne $planHead) {
+    throw "STATUS=BLOCKED_PLAN_HEAD_MOVED HEAD=$head EXPECTED=$planHead"
+}
+git merge-base --is-ancestor $designHead $planHead
+if ($LASTEXITCODE -ne 0) {
+    throw "STATUS=BLOCKED_DESIGN_NOT_ANCESTRAL DESIGN_HEAD=$designHead PLAN_HEAD=$planHead"
+}
+Write-Output "DESIGN_HEAD=$designHead"
+Write-Output "PLAN_HEAD=$planHead"
+```
+
+`PLAN_HEAD` is the exact SHA printed by the docs-only plan commit immediately
+before implementation. `DESIGN_HEAD` must remain an ancestor of it.
 
 - [ ] **Step 2: Verify that remote `main` still equals the authorized base.**
 
@@ -101,8 +120,8 @@ REMOTE_HEAD=13e0831c1364e329b62a1beb11f67d6ae8e682d1
 ```
 
 If the remote value differs, stop with `STATUS=BLOCKED_BASE_MOVED` and do not
-create or modify implementation files. If the branch has been altered from
-the design commit, stop and report the actual `HEAD` and parent values.
+create or modify implementation files. If `HEAD` differs from `PLAN_HEAD`,
+stop with `STATUS=BLOCKED_PLAN_HEAD_MOVED` and report the actual values.
 
 - [ ] **Step 3: Record the pre-change source identity and catalog count.**
 
@@ -397,12 +416,15 @@ unbound POSITION path.
 
 - [ ] **Step 3: Define discriminated public contexts with no nullable irrelevant fields.**
 
-Implement an abstract immutable `FlatPromptPublicContextV1` with only:
+Implement this as an abstract immutable record type with only:
 
 ```csharp
-public string ContractId { get; }
-public FlatPromptFamilyV1 PromptFamily { get; }
-public byte ActingPlayer { get; }
+public abstract record FlatPromptPublicContextV1
+{
+    public string ContractId { get; }
+    public FlatPromptFamilyV1 PromptFamily { get; }
+    public byte ActingPlayer { get; }
+}
 ```
 
 Use the exact contract ID constant
@@ -432,11 +454,14 @@ response, raw bytes, mirror identity, protocol offset, path, or timestamp.
 
 - [ ] **Step 4: Define discriminated public candidates with exact family members.**
 
-Implement an abstract immutable `FlatPublicCandidateDescriptorV1` with only:
+Implement this as an abstract immutable record type with only:
 
 ```csharp
-public string I4LocalCandidateKey { get; }
-public FlatPromptChoiceKindV1 ChoiceKind { get; }
+public abstract record FlatPublicCandidateDescriptorV1
+{
+    public string I4LocalCandidateKey { get; }
+    public FlatPromptChoiceKindV1 ChoiceKind { get; }
+}
 ```
 
 Add these variants with internal constructors and only the listed members:
@@ -992,15 +1017,31 @@ Run:
 $base = '13e0831c1364e329b62a1beb11f67d6ae8e682d1'
 git diff --check
 git diff --stat $base
-git diff --name-only $base
+$trackedChanged = @(git diff --name-only $base)
+$untracked = @(git ls-files --others --exclude-standard)
+$changed = @($trackedChanged + $untracked | Sort-Object -Unique)
+$expected = @(
+    'docs/superpowers/specs/2026-09-04-i4a-simple-flat-prompts-design.md',
+    'docs/superpowers/plans/2026-09-04-i4a-simple-flat-prompts-plan.md',
+    'src/OCGForge.Ignis.Gameplay/FlatPromptTypesV1.cs',
+    'src/OCGForge.Ignis.Gameplay/FlatPromptProjectionV1.cs',
+    'src/OCGForge.Ignis.Gameplay/FlatPromptSessionV1.cs',
+    'tests/OCGForge.Ignis.Gameplay.Tests/Program.cs',
+    'tests/OCGForge.Ignis.Gameplay.Tests/Tests/I4AFlatPromptProjectionTests.cs'
+)
+if (@($changed).Count -ne 7 -or
+    (@($changed) -join "`n") -cne (@($expected | Sort-Object) -join "`n")) {
+    throw "UNAUTHORIZED_PRECOMMIT_SCOPE CHANGED=$($changed -join ',')"
+}
 git status --short
 ```
 
-Expected: no whitespace errors; exactly the five implementation files plus
-the design document and this plan appear in the branch diff; no fixture or
-frozen-contract path appears; and `git status --short` lists only the five
-uncommitted implementation files. The worktree becomes clean only after the
-feature commit in Task 8.
+Expected: no whitespace errors; `git diff --stat $base` reports only tracked
+content, while the union of tracked changes and standard untracked files is
+exactly seven paths: the two docs plus the five implementation files. No
+fixture or frozen-contract path appears. `git status --short` shows the four
+new untracked files and the modified `Program.cs`; the worktree becomes clean
+only after the feature commit in Task 8.
 
 ## Task 8: Scope audit, commit, push, and stop for independent review
 
@@ -1012,19 +1053,29 @@ Run:
 
 ```powershell
 $allowed = @(
+    'docs/superpowers/specs/2026-09-04-i4a-simple-flat-prompts-design.md',
+    'docs/superpowers/plans/2026-09-04-i4a-simple-flat-prompts-plan.md',
     'src/OCGForge.Ignis.Gameplay/FlatPromptTypesV1.cs',
     'src/OCGForge.Ignis.Gameplay/FlatPromptProjectionV1.cs',
     'src/OCGForge.Ignis.Gameplay/FlatPromptSessionV1.cs',
     'tests/OCGForge.Ignis.Gameplay.Tests/Program.cs',
     'tests/OCGForge.Ignis.Gameplay.Tests/Tests/I4AFlatPromptProjectionTests.cs'
 )
-$changed = @(git diff --name-only 13e0831c1364e329b62a1beb11f67d6ae8e682d1)
+$base = '13e0831c1364e329b62a1beb11f67d6ae8e682d1'
+$trackedChanged = @(git diff --name-only $base)
+$untracked = @(git ls-files --others --exclude-standard)
+$changed = @($trackedChanged + $untracked | Sort-Object -Unique)
+if (@($changed).Count -ne 7) {
+    throw "UNAUTHORIZED_SCOPE_COUNT COUNT=$(@($changed).Count)"
+}
 foreach ($path in $changed) {
-    if ($path -notin $allowed -and
-        $path -ne 'docs/superpowers/specs/2026-09-04-i4a-simple-flat-prompts-design.md' -and
-        $path -ne 'docs/superpowers/plans/2026-09-04-i4a-simple-flat-prompts-plan.md') {
+    if ($path -notin $allowed) {
         throw "UNAUTHORIZED_FILE=$path"
     }
+}
+
+if ((@($changed) -join "`n") -cne (@($allowed | Sort-Object) -join "`n")) {
+    throw "UNAUTHORIZED_SCOPE_SET CHANGED=$($changed -join ',')"
 }
 
 if (@($changed | Where-Object { $_ -like 'fixtures/*' }).Count -ne 0) {
@@ -1035,8 +1086,10 @@ if (@($changed | Where-Object { $_ -eq 'docs/contracts/flat-prompt-projection-v1
 }
 ```
 
-Review the production diff for hidden identity, raw response, protocol
-address, public-action-key, network, model, fallback, and I3 authority drift.
+`git diff --stat $base` is informational because it omits untracked files at
+this pre-commit point. The union above is the authoritative pre-commit scope.
+Review the production diff for hidden identity, raw response, protocol address,
+public-action-key, network, model, fallback, and I3 authority drift.
 The final audit must establish:
 
 ```text
@@ -1072,15 +1125,32 @@ build output or fixture changes.
 Run:
 
 ```powershell
+$base = '13e0831c1364e329b62a1beb11f67d6ae8e682d1'
 git show -s --format='%H%n%P%n%s' HEAD
 git status --short --branch
 git diff --check HEAD^ HEAD
+$branchChanged = @(git diff --name-only $base HEAD | Sort-Object -Unique)
+$expectedBranchChanged = @(
+    'docs/superpowers/specs/2026-09-04-i4a-simple-flat-prompts-design.md',
+    'docs/superpowers/plans/2026-09-04-i4a-simple-flat-prompts-plan.md',
+    'src/OCGForge.Ignis.Gameplay/FlatPromptTypesV1.cs',
+    'src/OCGForge.Ignis.Gameplay/FlatPromptProjectionV1.cs',
+    'src/OCGForge.Ignis.Gameplay/FlatPromptSessionV1.cs',
+    'tests/OCGForge.Ignis.Gameplay.Tests/Program.cs',
+    'tests/OCGForge.Ignis.Gameplay.Tests/Tests/I4AFlatPromptProjectionTests.cs'
+)
+if (@($branchChanged).Count -ne 7 -or
+    (@($branchChanged) -join "`n") -cne (@($expectedBranchChanged | Sort-Object) -join "`n")) {
+    throw "BRANCH_SCOPE_MISMATCH CHANGED=$($branchChanged -join ',')"
+}
+Write-Output 'BRANCH_SCOPE=7_FILES_PASS'
 ```
 
 Expected: the feature commit's parent is the docs-only `PLAN_HEAD` commit,
-the subject is exact, and the worktree is clean. Record the concrete parent
-SHA from `git show`; it must equal the plan commit recorded before
-implementation, not the design commit.
+the subject is exact, the worktree is clean, and the committed
+`git diff --name-only $base HEAD` set is exactly the two docs plus the five
+feature files. Record the concrete parent SHA from `git show`; it must equal
+the plan commit recorded before implementation, not the design commit.
 
 - [ ] **Step 4: Push only the requested branch and verify the remote head.**
 
@@ -1102,13 +1172,13 @@ must include:
 ```text
 TASK=I4A_SIMPLE_FLAT_PROMPT_RUNTIME_01
 BASE=13e0831c1364e329b62a1beb11f67d6ae8e682d1
+PLAN_HEAD=the exact docs-only plan commit SHA recorded before implementation
 HEAD=the exact feature commit SHA printed by `git show`
 PARENT=PLAN_HEAD
 REMOTE_HEAD=the exact SHA printed by `git ls-remote`
 BRANCH=chris/i4a-simple-flat-prompts
-FILES_CHANGED=7
-BRANCH_FILES_CHANGED=7
-FEATURE_FILES_CHANGED=5
+FILES_CHANGED_BRANCH_WIDE=7
+FEATURE_COMMIT_FILES_CHANGED=5
 PRODUCTION_FILES_CHANGED=3
 TEST_FILES_CHANGED=2
 FIXTURES_CHANGED=NO
@@ -1143,8 +1213,8 @@ GAMEPLAY_TESTS=the passed/total reported by the Gameplay harness
 DETERMINISTIC_STDOUT_PROTOCOL=YES after the two-output comparison passes
 DETERMINISTIC_STDOUT_CLIENT=YES after the two-output comparison passes
 DETERMINISTIC_STDOUT_GAMEPLAY=YES after the two-output comparison passes
-WARNINGS=the count reported by the six Release builds
-ERRORS=the count reported by the six Release builds
+WARNINGS=the count reported by the 12 Release build invocations
+ERRORS=the count reported by the 12 Release build invocations
 DIFF_CHECK=PASS
 I3_SEMANTICS_CHANGED=NO
 I3_PUBLIC_CANONICAL_BYTES_CHANGED=NO
