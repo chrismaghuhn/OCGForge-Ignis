@@ -373,6 +373,40 @@ internal static class I4AFlatPromptProjectionTests
         AssertFailureResult(firstFailure, Position(0x01));
         True(firstFailure.TryAcceptPrompt(Position(0x03)).IsSuccess);
         Equal(0ul, CaptureOrdinal(firstFailure, "MSG_SELECT_POSITION:FACEUP_ATTACK"));
+
+        foreach (byte unsupportedMessageId in new byte[] { 10, 11, 12, 16 })
+        {
+            FlatPromptSessionV1 unsupportedSession = new();
+            True(unsupportedSession.TryAcceptPrompt(YesNoDescription).IsSuccess);
+            True(unsupportedSession.TryCaptureSelection(
+                "MSG_SELECT_YESNO:YES",
+                out FlatPromptSelectionHandleV1? oldUnsupportedHandle,
+                out FlatPromptErrorCodeV1 captureError));
+            Equal(FlatPromptErrorCodeV1.None, captureError);
+            NotNull(oldUnsupportedHandle);
+            Equal(0ul, oldUnsupportedHandle!.PromptInstanceOrdinal);
+
+            FlatPromptProjectionResultV1 unsupported =
+                unsupportedSession.TryAcceptPrompt(new[] { unsupportedMessageId });
+            False(unsupported.IsSuccess);
+            Equal(
+                FlatPromptErrorCodeV1.UnsupportedPromptLayout,
+                unsupported.Error);
+            Null(unsupported.Context);
+            Null(unsupported.Candidates);
+            False(unsupportedSession.TryResolveSelection(
+                oldUnsupportedHandle,
+                out _,
+                out FlatPromptErrorCodeV1 unsupportedStaleError));
+            Equal(
+                FlatPromptErrorCodeV1.StalePromptBinding,
+                unsupportedStaleError);
+
+            True(unsupportedSession.TryAcceptPrompt(YesNoDescription).IsSuccess);
+            Equal(
+                1ul,
+                CaptureOrdinal(unsupportedSession, "MSG_SELECT_YESNO:YES"));
+        }
     }
 
     internal static void TestPublicApiBoundary()
