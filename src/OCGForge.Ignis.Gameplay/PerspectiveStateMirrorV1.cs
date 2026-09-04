@@ -1787,40 +1787,20 @@ public sealed class PerspectiveStateMirrorV1
         out GameplayErrorCode error)
     {
         address = default;
-        error = GameplayErrorCode.None;
-        if (value.Controller > 1)
+        if (!MirrorAddressNormalizationV1.TryNormalize(
+                value,
+                out MirrorAddressNormalizationV1 normalized,
+                out error))
         {
-            error = GameplayErrorCode.InvalidParticipant;
-            return false;
-        }
-
-        MirrorZoneV1 zone = ToZone(value.Location, out bool valid);
-        if (!valid)
-        {
-            error = GameplayErrorCode.InvalidLocation;
-            return false;
-        }
-
-        bool isOverlay = (value.Location & LocationOverlay) != 0;
-        if (isOverlay && zone != MirrorZoneV1.MonsterZone)
-        {
-            error = GameplayErrorCode.InvalidLocation;
-            return false;
-        }
-
-        if (!isOverlay &&
-            !IsValidFieldSequence(zone, value.Sequence))
-        {
-            error = GameplayErrorCode.StateCapacityExceeded;
             return false;
         }
 
         address = new(
-            value.Controller,
-            zone,
-            value.Sequence,
-            isOverlay,
-            isOverlay ? value.Position : 0);
+            normalized.Controller,
+            normalized.Zone,
+            normalized.Sequence,
+            normalized.IsOverlay,
+            normalized.OverlayIndex);
         return true;
     }
 
