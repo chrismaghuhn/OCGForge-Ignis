@@ -208,49 +208,38 @@ internal static class I4BEffectYnChainPromptTests
 
     internal static void TestEffectYnIndexedCorrelation()
     {
-        (MirrorZoneV1 MirrorZone, PublicSemanticZoneV1 PublicZone)[] allowed =
-        {
-            (MirrorZoneV1.MonsterZone, PublicSemanticZoneV1.MonsterZone),
-            (MirrorZoneV1.Graveyard, PublicSemanticZoneV1.Graveyard),
-            (MirrorZoneV1.Banished, PublicSemanticZoneV1.Banished),
-            (MirrorZoneV1.SpellTrapZone, PublicSemanticZoneV1.SpellTrapZone),
-            (MirrorZoneV1.SpellTrapZone, PublicSemanticZoneV1.FieldZone),
-            (MirrorZoneV1.SpellTrapZone,
-                PublicSemanticZoneV1.PendulumRelevantState)
-        };
+        AssertFullIndexedCompatibilityMatrix();
 
-        foreach ((MirrorZoneV1 mirrorZone, PublicSemanticZoneV1 publicZone)
-                 in allowed)
-        {
-            AssertIndexedPair(mirrorZone, publicZone, true);
-        }
+        Authority crossZone = CreateAuthority(
+            0,
+            0,
+            new CardSpec(
+                0x11111111,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05)),
+            new CardSpec(
+                0x22222222,
+                new ModernLocInfoV1(0, 0x08, 0, 0x05)));
+        FlatPromptProjectionResultV1 monsterResult =
+            AcceptEffect(
+                crossZone,
+                0x11111111,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05));
+        AssertSuccess(monsterResult, FlatPromptFamilyV1.MsgSelectEffectYn);
+        Equal(
+            "p0:MONSTER_ZONE:0",
+            ((FlatPromptEffectYnPublicContextBaseV1)monsterResult.Context!)
+                .EffectCardLocator.Value);
 
-        PublicSemanticZoneV1[] publicZones =
-        {
-            PublicSemanticZoneV1.MonsterZone,
-            PublicSemanticZoneV1.SpellTrapZone,
-            PublicSemanticZoneV1.FieldZone,
-            PublicSemanticZoneV1.PendulumRelevantState,
-            PublicSemanticZoneV1.Graveyard,
-            PublicSemanticZoneV1.Banished
-        };
-        MirrorZoneV1[] mirrorZones =
-        {
-            MirrorZoneV1.MonsterZone,
-            MirrorZoneV1.Graveyard,
-            MirrorZoneV1.Banished,
-            MirrorZoneV1.SpellTrapZone
-        };
-        foreach (MirrorZoneV1 mirrorZone in mirrorZones)
-        {
-            foreach (PublicSemanticZoneV1 publicZone in publicZones)
-            {
-                if (!IsAllowedPair(mirrorZone, publicZone))
-                {
-                    AssertIndexedPair(mirrorZone, publicZone, false);
-                }
-            }
-        }
+        FlatPromptProjectionResultV1 spellTrapResult =
+            AcceptEffect(
+                crossZone,
+                0x22222222,
+                new ModernLocInfoV1(0, 0x08, 0, 0x05));
+        AssertSuccess(spellTrapResult, FlatPromptFamilyV1.MsgSelectEffectYn);
+        Equal(
+            "p0:SPELL_TRAP_ZONE:0",
+            ((FlatPromptEffectYnPublicContextBaseV1)spellTrapResult.Context!)
+                .EffectCardLocator.Value);
     }
 
     internal static void TestEffectYnPileAndOverlayCorrelation()
@@ -384,6 +373,45 @@ internal static class I4BEffectYnChainPromptTests
             new CardSpec(
                 0x11223344,
                 new ModernLocInfoV1(0, 0x04, 0, 0x05)));
+        byte[] ownedMessage = EffectYnMessage(
+            0,
+            0x11223344,
+            new ModernLocInfoV1(0, 0x04, 0, 0x05),
+            0x0102030405060708);
+        FlatPromptSessionV1 ownershipSession = new();
+        FlatPromptProjectionResultV1 ownedResult =
+            ownershipSession.TryAcceptPrompt(
+                ownedMessage,
+                authority.Mirror,
+                authority.Projection);
+        AssertSuccess(ownedResult, FlatPromptFamilyV1.MsgSelectEffectYn);
+        FlatPromptEffectYnCardCodePublicContextV1 ownedContext =
+            ownedResult.Context as FlatPromptEffectYnCardCodePublicContextV1 ??
+            throw new InvalidOperationException("expected owned EFFECTYN context");
+        IReadOnlyList<FlatPublicCandidateDescriptorV1> ownedCandidates =
+            ownedResult.Candidates!;
+        string[] ownedKeys = ownedCandidates
+            .Select(candidate => candidate.I4LocalCandidateKey)
+            .ToArray();
+        True(ownershipSession.TryCaptureSelection(
+            "MSG_SELECT_EFFECTYN:YES",
+            out FlatPromptSelectionHandleV1? ownedHandle,
+            out _));
+        ownedMessage[0] = 0xFF;
+        ownedMessage[2] = 0xAA;
+        ownedMessage[16] = 0xBB;
+        Equal("p0:MONSTER_ZONE:0", ownedContext.EffectCardLocator.Value);
+        Equal(0x11223344u, ownedContext.EffectCardCode);
+        Equal(0x0102030405060708ul, ownedContext.EffectDescriptionId);
+        Equal(ownedKeys[0], ownedCandidates[0].I4LocalCandidateKey);
+        Equal(ownedKeys[1], ownedCandidates[1].I4LocalCandidateKey);
+        True(ownershipSession.TryResolveSelection(
+            ownedHandle,
+            out FlatPromptResponseResolutionV1 ownedResponse,
+            out FlatPromptErrorCodeV1 ownedResolveError));
+        Equal(FlatPromptErrorCodeV1.None, ownedResolveError);
+        Equal(1, ownedResponse.ResponseI32);
+
         FlatPromptSessionV1 session = new();
         FlatPromptProjectionResultV1 first = session.TryAcceptPrompt(
             EffectYnMessage(
@@ -696,25 +724,53 @@ internal static class I4BEffectYnChainPromptTests
 
     internal static void TestChainCorrelationAuthorityAndCardCodeSafety()
     {
-        AssertIndexedPair(MirrorZoneV1.MonsterZone, PublicSemanticZoneV1.MonsterZone, true);
-        AssertIndexedPair(MirrorZoneV1.Graveyard, PublicSemanticZoneV1.Graveyard, true);
-        AssertIndexedPair(MirrorZoneV1.Banished, PublicSemanticZoneV1.Banished, true);
-        AssertIndexedPair(
-            MirrorZoneV1.SpellTrapZone,
-            PublicSemanticZoneV1.SpellTrapZone,
-            true);
-        AssertIndexedPair(
-            MirrorZoneV1.SpellTrapZone,
-            PublicSemanticZoneV1.FieldZone,
-            true);
-        AssertIndexedPair(
-            MirrorZoneV1.SpellTrapZone,
-            PublicSemanticZoneV1.PendulumRelevantState,
-            true);
-        AssertIndexedPair(
-            MirrorZoneV1.MonsterZone,
-            PublicSemanticZoneV1.SpellTrapZone,
-            false);
+        AssertFullIndexedCompatibilityMatrix();
+
+        Authority crossZone = CreateAuthority(
+            0,
+            0,
+            new CardSpec(
+                0x11111111,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05)),
+            new CardSpec(
+                0x22222222,
+                new ModernLocInfoV1(0, 0x08, 0, 0x05)));
+        FlatPromptProjectionResultV1 crossZoneResult = AcceptChain(
+            crossZone,
+            ChainMessage(
+                0,
+                2,
+                true,
+                0,
+                0,
+                new ChainEntrySpec(
+                    0x22222222,
+                    new ModernLocInfoV1(0, 0x08, 0, 0x05),
+                    1,
+                    0),
+                new ChainEntrySpec(
+                    0x11111111,
+                    new ModernLocInfoV1(0, 0x04, 0, 0x05),
+                    2,
+                    1)),
+            out _);
+        AssertSuccess(crossZoneResult, FlatPromptFamilyV1.MsgSelectChain);
+        FlatChainEntryPublicCandidateDescriptorBaseV1 firstCrossZone =
+            crossZoneResult.Candidates![0] as
+                FlatChainEntryPublicCandidateDescriptorBaseV1 ??
+            throw new InvalidOperationException("expected first CHAIN entry");
+        FlatChainEntryPublicCandidateDescriptorBaseV1 secondCrossZone =
+            crossZoneResult.Candidates[1] as
+                FlatChainEntryPublicCandidateDescriptorBaseV1 ??
+            throw new InvalidOperationException("expected second CHAIN entry");
+        Equal(
+            "p0:SPELL_TRAP_ZONE:0",
+            firstCrossZone.PublicSemanticCardLocator.Value);
+        Equal(
+            "p0:MONSTER_ZONE:0",
+            secondCrossZone.PublicSemanticCardLocator.Value);
+        Equal(0, firstCrossZone.SourceOrdinal);
+        Equal(1, secondCrossZone.SourceOrdinal);
 
         Authority authority = CreateAuthority(
             0,
@@ -743,6 +799,33 @@ internal static class I4BEffectYnChainPromptTests
         False(
             unsafeCode.Candidates[0]
                 is FlatChainCardCodePublicCandidateDescriptorV1);
+
+        Authority ambiguous = CreateAuthority(
+            0,
+            0,
+            new CardSpec(
+                0x33333333,
+                new ModernLocInfoV1(0, 0x02, 0, 0x08)),
+            new CardSpec(
+                0x33333333,
+                new ModernLocInfoV1(0, 0x02, 1, 0x08)));
+        FlatPromptProjectionResultV1 ambiguousResult = AcceptChain(
+            ambiguous,
+            ChainMessage(
+                0,
+                1,
+                true,
+                0,
+                0,
+                new ChainEntrySpec(
+                    0x33333333,
+                    new ModernLocInfoV1(0, 0x02, 0, 0x08),
+                    3,
+                    0)),
+            out _);
+        AssertFailureResult(
+            ambiguousResult,
+            FlatPromptErrorCodeV1.UnprovenPublicReference);
     }
 
     internal static void TestChainAtomicityStalenessAndOwnership()
@@ -975,6 +1058,52 @@ internal static class I4BEffectYnChainPromptTests
             authority.Projection);
     }
 
+    private static void AssertFullIndexedCompatibilityMatrix()
+    {
+        (MirrorZoneV1 MirrorZone, PublicSemanticZoneV1 PublicZone)[] allowed =
+        {
+            (MirrorZoneV1.MonsterZone, PublicSemanticZoneV1.MonsterZone),
+            (MirrorZoneV1.Graveyard, PublicSemanticZoneV1.Graveyard),
+            (MirrorZoneV1.Banished, PublicSemanticZoneV1.Banished),
+            (MirrorZoneV1.SpellTrapZone, PublicSemanticZoneV1.SpellTrapZone),
+            (MirrorZoneV1.SpellTrapZone, PublicSemanticZoneV1.FieldZone),
+            (MirrorZoneV1.SpellTrapZone,
+                PublicSemanticZoneV1.PendulumRelevantState)
+        };
+        foreach ((MirrorZoneV1 mirrorZone, PublicSemanticZoneV1 publicZone)
+                 in allowed)
+        {
+            AssertIndexedPair(mirrorZone, publicZone, true);
+        }
+
+        PublicSemanticZoneV1[] publicZones =
+        {
+            PublicSemanticZoneV1.MonsterZone,
+            PublicSemanticZoneV1.SpellTrapZone,
+            PublicSemanticZoneV1.FieldZone,
+            PublicSemanticZoneV1.PendulumRelevantState,
+            PublicSemanticZoneV1.Graveyard,
+            PublicSemanticZoneV1.Banished
+        };
+        MirrorZoneV1[] mirrorZones =
+        {
+            MirrorZoneV1.MonsterZone,
+            MirrorZoneV1.Graveyard,
+            MirrorZoneV1.Banished,
+            MirrorZoneV1.SpellTrapZone
+        };
+        foreach (MirrorZoneV1 mirrorZone in mirrorZones)
+        {
+            foreach (PublicSemanticZoneV1 publicZone in publicZones)
+            {
+                if (!IsAllowedPair(mirrorZone, publicZone))
+                {
+                    AssertIndexedPair(mirrorZone, publicZone, false);
+                }
+            }
+        }
+    }
+
     private static void AssertIndexedPair(
         MirrorZoneV1 mirrorZone,
         PublicSemanticZoneV1 publicZone,
@@ -984,14 +1113,17 @@ internal static class I4BEffectYnChainPromptTests
         byte location = MirrorLocation(mirrorZone);
         uint sequence = IndexedTestSequence(publicZone, mirrorZone);
         ulong duelFlags = publicZone == PublicSemanticZoneV1.PendulumRelevantState
-            ? 0x1800ul
+            ? PendulumDuelFlag
             : 0ul;
         Authority authority = CreateAuthority(
             0,
             duelFlags,
             new CardSpec(
                 cardCode,
-                new ModernLocInfoV1(0, location, sequence, 0x05)));
+                new ModernLocInfoV1(0, location, sequence, 0x05),
+                publicZone == PublicSemanticZoneV1.PendulumRelevantState
+                    ? PendulumSpellType
+                    : null));
         True(PublicSemanticLocatorV1.TryCreateIndexed(
             0,
             publicZone,
@@ -1038,7 +1170,7 @@ internal static class I4BEffectYnChainPromptTests
             ? 5u
             : mirrorZone == MirrorZoneV1.SpellTrapZone &&
               publicZone == PublicSemanticZoneV1.PendulumRelevantState
-                ? 6u
+                ? 0u
                 : 0u;
 
     private static bool IsAllowedPair(
