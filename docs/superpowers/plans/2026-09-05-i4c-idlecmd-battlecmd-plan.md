@@ -946,7 +946,7 @@ Run:
     if (@($featureChanged).Count -ne 5) {
         throw "PLAN_HEAD_FEATURE_SCOPE_COUNT=$(@($featureChanged).Count)"
     }
-    if (@($baseChanged).Count -ne 7) {
+    if (@($baseChanged).Count -ne 8) {
         throw "BASE_FEATURE_SCOPE_COUNT=$(@($baseChanged).Count)"
     }
     git diff --check $base $head
