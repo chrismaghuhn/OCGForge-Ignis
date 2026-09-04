@@ -87,7 +87,22 @@ var tests = new (string Name, Action Body)[]
         I3BPerspectiveStateMirrorTests.TestUpdateDataWireOrder),
 
     ("I3B stream chunking preserves mirror semantics",
-        I3BPerspectiveStateMirrorTests.TestMirrorChunking)
+        I3BPerspectiveStateMirrorTests.TestMirrorChunking),
+
+    ("I3C0 canonical admitted locator forms round-trip exactly",
+        I3C0PublicSemanticLocatorTests.TestCanonicalFormsRoundTripExactly),
+
+    ("I3C0 malformed and unsupported locators fail closed",
+        I3C0PublicSemanticLocatorTests.TestMalformedFormsFailClosed),
+
+    ("I3C0 maps perspective roles to absolute players",
+        I3C0PublicSemanticLocatorTests.TestAbsolutePlayerMapping),
+
+    ("I3C0 locator equality ordering and hash are deterministic",
+        I3C0PublicSemanticLocatorTests.TestDeterministicCultureIndependentValue),
+
+    ("I3C0 public API keeps internal identities private",
+        I3C0PublicSemanticLocatorTests.TestPublicApiBoundary)
 };
 
 int passed = 0;
