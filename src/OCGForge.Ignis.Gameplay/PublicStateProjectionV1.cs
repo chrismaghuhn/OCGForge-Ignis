@@ -134,6 +134,9 @@ public sealed class PublicStateSnapshotV1
 
 public sealed class PublicStateProjectionResultV1
 {
+    private const string PublicProjectionIdPrefix =
+        "ocgforge-ignis.public-state-projection.v1.";
+
     private readonly byte[] canonicalBytes;
 
     private PublicStateProjectionResultV1(
@@ -148,6 +151,9 @@ public sealed class PublicStateProjectionResultV1
         Snapshot = snapshot;
         this.canonicalBytes = canonicalBytes.ToArray();
         Sha256 = sha256;
+        PublicProjectionId = sha256 is null
+            ? null
+            : PublicProjectionIdPrefix + sha256;
     }
 
     public bool IsSuccess { get; }
@@ -160,6 +166,8 @@ public sealed class PublicStateProjectionResultV1
         new ReadOnlyMemory<byte>(canonicalBytes.ToArray());
 
     public string? Sha256 { get; }
+
+    public string? PublicProjectionId { get; }
 
     internal static PublicStateProjectionResultV1 Success(
         PublicStateSnapshotV1 snapshot,
