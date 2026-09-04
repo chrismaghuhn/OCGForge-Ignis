@@ -457,14 +457,14 @@ Their parser arrays and source semantics remain separate.
 ### Activatable actions
 
     FlatIdleActivatablePublicCandidateBaseV1
-    ├─ FlatIdleActivatablePublicCandidateV1
-    └─ FlatIdleActivatableCardCodePublicCandidateV1
+        ├─ FlatIdleActivatablePublicCandidateV1
+        └─ FlatIdleActivatableCardCodePublicCandidateV1
 
 The base contains:
 
     i4_local_candidate_key
     choice_kind = ACTIVATE
-    source_section = ACTIVATABLE
+    source_section = ACTIVATE
     source_ordinal
     public_semantic_card_locator
     description_or_effect_id

@@ -291,7 +291,7 @@ The eight IDLE groups must cover all of these concrete facts:
     duplicate known Hand/Extra CardCodes fail closed
     safe/unsafe CardCode variants preserve proven locators
     truncation, trailing bytes, legacy width, count mismatch, and overflow
-    invalid player/controller/location/client_mode/direct flags
+    invalid player/controller/location/client_mode
     invalid transition booleans
     authority byte/SHA/ProjectionId mismatch
     failed prompt invalidates the old handle and does not advance ordinal
@@ -350,7 +350,7 @@ Add these source sections:
     Reposition
     Mset
     Sset
-    IdleActivatable
+    Activate
 
 Do not add I4D, I5, or I6 values.
 
@@ -411,7 +411,7 @@ collapse the five semantic source sections into one interchangeable runtime
 type. Every binding check repeats the exact pair.
 
     FlatIdleActivatablePublicCandidateBaseV1
-        common key, ACTIVATE, ACTIVATABLE, source ordinal,
+        common key, ACTIVATE, ACTIVATE, source ordinal,
         accepted public locator, description/effect id, client mode
         ├─ FlatIdleActivatablePublicCandidateV1
         └─ FlatIdleActivatableCardCodePublicCandidateV1
