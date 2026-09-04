@@ -7,7 +7,9 @@ public enum FlatPromptFamilyV1 : byte
 {
     MsgSelectYesNo = 13,
     MsgSelectOption = 14,
-    MsgSelectPosition = 19
+    MsgSelectEffectYn = 12,
+    MsgSelectPosition = 19,
+    MsgSelectChain = 16
 }
 
 public enum FlatPromptChoiceKindV1 : byte
@@ -18,12 +20,15 @@ public enum FlatPromptChoiceKindV1 : byte
     FaceupAttack = 3,
     FacedownAttack = 4,
     FaceupDefense = 5,
-    FacedownDefense = 6
+    FacedownDefense = 6,
+    ChainEntry = 7,
+    NoChain = 8
 }
 
 public enum FlatPromptSourceSectionV1 : byte
 {
-    Options = 0
+    Options = 0,
+    ChainChoices = 1
 }
 
 public enum FlatPromptErrorCodeV1 : byte
@@ -39,7 +44,11 @@ public enum FlatPromptErrorCodeV1 : byte
     InvalidParticipant = 8,
     InvalidPositionMask = 9,
     ZeroOptionDomain = 10,
-    ArithmeticFailure = 11
+    ArithmeticFailure = 11,
+    InvalidLocation = 12,
+    InvalidBoolean = 13,
+    InvalidClientMode = 14,
+    AuthorityMismatch = 15
 }
 
 public abstract record FlatPromptPublicContextV1
@@ -95,6 +104,78 @@ public sealed record FlatPromptPositionPublicContextV1 : FlatPromptPublicContext
     }
 
     public byte PositionAllowedPositionsMask { get; }
+}
+
+public abstract record FlatPromptEffectYnPublicContextBaseV1
+    : FlatPromptPublicContextV1
+{
+    protected FlatPromptEffectYnPublicContextBaseV1(
+        byte actingPlayer,
+        PublicSemanticLocatorV1 effectCardLocator,
+        ulong effectDescriptionId)
+        : base(FlatPromptFamilyV1.MsgSelectEffectYn, actingPlayer)
+    {
+        EffectCardLocator = effectCardLocator ??
+            throw new ArgumentNullException(nameof(effectCardLocator));
+        EffectDescriptionId = effectDescriptionId;
+    }
+
+    public PublicSemanticLocatorV1 EffectCardLocator { get; }
+
+    public ulong EffectDescriptionId { get; }
+}
+
+public sealed record FlatPromptEffectYnPublicContextV1
+    : FlatPromptEffectYnPublicContextBaseV1
+{
+    internal FlatPromptEffectYnPublicContextV1(
+        byte actingPlayer,
+        PublicSemanticLocatorV1 effectCardLocator,
+        ulong effectDescriptionId)
+        : base(actingPlayer, effectCardLocator, effectDescriptionId)
+    {
+    }
+}
+
+public sealed record FlatPromptEffectYnCardCodePublicContextV1
+    : FlatPromptEffectYnPublicContextBaseV1
+{
+    internal FlatPromptEffectYnCardCodePublicContextV1(
+        byte actingPlayer,
+        PublicSemanticLocatorV1 effectCardLocator,
+        ulong effectDescriptionId,
+        uint effectCardCode)
+        : base(actingPlayer, effectCardLocator, effectDescriptionId)
+    {
+        EffectCardCode = effectCardCode;
+    }
+
+    public uint EffectCardCode { get; }
+}
+
+public sealed record FlatPromptChainPublicContextV1 : FlatPromptPublicContextV1
+{
+    internal FlatPromptChainPublicContextV1(
+        byte actingPlayer,
+        byte chainSpeCount,
+        bool chainForced,
+        uint chainHintTimingForPlayer,
+        uint chainHintTimingForOtherPlayer)
+        : base(FlatPromptFamilyV1.MsgSelectChain, actingPlayer)
+    {
+        ChainSpeCount = chainSpeCount;
+        ChainForced = chainForced;
+        ChainHintTimingForPlayer = chainHintTimingForPlayer;
+        ChainHintTimingForOtherPlayer = chainHintTimingForOtherPlayer;
+    }
+
+    public byte ChainSpeCount { get; }
+
+    public bool ChainForced { get; }
+
+    public uint ChainHintTimingForPlayer { get; }
+
+    public uint ChainHintTimingForOtherPlayer { get; }
 }
 
 public abstract record FlatPublicCandidateDescriptorV1
@@ -158,6 +239,99 @@ public sealed record FlatPositionPublicCandidateDescriptorV1
     }
 
     public byte PositionValue { get; }
+}
+
+public sealed record FlatEffectYnPublicCandidateDescriptorV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatEffectYnPublicCandidateDescriptorV1(
+        string i4LocalCandidateKey,
+        FlatPromptChoiceKindV1 choiceKind)
+        : base(i4LocalCandidateKey, choiceKind)
+    {
+    }
+}
+
+public sealed record FlatChainNoChainPublicCandidateDescriptorV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatChainNoChainPublicCandidateDescriptorV1(
+        string i4LocalCandidateKey)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.NoChain)
+    {
+    }
+}
+
+public abstract record FlatChainEntryPublicCandidateDescriptorBaseV1
+    : FlatPublicCandidateDescriptorV1
+{
+    protected FlatChainEntryPublicCandidateDescriptorBaseV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        ulong descriptionOrEffectId,
+        byte clientMode)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.ChainEntry)
+    {
+        SourceSection = FlatPromptSourceSectionV1.ChainChoices;
+        SourceOrdinal = sourceOrdinal;
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+        DescriptionOrEffectId = descriptionOrEffectId;
+        ClientMode = clientMode;
+    }
+
+    public FlatPromptSourceSectionV1 SourceSection { get; }
+
+    public int SourceOrdinal { get; }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+
+    public ulong DescriptionOrEffectId { get; }
+
+    public byte ClientMode { get; }
+}
+
+public sealed record FlatChainPublicCandidateDescriptorV1
+    : FlatChainEntryPublicCandidateDescriptorBaseV1
+{
+    internal FlatChainPublicCandidateDescriptorV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        ulong descriptionOrEffectId,
+        byte clientMode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator,
+            descriptionOrEffectId,
+            clientMode)
+    {
+    }
+}
+
+public sealed record FlatChainCardCodePublicCandidateDescriptorV1
+    : FlatChainEntryPublicCandidateDescriptorBaseV1
+{
+    internal FlatChainCardCodePublicCandidateDescriptorV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        ulong descriptionOrEffectId,
+        byte clientMode,
+        uint cardCode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator,
+            descriptionOrEffectId,
+            clientMode)
+    {
+        CardCode = cardCode;
+    }
+
+    public uint CardCode { get; }
 }
 
 public sealed class FlatPromptProjectionResultV1
@@ -238,6 +412,65 @@ internal sealed class FlatPromptProjectionDraftV1
 
     internal int[] CopyResponses() => responses.ToArray();
 }
+
+internal abstract record FlatPromptWireDraftV1(
+    FlatPromptFamilyV1 Family);
+
+internal sealed record FlatPromptEffectYnWireDraftV1(
+    byte ActingPlayer,
+    uint SourceCardCode,
+    ModernLocInfoV1 SourceLocation,
+    ulong EffectDescriptionId)
+    : FlatPromptWireDraftV1(FlatPromptFamilyV1.MsgSelectEffectYn);
+
+internal readonly record struct FlatPromptChainWireEntryV1(
+    uint SourceCardCode,
+    ModernLocInfoV1 SourceLocation,
+    ulong DescriptionOrEffectId,
+    byte ClientMode);
+
+internal sealed record FlatPromptChainWireDraftV1
+    : FlatPromptWireDraftV1
+{
+    private readonly FlatPromptChainWireEntryV1[] entries;
+    private readonly ReadOnlyCollection<FlatPromptChainWireEntryV1> entriesView;
+
+    internal FlatPromptChainWireDraftV1(
+        byte actingPlayer,
+        byte speCount,
+        bool forced,
+        uint hintTimingForPlayer,
+        uint hintTimingForOtherPlayer,
+        FlatPromptChainWireEntryV1[] entries)
+        : base(FlatPromptFamilyV1.MsgSelectChain)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        this.entries = entries.ToArray();
+        entriesView = Array.AsReadOnly(this.entries);
+        ActingPlayer = actingPlayer;
+        SpeCount = speCount;
+        Forced = forced;
+        HintTimingForPlayer = hintTimingForPlayer;
+        HintTimingForOtherPlayer = hintTimingForOtherPlayer;
+    }
+
+    internal byte ActingPlayer { get; }
+
+    internal byte SpeCount { get; }
+
+    internal bool Forced { get; }
+
+    internal uint HintTimingForPlayer { get; }
+
+    internal uint HintTimingForOtherPlayer { get; }
+
+    internal IReadOnlyList<FlatPromptChainWireEntryV1> Entries =>
+        entriesView;
+}
+
+internal sealed record FlatPromptCardAuthorityContextV1(
+    MirrorSnapshotV1 CapturedMirror,
+    PublicStateSnapshotV1 AcceptedSnapshot);
 
 internal sealed class CurrentFlatPromptBindingV1
 {
@@ -393,6 +626,57 @@ internal sealed class CurrentFlatPromptBindingV1
                 expectedResponse = position.PositionValue;
                 return true;
 
+            case FlatPromptFamilyV1.MsgSelectEffectYn:
+                if (candidate is not FlatEffectYnPublicCandidateDescriptorV1 effect ||
+                    effect.ChoiceKind is not
+                        (FlatPromptChoiceKindV1.No or FlatPromptChoiceKindV1.Yes))
+                {
+                    return false;
+                }
+
+                expectedKey = effect.ChoiceKind == FlatPromptChoiceKindV1.No
+                    ? FlatPromptKeyV1.EffectYnNo
+                    : FlatPromptKeyV1.EffectYnYes;
+                expectedResponse = effect.ChoiceKind == FlatPromptChoiceKindV1.No
+                    ? 0
+                    : 1;
+                return true;
+
+            case FlatPromptFamilyV1.MsgSelectChain:
+                if (candidate is FlatChainNoChainPublicCandidateDescriptorV1 noChain)
+                {
+                    if (noChain.ChoiceKind != FlatPromptChoiceKindV1.NoChain)
+                    {
+                        return false;
+                    }
+
+                    expectedKey = FlatPromptKeyV1.ChainNoChain;
+                    expectedResponse = -1;
+                    return true;
+                }
+
+                if (candidate is not FlatChainEntryPublicCandidateDescriptorBaseV1
+                        entry ||
+                    (candidate.GetType() !=
+                         typeof(FlatChainPublicCandidateDescriptorV1) &&
+                     candidate.GetType() !=
+                         typeof(FlatChainCardCodePublicCandidateDescriptorV1)) ||
+                    entry.ChoiceKind != FlatPromptChoiceKindV1.ChainEntry ||
+                    entry.SourceSection != FlatPromptSourceSectionV1.ChainChoices ||
+                    entry.ClientMode > 2 ||
+                    (entry is FlatChainCardCodePublicCandidateDescriptorV1
+                         cardCodeCandidate &&
+                     cardCodeCandidate.CardCode == 0) ||
+                    !FlatPromptKeyV1.TryCreateChainEntry(
+                        entry.SourceOrdinal,
+                        out expectedKey))
+                {
+                    return false;
+                }
+
+                expectedResponse = entry.SourceOrdinal;
+                return true;
+
             default:
                 return false;
         }
@@ -435,6 +719,9 @@ internal static class FlatPromptKeyV1
 {
     internal const string YesNoNo = "MSG_SELECT_YESNO:NO";
     internal const string YesNoYes = "MSG_SELECT_YESNO:YES";
+    internal const string EffectYnNo = "MSG_SELECT_EFFECTYN:NO";
+    internal const string EffectYnYes = "MSG_SELECT_EFFECTYN:YES";
+    internal const string ChainNoChain = "MSG_SELECT_CHAIN:NO_CHAIN";
 
     internal static bool TryCreateOption(
         int sourceOrdinal,
@@ -453,6 +740,26 @@ internal static class FlatPromptKeyV1
         }
 
         key = "MSG_SELECT_OPTION:OPTION:" + digits;
+        return true;
+    }
+
+    internal static bool TryCreateChainEntry(
+        int sourceOrdinal,
+        out string key)
+    {
+        key = string.Empty;
+        if (sourceOrdinal < 0)
+        {
+            return false;
+        }
+
+        string digits = sourceOrdinal.ToString(CultureInfo.InvariantCulture);
+        if (!IsCanonicalAsciiDecimal(digits))
+        {
+            return false;
+        }
+
+        key = "MSG_SELECT_CHAIN:CHAIN_ENTRY:" + digits;
         return true;
     }
 
