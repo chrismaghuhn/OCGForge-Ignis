@@ -644,6 +644,25 @@ MirrorZoneV1.SpellTrapZone
       or PublicSemanticZoneV1.PendulumRelevantState
 ```
 
+For the surviving accepted card, perform the comparison with the existing
+I3D locator codec rather than parsing locator strings in I4B:
+
+```text
+1. acceptedCard.AbsolutePlayer == resolved absolute player
+2. INDEXED_ZONE_COMPATIBLE(resolved MirrorZoneV1, acceptedCard.Zone)
+3. PublicSemanticLocatorV1.TryCreateIndexed(
+       resolved absolute player,
+       acceptedCard.Zone,
+       resolved Mirror sequence,
+       out expectedLocator)
+4. require TryCreateIndexed succeeded
+5. require acceptedCard.Locator == expectedLocator
+```
+
+`expectedLocator` is a local comparison value only. Do not store, return, or
+cache it. Publish only the exact `acceptedCard.Locator` from the accepted I3D
+snapshot.
+
 Then require exactly one accepted card with all three required indexed facts:
 
 ```text
@@ -656,6 +675,22 @@ The accepted card's existing indexed locator must parse to the exact player,
 accepted zone, and sequence. Do not construct or return the comparison locator.
 For SpellTrapZone, I4B accepts only the three listed I3D-classified values and
 does not select among them.
+
+The indexed tests must use one table-driven matrix containing these six
+allowed pairs and rejecting every other pair in this indexed domain:
+
+```text
+MonsterZone   → MonsterZone
+Graveyard     → Graveyard
+Banished      → Banished
+SpellTrapZone → SpellTrapZone
+SpellTrapZone → FieldZone
+SpellTrapZone → PendulumRelevantState
+```
+
+The matrix belongs to the existing `TestEffectYnIndexedCorrelation` and
+`TestChainCorrelationAuthorityAndCardCodeSafety` groups. It does not add a
+new top-level test registration.
 
 The helper must not add a `MirrorZoneV1 → PublicSemanticZoneV1` switch. The
 accepted snapshot's existing public `Zone` is the I3D classification authority.

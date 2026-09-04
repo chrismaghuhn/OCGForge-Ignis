@@ -286,6 +286,26 @@ This is a compatibility check, not a public-zone classifier. I4B never chooses
 which S/T semantic zone applies. That value is already selected by I3D and is
 read from `accepted PublicCardStateV1.Zone`.
 
+For an indexed comparison, the implementation must perform these checks in
+order:
+
+```text
+1. acceptedCard.AbsolutePlayer == resolved absolute player
+2. INDEXED_ZONE_COMPATIBLE(resolved MirrorZoneV1, acceptedCard.Zone)
+3. PublicSemanticLocatorV1.TryCreateIndexed(
+       resolved absolute player,
+       acceptedCard.Zone,
+       resolved Mirror sequence,
+       out expectedLocator)
+4. require TryCreateIndexed succeeded
+5. require acceptedCard.Locator == expectedLocator
+```
+
+`expectedLocator` is a local comparison value only. It is not publication
+authority, is not stored or returned, and is not cached. The published locator
+is always the exact `acceptedCard.Locator` object/value from the accepted I3D
+snapshot.
+
 The permitted correlation forms are:
 
 ```text
@@ -294,7 +314,8 @@ INDEXED_VISIBLE_CORRELATION
     INDEXED_ZONE_COMPATIBLE(resolved MirrorZoneV1, accepted PublicSemanticZoneV1)
     exact semantic PublicSemanticZoneV1 already present on the accepted card
     exact resolved indexed sequence
-    accepted card locator parses to the exact player, accepted zone, and sequence
+    accepted card locator is proven by the existing TryCreateIndexed comparison
+    for the exact player, accepted zone, and sequence
     exactly one accepted card required
 
 HAND_OR_EXTRA_PUBLIC_ORDINAL_CORRELATION
@@ -688,6 +709,23 @@ also cover accepted `SpellTrapZone`, `FieldZone`, and
 `PendulumRelevantState` values. I4B may reject or accept a candidate based on
 this compatibility predicate, but I3D alone chooses the concrete S/T public
 zone; I4B never classifies it.
+
+The indexed tests use one table-driven compatibility matrix with these exact
+allowed pairs:
+
+```text
+MonsterZone   → MonsterZone
+Graveyard     → Graveyard
+Banished      → Banished
+SpellTrapZone → SpellTrapZone
+SpellTrapZone → FieldZone
+SpellTrapZone → PendulumRelevantState
+```
+
+Every other pair in this indexed Mirror/Public-zone domain is rejected. The
+matrix remains inside the existing `EffectYnIndexedCorrelation` and
+`ChainCorrelationAuthorityAndCardCodeSafety` groups; it does not add a
+nineteenth top-level harness registration.
 
 The groups cover every required positive, negative, correlation, authority,
 privacy, staleness, ownership, deterministic, and I4A/I3 regression case.
