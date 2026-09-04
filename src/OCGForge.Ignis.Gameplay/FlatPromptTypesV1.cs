@@ -9,7 +9,9 @@ public enum FlatPromptFamilyV1 : byte
     MsgSelectOption = 14,
     MsgSelectEffectYn = 12,
     MsgSelectPosition = 19,
-    MsgSelectChain = 16
+    MsgSelectChain = 16,
+    MsgSelectBattleCmd = 10,
+    MsgSelectIdleCmd = 11
 }
 
 public enum FlatPromptChoiceKindV1 : byte
@@ -22,13 +24,32 @@ public enum FlatPromptChoiceKindV1 : byte
     FaceupDefense = 5,
     FacedownDefense = 6,
     ChainEntry = 7,
-    NoChain = 8
+    NoChain = 8,
+    Activate = 9,
+    Attack = 10,
+    ToM2 = 11,
+    ToEp = 12,
+    Summon = 13,
+    SpecialSummon = 14,
+    Reposition = 15,
+    Mset = 16,
+    Sset = 17,
+    ToBp = 18,
+    ShuffleHand = 19
 }
 
 public enum FlatPromptSourceSectionV1 : byte
 {
     Options = 0,
-    ChainChoices = 1
+    ChainChoices = 1,
+    Activatable = 2,
+    Attackable = 3,
+    Summon = 4,
+    SpecialSummon = 5,
+    Reposition = 6,
+    Mset = 7,
+    Sset = 8,
+    Activate = 9
 }
 
 public enum FlatPromptErrorCodeV1 : byte
@@ -176,6 +197,24 @@ public sealed record FlatPromptChainPublicContextV1 : FlatPromptPublicContextV1
     public uint ChainHintTimingForPlayer { get; }
 
     public uint ChainHintTimingForOtherPlayer { get; }
+}
+
+public sealed record FlatPromptBattlePublicContextV1
+    : FlatPromptPublicContextV1
+{
+    internal FlatPromptBattlePublicContextV1(byte actingPlayer)
+        : base(FlatPromptFamilyV1.MsgSelectBattleCmd, actingPlayer)
+    {
+    }
+}
+
+public sealed record FlatPromptIdlePublicContextV1
+    : FlatPromptPublicContextV1
+{
+    internal FlatPromptIdlePublicContextV1(byte actingPlayer)
+        : base(FlatPromptFamilyV1.MsgSelectIdleCmd, actingPlayer)
+    {
+    }
 }
 
 public abstract record FlatPublicCandidateDescriptorV1
@@ -334,6 +373,558 @@ public sealed record FlatChainCardCodePublicCandidateDescriptorV1
     public uint CardCode { get; }
 }
 
+public abstract record FlatBattleActivatablePublicCandidateBaseV1
+    : FlatPublicCandidateDescriptorV1
+{
+    protected FlatBattleActivatablePublicCandidateBaseV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        ulong descriptionOrEffectId,
+        byte clientMode)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.Activate)
+    {
+        SourceSection = FlatPromptSourceSectionV1.Activatable;
+        SourceOrdinal = sourceOrdinal;
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+        DescriptionOrEffectId = descriptionOrEffectId;
+        ClientMode = clientMode;
+    }
+
+    public FlatPromptSourceSectionV1 SourceSection { get; }
+
+    public int SourceOrdinal { get; }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+
+    public ulong DescriptionOrEffectId { get; }
+
+    public byte ClientMode { get; }
+}
+
+public sealed record FlatBattleActivatablePublicCandidateV1
+    : FlatBattleActivatablePublicCandidateBaseV1
+{
+    internal FlatBattleActivatablePublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        ulong descriptionOrEffectId,
+        byte clientMode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator,
+            descriptionOrEffectId,
+            clientMode)
+    {
+    }
+}
+
+public sealed record FlatBattleActivatableCardCodePublicCandidateV1
+    : FlatBattleActivatablePublicCandidateBaseV1
+{
+    internal FlatBattleActivatableCardCodePublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        ulong descriptionOrEffectId,
+        byte clientMode,
+        uint cardCode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator,
+            descriptionOrEffectId,
+            clientMode)
+    {
+        CardCode = cardCode;
+    }
+
+    public uint CardCode { get; }
+}
+
+public abstract record FlatBattleAttackPublicCandidateBaseV1
+    : FlatPublicCandidateDescriptorV1
+{
+    protected FlatBattleAttackPublicCandidateBaseV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        bool directAttackable)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.Attack)
+    {
+        SourceSection = FlatPromptSourceSectionV1.Attackable;
+        SourceOrdinal = sourceOrdinal;
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+        DirectAttackable = directAttackable;
+    }
+
+    public FlatPromptSourceSectionV1 SourceSection { get; }
+
+    public int SourceOrdinal { get; }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+
+    public bool DirectAttackable { get; }
+}
+
+public sealed record FlatBattleAttackPublicCandidateV1
+    : FlatBattleAttackPublicCandidateBaseV1
+{
+    internal FlatBattleAttackPublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        bool directAttackable)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator,
+            directAttackable)
+    {
+    }
+}
+
+public sealed record FlatBattleAttackCardCodePublicCandidateV1
+    : FlatBattleAttackPublicCandidateBaseV1
+{
+    internal FlatBattleAttackCardCodePublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        bool directAttackable,
+        uint cardCode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator,
+            directAttackable)
+    {
+        CardCode = cardCode;
+    }
+
+    public uint CardCode { get; }
+}
+
+public sealed record FlatBattleToMainPhase2PublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatBattleToMainPhase2PublicCandidateV1(
+        string i4LocalCandidateKey)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.ToM2)
+    {
+        TransitionToken = "MAIN_PHASE_2";
+    }
+
+    public string TransitionToken { get; }
+}
+
+public sealed record FlatBattleToEndPhasePublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatBattleToEndPhasePublicCandidateV1(
+        string i4LocalCandidateKey)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.ToEp)
+    {
+        TransitionToken = "END_PHASE";
+    }
+
+    public string TransitionToken { get; }
+}
+
+public abstract record FlatIdleCardActionPublicCandidateBaseV1
+    : FlatPublicCandidateDescriptorV1
+{
+    protected FlatIdleCardActionPublicCandidateBaseV1(
+        string i4LocalCandidateKey,
+        FlatPromptChoiceKindV1 choiceKind,
+        FlatPromptSourceSectionV1 sourceSection,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(i4LocalCandidateKey, choiceKind)
+    {
+        SourceSection = sourceSection;
+        SourceOrdinal = sourceOrdinal;
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+    }
+
+    public FlatPromptSourceSectionV1 SourceSection { get; }
+
+    public int SourceOrdinal { get; }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+}
+
+public abstract record FlatIdleSummonPublicCandidateBaseV1
+    : FlatIdleCardActionPublicCandidateBaseV1
+{
+    protected FlatIdleSummonPublicCandidateBaseV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(
+            i4LocalCandidateKey,
+            FlatPromptChoiceKindV1.Summon,
+            FlatPromptSourceSectionV1.Summon,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+    }
+}
+
+public abstract record FlatIdleSpecialSummonPublicCandidateBaseV1
+    : FlatIdleCardActionPublicCandidateBaseV1
+{
+    protected FlatIdleSpecialSummonPublicCandidateBaseV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(
+            i4LocalCandidateKey,
+            FlatPromptChoiceKindV1.SpecialSummon,
+            FlatPromptSourceSectionV1.SpecialSummon,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+    }
+}
+
+public abstract record FlatIdleRepositionPublicCandidateBaseV1
+    : FlatIdleCardActionPublicCandidateBaseV1
+{
+    protected FlatIdleRepositionPublicCandidateBaseV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(
+            i4LocalCandidateKey,
+            FlatPromptChoiceKindV1.Reposition,
+            FlatPromptSourceSectionV1.Reposition,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+    }
+}
+
+public abstract record FlatIdleMsetPublicCandidateBaseV1
+    : FlatIdleCardActionPublicCandidateBaseV1
+{
+    protected FlatIdleMsetPublicCandidateBaseV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(
+            i4LocalCandidateKey,
+            FlatPromptChoiceKindV1.Mset,
+            FlatPromptSourceSectionV1.Mset,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+    }
+}
+
+public abstract record FlatIdleSsetPublicCandidateBaseV1
+    : FlatIdleCardActionPublicCandidateBaseV1
+{
+    protected FlatIdleSsetPublicCandidateBaseV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(
+            i4LocalCandidateKey,
+            FlatPromptChoiceKindV1.Sset,
+            FlatPromptSourceSectionV1.Sset,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+    }
+}
+
+public abstract record FlatIdleActivatablePublicCandidateBaseV1
+    : FlatPublicCandidateDescriptorV1
+{
+    protected FlatIdleActivatablePublicCandidateBaseV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        ulong descriptionOrEffectId,
+        byte clientMode)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.Activate)
+    {
+        SourceSection = FlatPromptSourceSectionV1.Activate;
+        SourceOrdinal = sourceOrdinal;
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+        DescriptionOrEffectId = descriptionOrEffectId;
+        ClientMode = clientMode;
+    }
+
+    public FlatPromptSourceSectionV1 SourceSection { get; }
+
+    public int SourceOrdinal { get; }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+
+    public ulong DescriptionOrEffectId { get; }
+
+    public byte ClientMode { get; }
+}
+
+public sealed record FlatIdleActivatablePublicCandidateV1
+    : FlatIdleActivatablePublicCandidateBaseV1
+{
+    internal FlatIdleActivatablePublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        ulong descriptionOrEffectId,
+        byte clientMode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator,
+            descriptionOrEffectId,
+            clientMode)
+    {
+    }
+}
+
+public sealed record FlatIdleActivatableCardCodePublicCandidateV1
+    : FlatIdleActivatablePublicCandidateBaseV1
+{
+    internal FlatIdleActivatableCardCodePublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        ulong descriptionOrEffectId,
+        byte clientMode,
+        uint cardCode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator,
+            descriptionOrEffectId,
+            clientMode)
+    {
+        CardCode = cardCode;
+    }
+
+    public uint CardCode { get; }
+}
+
+public sealed record FlatIdleToBattlePhasePublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatIdleToBattlePhasePublicCandidateV1(
+        string i4LocalCandidateKey)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.ToBp)
+    {
+        TransitionToken = "BATTLE_PHASE";
+    }
+
+    public string TransitionToken { get; }
+}
+
+public sealed record FlatIdleToEndPhasePublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatIdleToEndPhasePublicCandidateV1(
+        string i4LocalCandidateKey)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.ToEp)
+    {
+        TransitionToken = "END_PHASE";
+    }
+
+    public string TransitionToken { get; }
+}
+
+public sealed record FlatIdleShuffleHandPublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatIdleShuffleHandPublicCandidateV1(
+        string i4LocalCandidateKey)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.ShuffleHand)
+    {
+        TransitionToken = "SHUFFLE_HAND";
+    }
+
+    public string TransitionToken { get; }
+}
+
+public sealed record FlatIdleSummonPublicCandidateV1
+    : FlatIdleSummonPublicCandidateBaseV1
+{
+    internal FlatIdleSummonPublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+    }
+}
+
+public sealed record FlatIdleSummonCardCodePublicCandidateV1
+    : FlatIdleSummonPublicCandidateBaseV1
+{
+    internal FlatIdleSummonCardCodePublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        uint cardCode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+        CardCode = cardCode;
+    }
+
+    public uint CardCode { get; }
+}
+
+public sealed record FlatIdleSpecialSummonPublicCandidateV1
+    : FlatIdleSpecialSummonPublicCandidateBaseV1
+{
+    internal FlatIdleSpecialSummonPublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+    }
+}
+
+public sealed record FlatIdleSpecialSummonCardCodePublicCandidateV1
+    : FlatIdleSpecialSummonPublicCandidateBaseV1
+{
+    internal FlatIdleSpecialSummonCardCodePublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        uint cardCode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+        CardCode = cardCode;
+    }
+
+    public uint CardCode { get; }
+}
+
+public sealed record FlatIdleRepositionPublicCandidateV1
+    : FlatIdleRepositionPublicCandidateBaseV1
+{
+    internal FlatIdleRepositionPublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+    }
+}
+
+public sealed record FlatIdleRepositionCardCodePublicCandidateV1
+    : FlatIdleRepositionPublicCandidateBaseV1
+{
+    internal FlatIdleRepositionCardCodePublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        uint cardCode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+        CardCode = cardCode;
+    }
+
+    public uint CardCode { get; }
+}
+
+public sealed record FlatIdleMsetPublicCandidateV1
+    : FlatIdleMsetPublicCandidateBaseV1
+{
+    internal FlatIdleMsetPublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+    }
+}
+
+public sealed record FlatIdleMsetCardCodePublicCandidateV1
+    : FlatIdleMsetPublicCandidateBaseV1
+{
+    internal FlatIdleMsetCardCodePublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        uint cardCode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+        CardCode = cardCode;
+    }
+
+    public uint CardCode { get; }
+}
+
+public sealed record FlatIdleSsetPublicCandidateV1
+    : FlatIdleSsetPublicCandidateBaseV1
+{
+    internal FlatIdleSsetPublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+    }
+}
+
+public sealed record FlatIdleSsetCardCodePublicCandidateV1
+    : FlatIdleSsetPublicCandidateBaseV1
+{
+    internal FlatIdleSsetCardCodePublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        uint cardCode)
+        : base(
+            i4LocalCandidateKey,
+            sourceOrdinal,
+            publicSemanticCardLocator)
+    {
+        CardCode = cardCode;
+    }
+
+    public uint CardCode { get; }
+}
+
 public sealed class FlatPromptProjectionResultV1
 {
     private FlatPromptProjectionResultV1(
@@ -471,6 +1062,169 @@ internal sealed record FlatPromptChainWireDraftV1
 internal sealed record FlatPromptCardAuthorityContextV1(
     MirrorSnapshotV1 CapturedMirror,
     PublicStateSnapshotV1 AcceptedSnapshot);
+
+internal readonly record struct FlatPromptBattleActivatableWireEntryV1(
+    uint SourceCardCode,
+    byte Controller,
+    byte Location,
+    uint Sequence,
+    ulong DescriptionOrEffectId,
+    byte ClientMode);
+
+internal readonly record struct FlatPromptBattleAttackableWireEntryV1(
+    uint SourceCardCode,
+    byte Controller,
+    byte Location,
+    byte Sequence,
+    bool DirectAttackable);
+
+internal sealed record FlatPromptBattleWireDraftV1
+    : FlatPromptWireDraftV1
+{
+    private readonly FlatPromptBattleActivatableWireEntryV1[] activatableEntries;
+    private readonly FlatPromptBattleAttackableWireEntryV1[] attackableEntries;
+    private readonly ReadOnlyCollection<FlatPromptBattleActivatableWireEntryV1>
+        activatableEntriesView;
+    private readonly ReadOnlyCollection<FlatPromptBattleAttackableWireEntryV1>
+        attackableEntriesView;
+
+    internal FlatPromptBattleWireDraftV1(
+        byte actingPlayer,
+        FlatPromptBattleActivatableWireEntryV1[] activatableEntries,
+        FlatPromptBattleAttackableWireEntryV1[] attackableEntries,
+        bool toMainPhase2,
+        bool toEndPhase)
+        : base(FlatPromptFamilyV1.MsgSelectBattleCmd)
+    {
+        ArgumentNullException.ThrowIfNull(activatableEntries);
+        ArgumentNullException.ThrowIfNull(attackableEntries);
+        this.activatableEntries = activatableEntries.ToArray();
+        this.attackableEntries = attackableEntries.ToArray();
+        activatableEntriesView = Array.AsReadOnly(this.activatableEntries);
+        attackableEntriesView = Array.AsReadOnly(this.attackableEntries);
+        ActingPlayer = actingPlayer;
+        ToMainPhase2 = toMainPhase2;
+        ToEndPhase = toEndPhase;
+    }
+
+    internal byte ActingPlayer { get; }
+
+    internal IReadOnlyList<FlatPromptBattleActivatableWireEntryV1>
+        ActivatableEntries => activatableEntriesView;
+
+    internal IReadOnlyList<FlatPromptBattleAttackableWireEntryV1>
+        AttackableEntries => attackableEntriesView;
+
+    internal bool ToMainPhase2 { get; }
+
+    internal bool ToEndPhase { get; }
+}
+
+internal readonly record struct FlatPromptIdleCardWireEntryV1(
+    uint SourceCardCode,
+    byte Controller,
+    byte Location,
+    uint Sequence);
+
+internal readonly record struct FlatPromptIdleRepositionWireEntryV1(
+    uint SourceCardCode,
+    byte Controller,
+    byte Location,
+    byte Sequence);
+
+internal readonly record struct FlatPromptIdleActivatableWireEntryV1(
+    uint SourceCardCode,
+    byte Controller,
+    byte Location,
+    uint Sequence,
+    ulong DescriptionOrEffectId,
+    byte ClientMode);
+
+internal sealed record FlatPromptIdleWireDraftV1
+    : FlatPromptWireDraftV1
+{
+    private readonly FlatPromptIdleCardWireEntryV1[] summonEntries;
+    private readonly FlatPromptIdleCardWireEntryV1[] specialSummonEntries;
+    private readonly FlatPromptIdleRepositionWireEntryV1[] repositionEntries;
+    private readonly FlatPromptIdleCardWireEntryV1[] monsterSetEntries;
+    private readonly FlatPromptIdleCardWireEntryV1[] spellTrapSetEntries;
+    private readonly FlatPromptIdleActivatableWireEntryV1[] activatableEntries;
+    private readonly ReadOnlyCollection<FlatPromptIdleCardWireEntryV1>
+        summonEntriesView;
+    private readonly ReadOnlyCollection<FlatPromptIdleCardWireEntryV1>
+        specialSummonEntriesView;
+    private readonly ReadOnlyCollection<FlatPromptIdleRepositionWireEntryV1>
+        repositionEntriesView;
+    private readonly ReadOnlyCollection<FlatPromptIdleCardWireEntryV1>
+        monsterSetEntriesView;
+    private readonly ReadOnlyCollection<FlatPromptIdleCardWireEntryV1>
+        spellTrapSetEntriesView;
+    private readonly ReadOnlyCollection<FlatPromptIdleActivatableWireEntryV1>
+        activatableEntriesView;
+
+    internal FlatPromptIdleWireDraftV1(
+        byte actingPlayer,
+        FlatPromptIdleCardWireEntryV1[] summonEntries,
+        FlatPromptIdleCardWireEntryV1[] specialSummonEntries,
+        FlatPromptIdleRepositionWireEntryV1[] repositionEntries,
+        FlatPromptIdleCardWireEntryV1[] monsterSetEntries,
+        FlatPromptIdleCardWireEntryV1[] spellTrapSetEntries,
+        FlatPromptIdleActivatableWireEntryV1[] activatableEntries,
+        bool toBattlePhase,
+        bool toEndPhase,
+        bool shuffleHand)
+        : base(FlatPromptFamilyV1.MsgSelectIdleCmd)
+    {
+        ArgumentNullException.ThrowIfNull(summonEntries);
+        ArgumentNullException.ThrowIfNull(specialSummonEntries);
+        ArgumentNullException.ThrowIfNull(repositionEntries);
+        ArgumentNullException.ThrowIfNull(monsterSetEntries);
+        ArgumentNullException.ThrowIfNull(spellTrapSetEntries);
+        ArgumentNullException.ThrowIfNull(activatableEntries);
+        this.summonEntries = summonEntries.ToArray();
+        this.specialSummonEntries = specialSummonEntries.ToArray();
+        this.repositionEntries = repositionEntries.ToArray();
+        this.monsterSetEntries = monsterSetEntries.ToArray();
+        this.spellTrapSetEntries = spellTrapSetEntries.ToArray();
+        this.activatableEntries = activatableEntries.ToArray();
+        summonEntriesView = Array.AsReadOnly(this.summonEntries);
+        specialSummonEntriesView = Array.AsReadOnly(this.specialSummonEntries);
+        repositionEntriesView = Array.AsReadOnly(this.repositionEntries);
+        monsterSetEntriesView = Array.AsReadOnly(this.monsterSetEntries);
+        spellTrapSetEntriesView = Array.AsReadOnly(this.spellTrapSetEntries);
+        activatableEntriesView = Array.AsReadOnly(this.activatableEntries);
+        ActingPlayer = actingPlayer;
+        ToBattlePhase = toBattlePhase;
+        ToEndPhase = toEndPhase;
+        ShuffleHand = shuffleHand;
+    }
+
+    internal byte ActingPlayer { get; }
+
+    internal IReadOnlyList<FlatPromptIdleCardWireEntryV1> SummonEntries =>
+        summonEntriesView;
+
+    internal IReadOnlyList<FlatPromptIdleCardWireEntryV1>
+        SpecialSummonEntries => specialSummonEntriesView;
+
+    internal IReadOnlyList<FlatPromptIdleRepositionWireEntryV1>
+        RepositionEntries => repositionEntriesView;
+
+    internal IReadOnlyList<FlatPromptIdleCardWireEntryV1> MonsterSetEntries =>
+        monsterSetEntriesView;
+
+    internal IReadOnlyList<FlatPromptIdleCardWireEntryV1>
+        SpellTrapSetEntries => spellTrapSetEntriesView;
+
+    internal IReadOnlyList<FlatPromptIdleActivatableWireEntryV1>
+        ActivatableEntries => activatableEntriesView;
+
+    internal bool ToBattlePhase { get; }
+
+    internal bool ToEndPhase { get; }
+
+    internal bool ShuffleHand { get; }
+}
 
 internal sealed class CurrentFlatPromptBindingV1
 {
@@ -677,10 +1431,323 @@ internal sealed class CurrentFlatPromptBindingV1
                 expectedResponse = entry.SourceOrdinal;
                 return true;
 
+            case FlatPromptFamilyV1.MsgSelectBattleCmd:
+                return TryGetBattleBinding(
+                    candidate,
+                    out expectedKey,
+                    out expectedResponse);
+
+            case FlatPromptFamilyV1.MsgSelectIdleCmd:
+                return TryGetIdleBinding(
+                    candidate,
+                    out expectedKey,
+                    out expectedResponse);
+
             default:
                 return false;
         }
     }
+
+    private static bool TryGetBattleBinding(
+        FlatPublicCandidateDescriptorV1 candidate,
+        out string expectedKey,
+        out int expectedResponse)
+    {
+        expectedKey = string.Empty;
+        expectedResponse = default;
+        if (candidate is FlatBattleActivatablePublicCandidateBaseV1 activatable)
+        {
+            if (!IsConcreteType(
+                candidate,
+                typeof(FlatBattleActivatablePublicCandidateV1),
+                typeof(FlatBattleActivatableCardCodePublicCandidateV1)) ||
+                !HasNonZeroCardCodeIfPresent(candidate) ||
+                activatable.SourceSection !=
+                    FlatPromptSourceSectionV1.Activatable ||
+                !FlatPromptKeyV1.TryCreateBattleActivatable(
+                    activatable.SourceOrdinal,
+                    out expectedKey))
+            {
+                return false;
+            }
+
+            return FlatPromptKeyV1.TryEncodeIndexedResponse(
+                activatable.SourceOrdinal,
+                0,
+                out expectedResponse);
+        }
+
+        if (candidate is FlatBattleAttackPublicCandidateBaseV1 attack)
+        {
+            if (!IsConcreteType(
+                candidate,
+                typeof(FlatBattleAttackPublicCandidateV1),
+                typeof(FlatBattleAttackCardCodePublicCandidateV1)) ||
+                !HasNonZeroCardCodeIfPresent(candidate) ||
+                attack.SourceSection != FlatPromptSourceSectionV1.Attackable ||
+                !FlatPromptKeyV1.TryCreateBattleAttack(
+                    attack.SourceOrdinal,
+                    out expectedKey))
+            {
+                return false;
+            }
+
+            return FlatPromptKeyV1.TryEncodeIndexedResponse(
+                attack.SourceOrdinal,
+                1,
+                out expectedResponse);
+        }
+
+        if (candidate is FlatBattleToMainPhase2PublicCandidateV1 toM2)
+        {
+            if (candidate.GetType() !=
+                    typeof(FlatBattleToMainPhase2PublicCandidateV1) ||
+                !string.Equals(
+                    toM2.I4LocalCandidateKey,
+                    FlatPromptKeyV1.BattleToM2,
+                    StringComparison.Ordinal) ||
+                toM2.TransitionToken != "MAIN_PHASE_2")
+            {
+                return false;
+            }
+
+            expectedKey = FlatPromptKeyV1.BattleToM2;
+            expectedResponse = 2;
+            return true;
+        }
+
+        if (candidate is FlatBattleToEndPhasePublicCandidateV1 toEnd)
+        {
+            if (candidate.GetType() !=
+                    typeof(FlatBattleToEndPhasePublicCandidateV1) ||
+                toEnd.I4LocalCandidateKey != FlatPromptKeyV1.BattleToEp ||
+                toEnd.TransitionToken != "END_PHASE")
+            {
+                return false;
+            }
+
+            expectedKey = FlatPromptKeyV1.BattleToEp;
+            expectedResponse = 3;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetIdleBinding(
+        FlatPublicCandidateDescriptorV1 candidate,
+        out string expectedKey,
+        out int expectedResponse)
+    {
+        expectedKey = string.Empty;
+        expectedResponse = default;
+        if (candidate is FlatIdleSummonPublicCandidateV1 summon ||
+            candidate is FlatIdleSummonCardCodePublicCandidateV1)
+        {
+            return TryGetIdleSimpleBinding(
+                candidate,
+                FlatPromptChoiceKindV1.Summon,
+                FlatPromptSourceSectionV1.Summon,
+                "MSG_SELECT_IDLECMD:SUMMON:",
+                0,
+                typeof(FlatIdleSummonPublicCandidateV1),
+                typeof(FlatIdleSummonCardCodePublicCandidateV1),
+                out expectedKey,
+                out expectedResponse);
+        }
+
+        if (candidate is FlatIdleSpecialSummonPublicCandidateV1 ||
+            candidate is FlatIdleSpecialSummonCardCodePublicCandidateV1)
+        {
+            return TryGetIdleSimpleBinding(
+                candidate,
+                FlatPromptChoiceKindV1.SpecialSummon,
+                FlatPromptSourceSectionV1.SpecialSummon,
+                "MSG_SELECT_IDLECMD:SPECIAL_SUMMON:",
+                1,
+                typeof(FlatIdleSpecialSummonPublicCandidateV1),
+                typeof(FlatIdleSpecialSummonCardCodePublicCandidateV1),
+                out expectedKey,
+                out expectedResponse);
+        }
+
+        if (candidate is FlatIdleRepositionPublicCandidateV1 ||
+            candidate is FlatIdleRepositionCardCodePublicCandidateV1)
+        {
+            return TryGetIdleSimpleBinding(
+                candidate,
+                FlatPromptChoiceKindV1.Reposition,
+                FlatPromptSourceSectionV1.Reposition,
+                "MSG_SELECT_IDLECMD:REPOSITION:",
+                2,
+                typeof(FlatIdleRepositionPublicCandidateV1),
+                typeof(FlatIdleRepositionCardCodePublicCandidateV1),
+                out expectedKey,
+                out expectedResponse);
+        }
+
+        if (candidate is FlatIdleMsetPublicCandidateV1 ||
+            candidate is FlatIdleMsetCardCodePublicCandidateV1)
+        {
+            return TryGetIdleSimpleBinding(
+                candidate,
+                FlatPromptChoiceKindV1.Mset,
+                FlatPromptSourceSectionV1.Mset,
+                "MSG_SELECT_IDLECMD:MSET:",
+                3,
+                typeof(FlatIdleMsetPublicCandidateV1),
+                typeof(FlatIdleMsetCardCodePublicCandidateV1),
+                out expectedKey,
+                out expectedResponse);
+        }
+
+        if (candidate is FlatIdleSsetPublicCandidateV1 ||
+            candidate is FlatIdleSsetCardCodePublicCandidateV1)
+        {
+            return TryGetIdleSimpleBinding(
+                candidate,
+                FlatPromptChoiceKindV1.Sset,
+                FlatPromptSourceSectionV1.Sset,
+                "MSG_SELECT_IDLECMD:SSET:",
+                4,
+                typeof(FlatIdleSsetPublicCandidateV1),
+                typeof(FlatIdleSsetCardCodePublicCandidateV1),
+                out expectedKey,
+                out expectedResponse);
+        }
+
+        if (candidate is FlatIdleActivatablePublicCandidateBaseV1 activatable)
+        {
+            if (!IsConcreteType(
+                    candidate,
+                    typeof(FlatIdleActivatablePublicCandidateV1),
+                    typeof(FlatIdleActivatableCardCodePublicCandidateV1)) ||
+                !HasNonZeroCardCodeIfPresent(candidate) ||
+                activatable.SourceSection != FlatPromptSourceSectionV1.Activate ||
+                !FlatPromptKeyV1.TryCreateIdleActivatable(
+                    activatable.SourceOrdinal,
+                    out expectedKey))
+            {
+                return false;
+            }
+
+            return FlatPromptKeyV1.TryEncodeIndexedResponse(
+                activatable.SourceOrdinal,
+                5,
+                out expectedResponse);
+        }
+
+        if (candidate is FlatIdleToBattlePhasePublicCandidateV1 toBattle)
+        {
+            if (candidate.GetType() !=
+                    typeof(FlatIdleToBattlePhasePublicCandidateV1) ||
+                toBattle.I4LocalCandidateKey != FlatPromptKeyV1.IdleToBp ||
+                toBattle.TransitionToken != "BATTLE_PHASE")
+            {
+                return false;
+            }
+
+            expectedKey = FlatPromptKeyV1.IdleToBp;
+            expectedResponse = 6;
+            return true;
+        }
+
+        if (candidate is FlatIdleToEndPhasePublicCandidateV1 toEnd)
+        {
+            if (candidate.GetType() !=
+                    typeof(FlatIdleToEndPhasePublicCandidateV1) ||
+                toEnd.I4LocalCandidateKey != FlatPromptKeyV1.IdleToEp ||
+                toEnd.TransitionToken != "END_PHASE")
+            {
+                return false;
+            }
+
+            expectedKey = FlatPromptKeyV1.IdleToEp;
+            expectedResponse = 7;
+            return true;
+        }
+
+        if (candidate is FlatIdleShuffleHandPublicCandidateV1 shuffle)
+        {
+            if (candidate.GetType() !=
+                    typeof(FlatIdleShuffleHandPublicCandidateV1) ||
+                shuffle.I4LocalCandidateKey != FlatPromptKeyV1.IdleShuffleHand ||
+                shuffle.TransitionToken != "SHUFFLE_HAND")
+            {
+                return false;
+            }
+
+            expectedKey = FlatPromptKeyV1.IdleShuffleHand;
+            expectedResponse = 8;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetIdleSimpleBinding(
+        FlatPublicCandidateDescriptorV1 candidate,
+        FlatPromptChoiceKindV1 choiceKind,
+        FlatPromptSourceSectionV1 sourceSection,
+        string keyPrefix,
+        int responseKind,
+        Type noCodeType,
+        Type cardCodeType,
+        out string expectedKey,
+        out int expectedResponse)
+    {
+        expectedKey = string.Empty;
+        expectedResponse = default;
+        if (candidate is not FlatIdleCardActionPublicCandidateBaseV1 simple ||
+            !IsConcreteType(candidate, noCodeType, cardCodeType) ||
+            !HasNonZeroCardCodeIfPresent(candidate) ||
+            simple.ChoiceKind != choiceKind ||
+            simple.SourceSection != sourceSection ||
+            !FlatPromptKeyV1.TryCreateOrdinalKey(
+                keyPrefix,
+                simple.SourceOrdinal,
+                out expectedKey))
+        {
+            return false;
+        }
+
+        return FlatPromptKeyV1.TryEncodeIndexedResponse(
+            simple.SourceOrdinal,
+            responseKind,
+            out expectedResponse);
+    }
+
+    private static bool IsConcreteType(
+        FlatPublicCandidateDescriptorV1 candidate,
+        Type noCodeType,
+        Type cardCodeType) =>
+        candidate.GetType() == noCodeType ||
+        candidate.GetType() == cardCodeType;
+
+    private static bool HasNonZeroCardCodeIfPresent(
+        FlatPublicCandidateDescriptorV1 candidate) =>
+        candidate switch
+        {
+            FlatChainCardCodePublicCandidateDescriptorV1 value =>
+                value.CardCode != 0,
+            FlatBattleActivatableCardCodePublicCandidateV1 value =>
+                value.CardCode != 0,
+            FlatBattleAttackCardCodePublicCandidateV1 value =>
+                value.CardCode != 0,
+            FlatIdleSummonCardCodePublicCandidateV1 value =>
+                value.CardCode != 0,
+            FlatIdleSpecialSummonCardCodePublicCandidateV1 value =>
+                value.CardCode != 0,
+            FlatIdleRepositionCardCodePublicCandidateV1 value =>
+                value.CardCode != 0,
+            FlatIdleMsetCardCodePublicCandidateV1 value =>
+                value.CardCode != 0,
+            FlatIdleSsetCardCodePublicCandidateV1 value =>
+                value.CardCode != 0,
+            FlatIdleActivatableCardCodePublicCandidateV1 value =>
+                value.CardCode != 0,
+            _ => true
+        };
 }
 
 internal sealed class FlatPromptSelectionHandleV1
@@ -722,7 +1789,22 @@ internal static class FlatPromptKeyV1
     internal const string EffectYnNo = "MSG_SELECT_EFFECTYN:NO";
     internal const string EffectYnYes = "MSG_SELECT_EFFECTYN:YES";
     internal const string ChainNoChain = "MSG_SELECT_CHAIN:NO_CHAIN";
-
+    internal const string BattleToM2 = "MSG_SELECT_BATTLECMD:TO_M2";
+    internal const string BattleToEp = "MSG_SELECT_BATTLECMD:TO_EP";
+    internal const string IdleToBp = "MSG_SELECT_IDLECMD:TO_BP";
+    internal const string IdleToEp = "MSG_SELECT_IDLECMD:TO_EP";
+    internal const string IdleShuffleHand =
+        "MSG_SELECT_IDLECMD:SHUFFLE_HAND";
+    internal const string IdleSummonPrefix =
+        "MSG_SELECT_IDLECMD:SUMMON:";
+    internal const string IdleSpecialSummonPrefix =
+        "MSG_SELECT_IDLECMD:SPECIAL_SUMMON:";
+    internal const string IdleRepositionPrefix =
+        "MSG_SELECT_IDLECMD:REPOSITION:";
+    internal const string IdleMsetPrefix =
+        "MSG_SELECT_IDLECMD:MSET:";
+    internal const string IdleSsetPrefix =
+        "MSG_SELECT_IDLECMD:SSET:";
     internal static bool TryCreateOption(
         int sourceOrdinal,
         out string key)
@@ -760,6 +1842,70 @@ internal static class FlatPromptKeyV1
         }
 
         key = "MSG_SELECT_CHAIN:CHAIN_ENTRY:" + digits;
+        return true;
+    }
+
+    internal static bool TryCreateBattleActivatable(
+        int sourceOrdinal,
+        out string key) =>
+        TryCreateOrdinalKey(
+            "MSG_SELECT_BATTLECMD:ACTIVATE:",
+            sourceOrdinal,
+            out key);
+
+    internal static bool TryCreateBattleAttack(
+        int sourceOrdinal,
+        out string key) =>
+        TryCreateOrdinalKey(
+            "MSG_SELECT_BATTLECMD:ATTACK:",
+            sourceOrdinal,
+            out key);
+
+    internal static bool TryCreateIdleActivatable(
+        int sourceOrdinal,
+        out string key) =>
+        TryCreateOrdinalKey(
+            "MSG_SELECT_IDLECMD:ACTIVATE:",
+            sourceOrdinal,
+            out key);
+
+    internal static bool TryCreateOrdinalKey(
+        string prefix,
+        int sourceOrdinal,
+        out string key)
+    {
+        key = string.Empty;
+        if (sourceOrdinal < 0 || sourceOrdinal > ushort.MaxValue)
+        {
+            return false;
+        }
+
+        string digits = sourceOrdinal.ToString(CultureInfo.InvariantCulture);
+        if (!IsCanonicalAsciiDecimal(digits))
+        {
+            return false;
+        }
+
+        key = prefix + digits;
+        return true;
+    }
+
+    internal static bool TryEncodeIndexedResponse(
+        int sourceOrdinal,
+        int kind,
+        out int response)
+    {
+        response = default;
+        if (sourceOrdinal < 0 ||
+            sourceOrdinal > ushort.MaxValue ||
+            kind < 0 ||
+            kind > ushort.MaxValue)
+        {
+            return false;
+        }
+
+        response = unchecked(
+            (int)(((uint)sourceOrdinal << 16) | (uint)kind));
         return true;
     }
 

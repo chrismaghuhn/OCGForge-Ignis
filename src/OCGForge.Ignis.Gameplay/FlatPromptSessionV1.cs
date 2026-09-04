@@ -259,7 +259,111 @@ public sealed class FlatPromptSessionV1
                 left.DescriptionOrEffectId == right.DescriptionOrEffectId &&
                 left.ClientMode == right.ClientMode &&
                 left.CardCode == right.CardCode,
+            (FlatBattleActivatablePublicCandidateV1 left,
+                FlatBattleActivatablePublicCandidateV1 right) =>
+                BattleActivatableEqual(left, right),
+            (FlatBattleActivatableCardCodePublicCandidateV1 left,
+                FlatBattleActivatableCardCodePublicCandidateV1 right) =>
+                BattleActivatableEqual(left, right) &&
+                left.CardCode == right.CardCode,
+            (FlatBattleAttackPublicCandidateV1 left,
+                FlatBattleAttackPublicCandidateV1 right) =>
+                BattleAttackEqual(left, right),
+            (FlatBattleAttackCardCodePublicCandidateV1 left,
+                FlatBattleAttackCardCodePublicCandidateV1 right) =>
+                BattleAttackEqual(left, right) &&
+                left.CardCode == right.CardCode,
+            (FlatBattleToMainPhase2PublicCandidateV1 left,
+                FlatBattleToMainPhase2PublicCandidateV1 right) =>
+                left.TransitionToken == right.TransitionToken,
+            (FlatBattleToEndPhasePublicCandidateV1 left,
+                FlatBattleToEndPhasePublicCandidateV1 right) =>
+                left.TransitionToken == right.TransitionToken,
+            (FlatIdleSummonPublicCandidateV1 left,
+                FlatIdleSummonPublicCandidateV1 right) =>
+                IdleCardActionEqual(left, right),
+            (FlatIdleSummonCardCodePublicCandidateV1 left,
+                FlatIdleSummonCardCodePublicCandidateV1 right) =>
+                IdleCardActionEqual(left, right) &&
+                left.CardCode == right.CardCode,
+            (FlatIdleSpecialSummonPublicCandidateV1 left,
+                FlatIdleSpecialSummonPublicCandidateV1 right) =>
+                IdleCardActionEqual(left, right),
+            (FlatIdleSpecialSummonCardCodePublicCandidateV1 left,
+                FlatIdleSpecialSummonCardCodePublicCandidateV1 right) =>
+                IdleCardActionEqual(left, right) &&
+                left.CardCode == right.CardCode,
+            (FlatIdleRepositionPublicCandidateV1 left,
+                FlatIdleRepositionPublicCandidateV1 right) =>
+                IdleCardActionEqual(left, right),
+            (FlatIdleRepositionCardCodePublicCandidateV1 left,
+                FlatIdleRepositionCardCodePublicCandidateV1 right) =>
+                IdleCardActionEqual(left, right) &&
+                left.CardCode == right.CardCode,
+            (FlatIdleMsetPublicCandidateV1 left,
+                FlatIdleMsetPublicCandidateV1 right) =>
+                IdleCardActionEqual(left, right),
+            (FlatIdleMsetCardCodePublicCandidateV1 left,
+                FlatIdleMsetCardCodePublicCandidateV1 right) =>
+                IdleCardActionEqual(left, right) &&
+                left.CardCode == right.CardCode,
+            (FlatIdleSsetPublicCandidateV1 left,
+                FlatIdleSsetPublicCandidateV1 right) =>
+                IdleCardActionEqual(left, right),
+            (FlatIdleSsetCardCodePublicCandidateV1 left,
+                FlatIdleSsetCardCodePublicCandidateV1 right) =>
+                IdleCardActionEqual(left, right) &&
+                left.CardCode == right.CardCode,
+            (FlatIdleActivatablePublicCandidateV1 left,
+                FlatIdleActivatablePublicCandidateV1 right) =>
+                IdleActivatableEqual(left, right),
+            (FlatIdleActivatableCardCodePublicCandidateV1 left,
+                FlatIdleActivatableCardCodePublicCandidateV1 right) =>
+                IdleActivatableEqual(left, right) &&
+                left.CardCode == right.CardCode,
+            (FlatIdleToBattlePhasePublicCandidateV1 left,
+                FlatIdleToBattlePhasePublicCandidateV1 right) =>
+                left.TransitionToken == right.TransitionToken,
+            (FlatIdleToEndPhasePublicCandidateV1 left,
+                FlatIdleToEndPhasePublicCandidateV1 right) =>
+                left.TransitionToken == right.TransitionToken,
+            (FlatIdleShuffleHandPublicCandidateV1 left,
+                FlatIdleShuffleHandPublicCandidateV1 right) =>
+                left.TransitionToken == right.TransitionToken,
             _ => false
         };
     }
+
+    private static bool BattleActivatableEqual(
+        FlatBattleActivatablePublicCandidateBaseV1 first,
+        FlatBattleActivatablePublicCandidateBaseV1 second) =>
+        first.SourceSection == second.SourceSection &&
+        first.SourceOrdinal == second.SourceOrdinal &&
+        first.PublicSemanticCardLocator == second.PublicSemanticCardLocator &&
+        first.DescriptionOrEffectId == second.DescriptionOrEffectId &&
+        first.ClientMode == second.ClientMode;
+
+    private static bool BattleAttackEqual(
+        FlatBattleAttackPublicCandidateBaseV1 first,
+        FlatBattleAttackPublicCandidateBaseV1 second) =>
+        first.SourceSection == second.SourceSection &&
+        first.SourceOrdinal == second.SourceOrdinal &&
+        first.PublicSemanticCardLocator == second.PublicSemanticCardLocator &&
+        first.DirectAttackable == second.DirectAttackable;
+
+    private static bool IdleCardActionEqual(
+        FlatIdleCardActionPublicCandidateBaseV1 first,
+        FlatIdleCardActionPublicCandidateBaseV1 second) =>
+        first.SourceSection == second.SourceSection &&
+        first.SourceOrdinal == second.SourceOrdinal &&
+        first.PublicSemanticCardLocator == second.PublicSemanticCardLocator;
+
+    private static bool IdleActivatableEqual(
+        FlatIdleActivatablePublicCandidateBaseV1 first,
+        FlatIdleActivatablePublicCandidateBaseV1 second) =>
+        first.SourceSection == second.SourceSection &&
+        first.SourceOrdinal == second.SourceOrdinal &&
+        first.PublicSemanticCardLocator == second.PublicSemanticCardLocator &&
+        first.DescriptionOrEffectId == second.DescriptionOrEffectId &&
+        first.ClientMode == second.ClientMode;
 }
