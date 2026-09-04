@@ -90,46 +90,74 @@ existing private address normalization is delegated to the new pure helper;
 the state reducer, snapshot shape, entity identity, and all public semantics
 remain unchanged.
 
-## Task 1: Reconfirm the exact document-only checkpoint
+## Task 1: Future implementation start guard
 
 **Files:** none.
 
-- [ ] **Step 1: Verify the exact base and clean worktree.**
+The document-only branch creation and docs commit are already complete by the
+current task. A future implementation worker must begin from that committed
+plan head; it must not switch the branch back to `main` or create a second
+branch.
+
+- [ ] **Step 1: Require the committed PLAN_HEAD, branch, base, and clean worktree.**
 
 Run from `C:\Users\chris\Documents\OCGForge-Ignis`:
 
 ```powershell
 git fetch origin --prune
-git status --short --branch
-git rev-parse HEAD
-git rev-parse origin/main
+$base = 'fdd12ceda24b61f3855a5f272537ab9dcc968c4a'
+$planPath = 'docs/superpowers/plans/2026-09-04-i4b-effectyn-chain-plan.md'
+$planHead = (git log -1 --format='%H' -- $planPath).Trim()
+$head = (git rev-parse HEAD).Trim()
+$branch = (git branch --show-current).Trim()
+$remoteMain = (git rev-parse origin/main).Trim()
+if ($head -cne $planHead) {
+    throw "HEAD_NOT_PLAN_HEAD HEAD=$head EXPECTED=$planHead"
+}
+if ($branch -cne 'chris/i4b-effectyn-chain-design-plan') {
+    throw "WRONG_BRANCH BRANCH=$branch"
+}
+if ($remoteMain -cne $base) {
+    throw "STATUS=BLOCKED_BASE_MOVED REMOTE_MAIN=$remoteMain EXPECTED=$base"
+}
+if (@(git status --short).Count -ne 0) {
+    throw 'WORKTREE_NOT_CLEAN'
+}
+Write-Output "BASE=$base"
+Write-Output "PLAN_HEAD=$planHead"
 ```
 
 Require:
 
 ```text
-HEAD=fdd12ceda24b61f3855a5f272537ab9dcc968c4a
+HEAD=PLAN_HEAD
+BRANCH=chris/i4b-effectyn-chain-design-plan
 origin/main=fdd12ceda24b61f3855a5f272537ab9dcc968c4a
 WORKTREE=CLEAN
 ```
 
-If either SHA differs, stop with `STATUS=BLOCKED_BASE_MOVED`. Do not rebase or
-adopt a newer base.
+- [ ] **Step 2: Verify that BASE→PLAN_HEAD contains exactly the two documents.**
 
-- [ ] **Step 2: Create the requested branch directly from the exact base.**
-
-Run only after Step 1 passes:
+Run:
 
 ```powershell
-git switch -c chris/i4b-effectyn-chain-design-plan fdd12ceda24b61f3855a5f272537ab9dcc968c4a
-git rev-parse HEAD
-git status --short --branch
+$expectedDocs = @(
+    'docs/superpowers/specs/2026-09-04-i4b-effectyn-chain-design.md',
+    'docs/superpowers/plans/2026-09-04-i4b-effectyn-chain-plan.md'
+) | Sort-Object
+$baseChanged = @(git diff --name-only $base $planHead | Sort-Object -Unique)
+if (@($baseChanged).Count -ne 2 -or
+    (@($baseChanged) -join "`n") -cne ($expectedDocs -join "`n")) {
+    throw "BASE_TO_PLAN_SCOPE_MISMATCH CHANGED=$($baseChanged -join ',')"
+}
+Write-Output 'BASE_TO_PLAN_HEAD_SCOPE=2_DOCS_PASS'
 ```
 
-Require the new branch to point directly to the base and remain clean before
-the first document edit.
+Only after these guards pass may the worker begin Task 2. If any guard fails,
+stop without editing implementation files; do not rebase, merge, or adopt a
+newer base.
 
-- [ ] **Step 3: Audit the live accepted inputs at the branch head.**
+- [ ] **Step 3: Audit the live accepted inputs at PLAN_HEAD.**
 
 Read the frozen contract, I4A design/plan, I4A implementation, I3 mirror and
 I3D projection files named in the task. Confirm the current Gameplay harness
@@ -591,9 +619,17 @@ resolution. If zero or multiple captured cards match, return
 For non-pile, non-overlay resolved cards, inspect accepted
 `PublicCardStateV1` entries and their already-classified `Zone` and
 `PublicSemanticLocatorV1`. Use the existing locator codec only to validate a
-candidate locator shape for comparison. Require exactly one accepted card
-whose existing indexed locator encodes the resolved absolute player and
-sequence. Do not construct or return the comparison locator.
+candidate locator shape for comparison. Require exactly one accepted card with
+all three required indexed facts:
+
+```text
+exact absolute player
+exact accepted PublicSemanticZoneV1 already classified by I3D
+exact resolved indexed sequence
+```
+
+The accepted card's existing indexed locator must encode those facts. Do not
+construct or return the comparison locator.
 
 The helper must not add a `MirrorZoneV1 → PublicSemanticZoneV1` switch. The
 accepted snapshot's existing public `Zone` is the I3D classification authority.
@@ -605,14 +641,16 @@ For Hand/Extra:
 
 ```text
 resolved Mirror card has known/proven nonzero CardCode
-source CardCode is nonzero and equals resolved proven CardCode
 absolute player and zone match
-exactly one accepted public card has that CardCode
+exactly one accepted public card has that resolved proven CardCode
 ```
 
 Do not use raw Hand/Extra sequence, collection order, physical continuity,
 allocation order, or Mirror entity identity. Duplicate accepted public cards
-with the same code are ambiguous and fail.
+with the same resolved code are ambiguous and fail. The wire source CardCode
+is evaluated only afterward by the separate `CARD_CODE_SAFE` predicate; a zero
+or mismatching wire code removes only the public CardCode member and does not
+invalidate the proven locator.
 
 For Overlay, use only the resolved Mirror card's absolute player, parent
 sequence, and overlay index. Require exactly one accepted card already carrying

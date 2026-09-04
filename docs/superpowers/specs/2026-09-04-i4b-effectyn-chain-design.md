@@ -245,9 +245,10 @@ Exactly one match is required. Zero or multiple matches produce
 proven CardCode and position as private facts, but never exposes its internal
 entity identity.
 
-If the resolved card has a known/proven nonzero CardCode and the source wire
-CardCode is nonzero but differs, the source reference is unproven and the
-prompt fails. A zero or unavailable source code does not become a public code.
+The source wire CardCode is not part of public-reference proof. For indexed and
+overlay cards, a zero or mismatching source wire CardCode leaves a proven
+locator valid and makes only the separate CardCode predicate false. A zero or
+unavailable source code never becomes a public code.
 
 ### 5.2 Public correlation
 
@@ -264,15 +265,16 @@ The permitted correlation forms are:
 
 ```text
 INDEXED_VISIBLE_CORRELATION
-    exact absolute player + resolved indexed sequence
+    exact absolute player
+    exact semantic PublicSemanticZoneV1 already present on the accepted card
+    exact resolved indexed sequence
     accepted card must already carry the matching I3D indexed locator form
     exactly one accepted card required
 
 HAND_OR_EXTRA_PUBLIC_ORDINAL_CORRELATION
     exact absolute player + resolved Hand/Extra zone
     resolved Mirror CardCode known and proven
-    source CardCode nonzero and equal to resolved code
-    exactly one accepted snapshot card with that public CardCode
+    exactly one accepted snapshot card with that resolved proven CardCode
     raw hand/extra sequence is not used
 
 OVERLAY_CORRELATION
@@ -311,9 +313,11 @@ otherwise
     → use the structurally no-CardCode variant
 ```
 
-For Hand/Extra, the proven CardCode is part of the permitted correlation key;
-for indexed and overlay cards, a failed separate `CARD_CODE_SAFE` predicate
-only omits the CardCode member after locator proof succeeds.
+For Hand/Extra, the resolved proven CardCode is part of the permitted
+correlation key; the source wire CardCode is checked only by the separate
+`CARD_CODE_SAFE` predicate. For indexed and overlay cards, a failed separate
+`CARD_CODE_SAFE` predicate only omits the CardCode member after locator proof
+succeeds.
 
 ## 6. Public type hierarchy
 
