@@ -1,7 +1,47 @@
 # Public State Projection V1
 
-Status: I3C implementation contract
+Status: I3C accepted implementation contract; I3D0 codec freeze
 Contract ID: `ocgforge-ignis.public-state-projection.v1`
+
+```text
+PUBLIC_PROJECTION_SEMANTICS_FROZEN=YES
+PUBLIC_PROJECTION_CODEC_STATUS=FROZEN_BY_I3D0
+LOCATOR_SEMANTICS_FROZEN=YES
+LOCATOR_CODEC_STATUS=FROZEN_BY_I3C0
+```
+
+## I3D0 reconciliation status
+
+I3C implemented the canonical public-state bytes before I3D0 was executed:
+
+```text
+I3C_IMPLEMENTED_CANONICAL_BYTES_BEFORE_I3D0=YES
+I3D0_RETROACTIVE_IMPLEMENTATION_AUTHORIZATION=NO
+I3D0_ACTION=freeze the already independently reviewed and accepted I3C V1 bytes without changing them
+```
+
+I3D0 freezes the existing representation and defines the versioned
+`public_projection_id`. It does not authorize the earlier I3C implementation
+retroactively, add a second codec, or add a production identity property.
+
+## I3D identity ownership
+
+I3D receives identity input only from a successful accepted I3C
+`PublicStateProjectionResultV1`, or from an exactly equivalent non-separable
+bound result that carries the accepted snapshot, canonical bytes, and raw
+digest together. The mirror is not an I3D projection authority.
+
+```text
+I3D_IDENTITY_INPUT=successful accepted I3C PublicStateProjectionResultV1
+public_projection_id=PUBLIC_PROJECTION_ID_PREFIX + exact result.Sha256
+I3D_REENCODES_CANONICAL_JSON=NO
+I3D_REHASHES_INDEPENDENT_SNAPSHOT=NO
+I3D_ACCEPTS_CALLER_SUPPLIED_DIGEST=NO
+I3D_ACCEPTS_CALLER_SUPPLIED_CANONICAL_BYTES=NO
+```
+
+I3D does not re-project the mirror, re-encode the JSON, accept a separately
+supplied digest or byte buffer, or assign an identity to a failed I3C result.
 
 ## Boundary and meaning
 
@@ -47,6 +87,19 @@ no snapshot and no canonical bytes. A partial snapshot is never authoritative.
 The projection does not mutate the mirror or create persistent mirror
 identity. It does not project chains, relations, events, query payloads, or
 private response bytes.
+
+The V1 byte domain intentionally has no relation, chain, event, or separate
+locator-table vector:
+
+```text
+I3D0_V1_RELATION_VECTOR=ABSENT
+I3D0_V1_CHAIN_VECTOR=ABSENT
+I3D0_V1_EVENT_VECTOR=ABSENT
+I3D0_V1_SEPARATE_LOCATOR_TABLE=ABSENT
+```
+
+Public semantic locators remain embedded in each emitted card's `locator`
+property. A future extension requires a new reviewed contract and version.
 
 ## Snapshot schema
 
@@ -213,9 +266,59 @@ position
 
 Cards are sorted by `PublicSemanticLocatorV1.Value` with ordinal comparison.
 The SHA-256 digest is computed over exactly those canonical bytes and is
-reported as lowercase hexadecimal. It is an I3C public-state semantic digest
-only; it is not `GetHashCode`, build provenance, process identity, replay
-identity, or I6 cross-oracle acceptance.
+reported as lowercase hexadecimal. I3C accepted this raw semantic digest
+before I3D0; I3D0 now freezes its definition without changing the bytes. It is
+not `GetHashCode`, build provenance, process identity, replay identity, or I6
+cross-oracle acceptance.
+
+The frozen digest and versioned identity are:
+
+```text
+raw_digest = SHA256(canonical_public_projection_bytes)
+raw_digest_format = 64 lowercase hexadecimal characters
+PUBLIC_PROJECTION_ID_PREFIX=ocgforge-ignis.public-state-projection.v1.
+public_projection_id = PUBLIC_PROJECTION_ID_PREFIX + raw_digest
+```
+
+The prefix is not included in the SHA-256 input. The canonical JSON's
+`contract_id` already binds the input to this schema. I3D0 defines this
+identity, but it does not add a production `PublicProjectionId` property;
+that belongs to I3D.
+
+## Frozen golden vectors
+
+These vectors are emitted by the accepted I3C implementation and independently
+recomputed from the exact UTF-8 bytes. They are documentation evidence, not a
+new runtime fixture.
+
+### Empty card vector
+
+```text
+JSON={"contract_id":"ocgforge-ignis.public-state-projection.v1","perspective_player":0,"duel_flags":2048,"turn_count":0,"turn_player":null,"phase":null,"terminal":false,"participants":[{"absolute_player":0,"life_points":8000,"main_deck_count":2,"hand_count":0,"extra_deck_count":1},{"absolute_player":1,"life_points":7000,"main_deck_count":3,"hand_count":0,"extra_deck_count":2}],"cards":[]}
+UTF8_LENGTH=386
+SHA256=5a12f8fea489c7dcdd74a88292a9f1b95be3ff201a795d3d9727d1e40fdf8268
+PUBLIC_PROJECTION_ID=ocgforge-ignis.public-state-projection.v1.5a12f8fea489c7dcdd74a88292a9f1b95be3ff201a795d3d9727d1e40fdf8268
+```
+
+### Ordered cards and nullable fields vector
+
+This accepted implementation-derived vector contains an indexed public card,
+an overlay card with `position=null`, and an unknown opponent card with
+`card_code=null`. Its card order is ordinal locator order.
+
+```text
+JSON={"contract_id":"ocgforge-ignis.public-state-projection.v1","perspective_player":0,"duel_flags":0,"turn_count":0,"turn_player":null,"phase":null,"terminal":false,"participants":[{"absolute_player":0,"life_points":8000,"main_deck_count":2,"hand_count":0,"extra_deck_count":1},{"absolute_player":1,"life_points":7000,"main_deck_count":3,"hand_count":0,"extra_deck_count":2}],"cards":[{"locator":"p0:MONSTER_ZONE:0","absolute_player":0,"zone":"MONSTER_ZONE","card_code":305419896,"position":4},{"locator":"p0:OVERLAY:0:0","absolute_player":0,"zone":"OVERLAY","card_code":3735928559,"position":null},{"locator":"p1:MONSTER_ZONE:1","absolute_player":1,"zone":"MONSTER_ZONE","card_code":null,"position":8}]}
+UTF8_LENGTH=700
+SHA256=74f30ea1814edd755856496df4ce8e76594e4d51e47a1c5595aad24b450d91cb
+PUBLIC_PROJECTION_ID=ocgforge-ignis.public-state-projection.v1.74f30ea1814edd755856496df4ce8e76594e4d51e47a1c5595aad24b450d91cb
+```
+
+The two vectors match the accepted implementation at the pinned I3C main
+checkpoint. I3D0 does not alter either vector.
+
+```text
+DOCUMENTED_GOLDEN_MATCHES_ACCEPTED_IMPLEMENTATION=YES
+```
 
 ## Fail-closed error categories
 
@@ -231,7 +334,8 @@ CANONICALIZATION_FAILURE
 
 Every category returns no authoritative snapshot. No fallback, partial state,
 hidden identity reconstruction, relation fallback, allocation-order fallback,
-or protocol dump is permitted.
+or protocol dump is permitted. A failed projection has `Snapshot=null`, empty
+`CanonicalBytes`, and `Sha256=null`; it receives no `public_projection_id`.
 
 ## Privacy and determinism invariants
 
@@ -241,6 +345,42 @@ ordinal, response binding, host/port/password, socket/PID/process handle,
 timestamp, thread/task identity, filesystem path, receive-buffer detail, or
 TCP chunk detail. They depend only on proven mirror facts, explicit pinned
 semantic layout context, and the fixed canonical encoding.
+
+## I3D0 privacy and determinism freeze
+
+I3D0 adds no information surface. It freezes the accepted public-safe byte
+surface only. The following semantic equality chain is normative:
+
+```text
+same accepted semantic public projection
+    -> exact same canonical bytes
+    -> exact same raw SHA-256
+    -> exact same public_projection_id
+```
+
+The result's canonical bytes are value-owned. The public `CanonicalBytes`
+accessor returns a copy, so caller mutation cannot change the authoritative
+bytes or their `Sha256`.
+
+The complete later I3D paired-world acceptance matrix is frozen as follows;
+these are requirements, not I3D implementation results:
+
+| Fixture | Allowed difference | Required result |
+| --- | --- | --- |
+| A | opponent hidden Hand identities | equal projection, embedded locators, and `public_projection_id` |
+| B | opponent hidden Main Deck ordering/identity | equal projection, embedded locators, and `public_projection_id` |
+| C | revealed identity becomes hidden and continuity is destroyed | old public identity absent; equal legitimate unknown projection and ID |
+| D | duplicate equal-code cards with different internal histories | distinct current public locators when public; no internal-history leak |
+| E | same semantic GAME_MSG history with different TCP chunking | equal mirror semantics, projection, locators, and ID |
+
+```text
+I3D_PAIRED_WORLD_ACCEPTANCE=NOT_RUN
+```
+
+`public_projection_id` is a semantic public-state identity only. It is not
+build or runtime provenance, native EDOPro replay identity, OCGForge semantic
+replay identity, trajectory identity, or I6 compatibility evidence. Native
+EDOPro replay remains restricted audit evidence and is not model input.
 
 Required I3C claims remain:
 
