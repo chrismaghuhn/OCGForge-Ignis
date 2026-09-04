@@ -129,7 +129,37 @@ var tests = new (string Name, Action Body)[]
         I3CPublicStateProjectionTests.TestPublicApiBoundary),
 
     ("I3C canonical byte storage is not externally mutable",
-        I3CPublicStateProjectionTests.TestCanonicalByteStorageIsolation)
+        I3CPublicStateProjectionTests.TestCanonicalByteStorageIsolation),
+
+    ("I3D exact 386-byte golden binds the public projection identity",
+        I3DPublicProjectionPrivacyTests.TestFirstGolden),
+
+    ("I3D exact 700-byte golden binds the public projection identity",
+        I3DPublicProjectionPrivacyTests.TestSecondGolden),
+
+    ("I3D failed projection has no public projection identity",
+        I3DPublicProjectionPrivacyTests.TestFailureHasNoIdentity),
+
+    ("I3D result and source mutation remain isolated",
+        I3DPublicProjectionPrivacyTests.TestValueOwnership),
+
+    ("I3D public API has no external identity binding seam",
+        I3DPublicProjectionPrivacyTests.TestNoExternalBindingSeam),
+
+    ("I3D paired world A hides opponent hand identity",
+        I3DPublicProjectionPrivacyTests.TestPairedWorldA),
+
+    ("I3D paired world B hides opponent deck identity and order",
+        I3DPublicProjectionPrivacyTests.TestPairedWorldB),
+
+    ("I3D paired world C destroys reveal-to-hidden continuity",
+        I3DPublicProjectionPrivacyTests.TestPairedWorldC),
+
+    ("I3D paired world D ignores duplicate-card history order",
+        I3DPublicProjectionPrivacyTests.TestPairedWorldD),
+
+    ("I3D paired world E ignores TCP chunking",
+        I3DPublicProjectionPrivacyTests.TestPairedWorldE)
 };
 
 int passed = 0;
