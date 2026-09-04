@@ -159,7 +159,49 @@ var tests = new (string Name, Action Body)[]
         I3DPublicProjectionPrivacyTests.TestPairedWorldD),
 
     ("I3D paired world E ignores TCP chunking",
-        I3DPublicProjectionPrivacyTests.TestPairedWorldE)
+        I3DPublicProjectionPrivacyTests.TestPairedWorldE),
+
+    ("I4A YESNO exact domain and response values",
+        I4AFlatPromptProjectionTests.TestYesNoExactDomain),
+
+    ("I4A YESNO malformed input and ownership",
+        I4AFlatPromptProjectionTests.TestYesNoFailuresAndOwnership),
+
+    ("I4A OPTION source order and public values",
+        I4AFlatPromptProjectionTests.TestOptionSourceOrderAndValues),
+
+    ("I4A OPTION duplicates and local-key metamorphic identity",
+        I4AFlatPromptProjectionTests.TestOptionDuplicatesAndMetamorphicKey),
+
+    ("I4A OPTION invalid domains fail closed",
+        I4AFlatPromptProjectionTests.TestOptionFailures),
+
+    ("I4A POSITION valid mask order and private responses",
+        I4AFlatPromptProjectionTests.TestPositionValidMasks),
+
+    ("I4A POSITION invalid masks fail closed",
+        I4AFlatPromptProjectionTests.TestPositionFailures),
+
+    ("I4A POSITION unbound card code stays absent",
+        I4AFlatPromptProjectionTests.TestPositionUnboundCardCode),
+
+    ("I4A private binding resolves exact response values",
+        I4AFlatPromptProjectionTests.TestExactResponseBindings),
+
+    ("I4A stale same-looking selection is rejected",
+        I4AFlatPromptProjectionTests.TestStaleSelection),
+
+    ("I4A invalid key family and domain bindings fail closed",
+        I4AFlatPromptProjectionTests.TestBindingValidationFailures),
+
+    ("I4A failed prompts do not publish or advance state",
+        I4AFlatPromptProjectionTests.TestFailureAtomicityAndOrdinal),
+
+    ("I4A public values preserve the privacy boundary",
+        I4AFlatPromptProjectionTests.TestPublicApiBoundary),
+
+    ("I4A public values own source data",
+        I4AFlatPromptProjectionTests.TestValueOwnership)
 };
 
 int passed = 0;
