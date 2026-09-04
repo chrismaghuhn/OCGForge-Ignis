@@ -248,6 +248,20 @@ researched against the exact pinned commits on 2026-09-04. They are clean-room
 semantic evidence only; no upstream source implementation or serialized
 upstream packet is copied.
 
+I4A0 names its adapter-local selector `i4_local_candidate_key`. This is a
+current-prompt binding key only. It is not the distinct OCGForge
+`public_action_key` from `ocgforge.public_action_identity.v1`; that value is
+`public_action.v1.<lowercase hexadecimal canonical descriptor bytes>` and its
+derivation and byte-exact compatibility remain I6-owned and unproven.
+
+```text
+I4_LOCAL_CANDIDATE_KEY_IS_OCGFORGE_PUBLIC_ACTION_KEY=NO
+I4_LOCAL_CANDIDATE_KEY_MODEL_INPUT_AUTHORIZED=NO
+I4_LOCAL_CANDIDATE_KEY_I6_COMPATIBILITY_CLAIM=NO
+OCGFORGE_PUBLIC_ACTION_KEY_DERIVATION=I6_OWNED
+I6_BYTE_EXACT_COMPATIBILITY=UNPROVEN
+```
+
 | External repository | Exact commit | Source path / symbol | Fact learned | Date | Classification |
 | --- | --- | --- | --- | --- | --- |
 | ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `ocgapi_constants.h#MSG_SELECT_*`, `POS_*` | The seven I4 message IDs are 10, 11, 12, 13, 14, 16, and 19; position values are 0x01, 0x02, 0x04, and 0x08 | 2026-09-04 | numeric constant |

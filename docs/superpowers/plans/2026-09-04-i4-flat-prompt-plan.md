@@ -38,7 +38,7 @@ locator semantics, and existing I3 fixtures remain unchanged.
 **File:** `docs/contracts/flat-prompt-projection-v1.md`.
 
 - [x] **Step 1: Freeze common boundaries.** State the contract ID, exact pins, modern-only widths, explicit little-endian interpretation for the pinned target, complete-message/trailing-byte policy, checked count arithmetic, fail-closed behavior, and the distinction between contract freeze and implementation.
-- [x] **Step 2: Freeze public/private seams.** Define the public candidate fields, accepted public semantic card-reference rule, private current-prompt response binding, source ordinals, deterministic `public_action_key` shape, semantic prompt occurrence binding, no-auto-answer rule, and all forbidden metadata.
+- [x] **Step 2: Freeze public/private seams.** Define the exact `FlatPromptPublicContextV1` and `FlatPublicCandidateDescriptorV1` inclusion matrices, the accepted public semantic card-reference predicates, private current-prompt response binding, source ordinals, deterministic `i4_local_candidate_key` shape, the I6-owned OCGForge `public_action_key` boundary, no-auto-answer rule, and all forbidden metadata.
 - [x] **Step 3: Freeze all seven families.** For message IDs 10, 11, 12, 13, 14, 16, and 19 record exact fields, formulas, flags, complete domains, source order, duplicate treatment, exact response values/body width, and malformed/legacy policies. Explicitly account for command sections, chain `-1`, position bit expansion, and zero-option states.
 - [x] **Step 4: Freeze future acceptance boundaries.** State that I4 is not implemented, I5/model input/I6 remain out of scope, no raw response or `ModernLocInfoV1` reaches public candidates, and any unproven reference/domain fails closed without a partial candidate list.
 
@@ -54,7 +54,7 @@ locator semantics, and existing I3 fixtures remain unchanged.
 
 **File:** `fixtures/gameplay/v1/i4-flat-prompt-vectors.v1.json`.
 
-- [x] **Step 1: Add positive vectors.** Include at least one exact raw inner payload for every family, with decoded typed fields, complete ordered candidate descriptors, source ordinals, candidate counts, and exact four-byte private response bodies. Include a duplicate-option vector, an optional empty-chain vector, and a forced `spe_count=0x7f` chain vector.
+- [x] **Step 1: Add positive vectors.** Include at least one exact raw inner payload for every family, with decoded typed fields, complete ordered `FlatPublicCandidateDescriptorV1` fields, exact shared context, source ordinals, candidate counts, and exact four-byte private response bodies. Include a duplicate-option vector, an optional empty-chain vector, and a forced `spe_count=0x7f` chain vector.
 - [x] **Step 2: Add negative vectors.** Cover truncation, trailing bytes, count/body mismatch, checked count overflow, invalid flag/bitmask, prohibited zero-option state, invalid participant, invalid card reference, illegal response index, and unsupported legacy layout. Record that malformed input yields no partial domain.
 - [x] **Step 3: Add binding vectors.** Cover stale same-looking keys from different prompt occurrences, current-prompt family mismatch, duplicate source entries remaining distinct, and public/private storage separation without including private bindings in public candidate records.
 
@@ -72,5 +72,5 @@ locator semantics, and existing I3 fixtures remain unchanged.
 - [x] **Step 1: Validate strict JSON.** Parse both JSON fixtures with strict duplicate-key detection, require UTF-8 without BOM, reject generated timestamps/absolute paths/duplicate keys, and verify deterministic property order in the checked-in text.
 - [x] **Step 2: Independently recompute vectors.** Rebuild the positive raw payloads from the documented field values, confirm every byte length and response body, and compare the resulting hex with the fixture without using future production code.
 - [x] **Step 3: Run the existing Release gates twice.** Run all six requested builds and fresh-process Protocol 20/20, Client 17/17, and Gameplay 53/53 harnesses twice; compare complete stdout byte-for-byte and record only actually executed results.
-- [x] **Step 4: Audit scope.** Run `git diff --check`, inspect `git diff --stat`, verify no `src/` or `tests/` file changed, search the new documents for stale I4 implementation claims, then commit exactly the authorized files with `docs: freeze I4 flat prompt protocol contracts`.
+- [x] **Step 4: Audit scope.** Run `git diff --check`, inspect `git diff --stat`, verify no `src/` or `tests/` file changed, search the new documents for stale I4 implementation claims, then commit exactly the authorized files with `docs: separate I4 local bindings from public action identity`.
 - [x] **Step 5: Push and stop.** Push `chris/i4a0-flat-prompt-contract-freeze`, verify the remote head and clean worktree, and stop for independent review. Do not create a PR or begin I4/I5.

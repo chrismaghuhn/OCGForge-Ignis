@@ -99,8 +99,8 @@ Every `player`/`controller` field that identifies a duel player must be 0 or 1
 in V1. Other values fail closed as an invalid participant. The accepted
 location bits are the pinned core values `0x01` deck, `0x02` hand, `0x04`
 monster, `0x08` spell/trap, `0x10` graveyard, `0x20` banished, `0x40` extra,
-and `0x80` overlay. An unknown or structurally impossible card reference may
-be decoded only as private wire data; it may not cross the public candidate
+and `0x80` overlay. An unknown or structurally impossible card reference is
+decoded only as private wire data; it never crosses the public candidate
 boundary.
 
 The complete inner value must be consumed exactly. A future decoder must:
@@ -111,39 +111,187 @@ The complete inner value must be consumed exactly. A future decoder must:
 4. reject truncation, count/body mismatch, overflow, and every trailing byte; and
 5. publish no partial candidate domain after any failure.
 
-No following `GAME_MSG` value may be consumed to repair a short prompt.
+No following `GAME_MSG` value is consumed to repair a short prompt.
 
-## 3. Common candidate and binding boundary
+## 3. Exact public context and candidate descriptor
 
-The public candidate is a semantic value, not a wire DTO. It may contain only
-the fields needed for a perspective-legal decision, for example:
+I4A0 freezes exactly two public decision values and one private binding value:
 
 ```text
-prompt_family
-public_action_key
-choice_kind
-source_section and source_ordinal where applicable
-proven public semantic card locator
-card_code only when independently perspective-safe
-proven description/effect identifier
-normalized mode, flag, position, or transition token
+FlatPromptPublicContextV1
+FlatPublicCandidateDescriptorV1
+CurrentFlatPromptBindingV1       # private to the current prompt instance
 ```
 
-Raw `ModernLocInfoV1`, raw controller/location/sequence/position tuples, raw
-GAME_MSG bytes, protocol offsets, and raw response bytes are never public
-candidate fields. A card reference must use the accepted
-`PublicSemanticLocatorV1`, or the candidate projection fails closed when a
-safe reference is required. A card code is a property, not an entity
-identity; it may be retained only when the current perspective proves it.
+These are semantic contract values, not wire DTOs. Every field in the public
+context and descriptor is governed by the inclusion matrices in this section.
+`REQUIRED` means the member is present with the stated semantic value.
+`ABSENT` means the member is not a contract member for that row; it is not a
+null, zero, empty string, or another sentinel. `CONDITIONAL(predicate)` means
+the member is present exactly when that predicate is true and is absent when
+it is false. A false predicate never authorizes a substitute field.
 
-The private response binding is a separate value owned by the current prompt
-instance. It maps one public action key to exactly one original `CTOS_RESPONSE`
-body. It may contain the response integer and its exact four bytes, but it is
-not included in `PublicActionCandidate`, a public action key, semantic public
-gameplay identity, or future model input.
+No public context or candidate field exists outside the matrices below.
 
-The public action-key grammar is deterministic ASCII with no leading-zero
-decimal ordinals:
+### Exact predicates
+
+The following predicates are normative:
+
+```text
+PUBLIC_CARD_REFERENCE_PROVEN(source_reference, mirror) =
+    source_reference resolves to exactly one current mirror card
+    AND the mirror card has a current accepted semantic position
+    AND PublicSemanticLocatorV1 can be created from that semantic position
+    AND no MirrorEntityIdV1, raw loc_info, allocation ordinal, or relation
+        ordinal is used in the resulting locator
+
+CARD_CODE_SAFE(source_code, referenced_card) =
+    source_code != 0
+    AND referenced_card.CardCode.IsKnown
+    AND referenced_card.CardCode.Provenance is one of
+        PublicProtocolFact, PerspectivePrivateFact,
+        DerivedFromProvenPublicFacts
+    AND referenced_card.CardCode.Value == source_code
+
+POSITION_CARD_CODE_SAFE(source_code, mirror_position_context) =
+    source_code != 0
+    AND the current perspective mirror contains exactly one current semantic
+        card context bound to this position prompt
+    AND that card's known accepted-provenance code == source_code
+```
+
+For every card-bearing BATTLECMD, IDLECMD, EFFECTYN, and CHAIN entry,
+`PUBLIC_CARD_REFERENCE_PROVEN` is required. If it is false, the entire prompt
+projection fails closed and no candidate list is published. `CARD_CODE_SAFE`
+controls only whether the separate `card_code` member is included; a false
+`CARD_CODE_SAFE` does not create an unknown code value.
+
+`POSITION_CARD_CODE_SAFE` is required for a POSITION prompt because that wire
+layout has no card locator. If it is false, the entire prompt projection fails
+closed. This prevents a raw card code from becoming an unbound public identity.
+
+### Context schema
+
+The common context members are fixed:
+
+| Field | Inclusion | Exact value |
+| --- | --- | --- |
+| `contract_id` | REQUIRED | `ocgforge-ignis.flat-prompt-projection.v1` |
+| `prompt_family` | REQUIRED | exact symbolic family name |
+| `acting_player` | REQUIRED | absolute player 0 or 1 from the prompt's player byte |
+| `prompt_instance_ordinal` | ABSENT | private binding only; never public context or OCGForge identity |
+| `public_action_key` | ABSENT | owned by OCGForge/I6, never an I4 local value |
+| `i4_local_candidate_key` | ABSENT | candidate member, not shared context |
+
+Family-specific shared context members are:
+
+| Family | Required shared fields | Conditional shared fields | Absent shared fields |
+| --- | --- | --- | --- |
+| `MSG_SELECT_BATTLECMD` | none beyond common context | none | `description_or_effect_id`, `client_mode`, `position_value`, `transition_token`, `option_value`, chain metadata |
+| `MSG_SELECT_IDLECMD` | none beyond common context | none | `description_or_effect_id`, `client_mode`, `position_value`, `transition_token`, `option_value`, chain metadata |
+| `MSG_SELECT_EFFECTYN` | `effect_card_locator` via `PUBLIC_CARD_REFERENCE_PROVEN`; `effect_description_id` as the u64 prompt description | `effect_card_code` via `CARD_CODE_SAFE` | `position_value`, `transition_token`, `option_value`, chain metadata |
+| `MSG_SELECT_YESNO` | `yes_no_description_id` as the u64 prompt description | none | card fields, `position_value`, `transition_token`, `option_value`, chain metadata |
+| `MSG_SELECT_OPTION` | none beyond common context | none | card fields, description/effect field, `position_value`, `transition_token`, chain metadata |
+| `MSG_SELECT_CHAIN` | `chain_spe_count`, `chain_forced`, `chain_hint_timing_for_player`, `chain_hint_timing_for_other_player` | none | card fields, `position_value`, `transition_token`, `option_value` |
+| `MSG_SELECT_POSITION` | `position_allowed_positions_mask` after exact mask validation | `position_card_code` via `POSITION_CARD_CODE_SAFE`; false predicate fails the whole prompt | `position_card_locator`, description/effect field, `transition_token`, `option_value`, chain metadata |
+
+`chain_spe_count` is the exact normalized u8 field. `chain_forced` is the
+normalized boolean. The two hint timings are normalized u32 values. None of
+these shared fields is a response binding or a raw protocol dump.
+
+### Candidate descriptor schema
+
+The fixed descriptor member set is:
+
+```text
+i4_local_candidate_key
+choice_kind
+source_section
+source_ordinal
+public_semantic_card_locator
+card_code
+description_or_effect_id
+client_mode
+direct_attackable
+position_value
+transition_token
+option_value
+```
+
+The exact inclusion matrix is below. `REQUIRED=value` denotes the status
+`REQUIRED` with that fixed value. A required card locator has the
+`PUBLIC_CARD_REFERENCE_PROVEN` precondition defined above; a false predicate
+fails the whole prompt. `CONDITIONAL(CARD_CODE_SAFE)` always means the exact
+predicate defined above; it never means “include if useful”.
+
+#### BATTLECMD candidates
+
+| Candidate kind | `i4_local_candidate_key` | `choice_kind` | `source_section` | `source_ordinal` | `public_semantic_card_locator` | `card_code` | `description_or_effect_id` | `client_mode` | `direct_attackable` | `position_value` | `transition_token` | `option_value` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| activatable entry | REQUIRED | REQUIRED=`ACTIVATE` | REQUIRED=`ACTIVATABLE` | REQUIRED | REQUIRED | CONDITIONAL(`CARD_CODE_SAFE`) | REQUIRED | REQUIRED | ABSENT | ABSENT | ABSENT | ABSENT |
+| attackable entry | REQUIRED | REQUIRED=`ATTACK` | REQUIRED=`ATTACKABLE` | REQUIRED | REQUIRED | CONDITIONAL(`CARD_CODE_SAFE`) | ABSENT | ABSENT | REQUIRED | ABSENT | ABSENT | ABSENT |
+| M2 transition | REQUIRED | REQUIRED=`TO_M2` | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | REQUIRED=`MAIN_PHASE_2` | ABSENT |
+| End transition | REQUIRED | REQUIRED=`TO_EP` | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | REQUIRED=`END_PHASE` | ABSENT |
+
+#### IDLECMD candidates
+
+| Candidate kind | `i4_local_candidate_key` | `choice_kind` | `source_section` | `source_ordinal` | `public_semantic_card_locator` | `card_code` | `description_or_effect_id` | `client_mode` | `direct_attackable` | `position_value` | `transition_token` | `option_value` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| summon entry | REQUIRED | REQUIRED=`SUMMON` | REQUIRED=`SUMMON` | REQUIRED | REQUIRED | CONDITIONAL(`CARD_CODE_SAFE`) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT |
+| special-summon entry | REQUIRED | REQUIRED=`SPECIAL_SUMMON` | REQUIRED=`SPECIAL_SUMMON` | REQUIRED | REQUIRED | CONDITIONAL(`CARD_CODE_SAFE`) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT |
+| reposition entry | REQUIRED | REQUIRED=`REPOSITION` | REQUIRED=`REPOSITION` | REQUIRED | REQUIRED | CONDITIONAL(`CARD_CODE_SAFE`) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT |
+| monster-set entry | REQUIRED | REQUIRED=`MSET` | REQUIRED=`MSET` | REQUIRED | REQUIRED | CONDITIONAL(`CARD_CODE_SAFE`) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT |
+| spell/trap-set entry | REQUIRED | REQUIRED=`SSET` | REQUIRED=`SSET` | REQUIRED | REQUIRED | CONDITIONAL(`CARD_CODE_SAFE`) | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT |
+| activatable entry | REQUIRED | REQUIRED=`ACTIVATE` | REQUIRED=`ACTIVATE` | REQUIRED | REQUIRED | CONDITIONAL(`CARD_CODE_SAFE`) | REQUIRED | REQUIRED | ABSENT | ABSENT | ABSENT | ABSENT |
+| Battle transition | REQUIRED | REQUIRED=`TO_BP` | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | REQUIRED=`BATTLE_PHASE` | ABSENT |
+| End transition | REQUIRED | REQUIRED=`TO_EP` | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | REQUIRED=`END_PHASE` | ABSENT |
+| hand-shuffle transition | REQUIRED | REQUIRED=`SHUFFLE_HAND` | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | REQUIRED=`SHUFFLE_HAND` | ABSENT |
+
+#### EFFECTYN and YESNO candidates
+
+The card locator and description are shared context for EFFECTYN; the
+description is shared context for YESNO. They are not duplicated into each
+candidate descriptor.
+
+| Family/kind | `i4_local_candidate_key` | `choice_kind` | `source_section` | `source_ordinal` | `public_semantic_card_locator` | `card_code` | `description_or_effect_id` | `client_mode` | `direct_attackable` | `position_value` | `transition_token` | `option_value` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| EFFECTYN NO | REQUIRED | REQUIRED=`NO` | ABSENT | ABSENT | ABSENT; context `effect_card_locator` REQUIRED | ABSENT; context `effect_card_code` CONDITIONAL(`CARD_CODE_SAFE`) | ABSENT; context `effect_description_id` REQUIRED | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT |
+| EFFECTYN YES | REQUIRED | REQUIRED=`YES` | ABSENT | ABSENT | ABSENT; context `effect_card_locator` REQUIRED | ABSENT; context `effect_card_code` CONDITIONAL(`CARD_CODE_SAFE`) | ABSENT; context `effect_description_id` REQUIRED | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT |
+| YESNO NO | REQUIRED | REQUIRED=`NO` | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT; context `yes_no_description_id` REQUIRED | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT |
+| YESNO YES | REQUIRED | REQUIRED=`YES` | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT; context `yes_no_description_id` REQUIRED | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT |
+
+#### OPTION candidates
+
+| Candidate kind | `i4_local_candidate_key` | `choice_kind` | `source_section` | `source_ordinal` | `public_semantic_card_locator` | `card_code` | `description_or_effect_id` | `client_mode` | `direct_attackable` | `position_value` | `transition_token` | `option_value` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| option entry | REQUIRED | REQUIRED=`OPTION` | REQUIRED=`OPTIONS` | REQUIRED | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | REQUIRED=`u64 option_description` |
+
+`option_value` is the exact decoded u64 option value. It is required because
+two options with different values must remain semantically distinguishable;
+the local ordinal does not replace the public option value.
+
+#### CHAIN candidates
+
+| Candidate kind | `i4_local_candidate_key` | `choice_kind` | `source_section` | `source_ordinal` | `public_semantic_card_locator` | `card_code` | `description_or_effect_id` | `client_mode` | `direct_attackable` | `position_value` | `transition_token` | `option_value` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| chain entry | REQUIRED | REQUIRED=`CHAIN_ENTRY` | REQUIRED=`CHAIN_CHOICES` | REQUIRED | REQUIRED | CONDITIONAL(`CARD_CODE_SAFE`) | REQUIRED | REQUIRED | ABSENT | ABSENT | ABSENT | ABSENT |
+| no-chain entry | REQUIRED | REQUIRED=`NO_CHAIN` | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT | ABSENT |
+
+The chain metadata is required once in shared context for every row. It is not
+duplicated into the candidate descriptor.
+
+#### POSITION candidates
+
+| Candidate kind | `i4_local_candidate_key` | `choice_kind` | `source_section` | `source_ordinal` | `public_semantic_card_locator` | `card_code` | `description_or_effect_id` | `client_mode` | `direct_attackable` | `position_value` | `transition_token` | `option_value` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| face-up attack | REQUIRED | REQUIRED=`FACEUP_ATTACK` | ABSENT | ABSENT | ABSENT; no locator exists in this wire layout | ABSENT; context `position_card_code` CONDITIONAL(`POSITION_CARD_CODE_SAFE`) | ABSENT | ABSENT | ABSENT | REQUIRED=`1` | ABSENT | ABSENT |
+| face-down attack | REQUIRED | REQUIRED=`FACEDOWN_ATTACK` | ABSENT | ABSENT | ABSENT; no locator exists in this wire layout | ABSENT; context `position_card_code` CONDITIONAL(`POSITION_CARD_CODE_SAFE`) | ABSENT | ABSENT | ABSENT | REQUIRED=`2` | ABSENT | ABSENT |
+| face-up defense | REQUIRED | REQUIRED=`FACEUP_DEFENSE` | ABSENT | ABSENT | ABSENT; no locator exists in this wire layout | ABSENT; context `position_card_code` CONDITIONAL(`POSITION_CARD_CODE_SAFE`) | ABSENT | ABSENT | ABSENT | REQUIRED=`4` | ABSENT | ABSENT |
+| face-down defense | REQUIRED | REQUIRED=`FACEDOWN_DEFENSE` | ABSENT | ABSENT | ABSENT; no locator exists in this wire layout | ABSENT; context `position_card_code` CONDITIONAL(`POSITION_CARD_CODE_SAFE`) | ABSENT | ABSENT | ABSENT | REQUIRED=`8` | ABSENT | ABSENT |
+
+### Local binding and OCGForge identity boundary
+
+The I4-local ASCII selector is exactly:
 
 ```text
 MSG_SELECT_BATTLECMD:ACTIVATE:<source_ordinal>
@@ -175,28 +323,48 @@ MSG_SELECT_POSITION:FACEUP_DEFENSE
 MSG_SELECT_POSITION:FACEDOWN_DEFENSE
 ```
 
-The family and source ordinal are part of the semantic identity. Equal public
-descriptions, equal card codes, and equal visible references do not justify
-deduplication. A source entry at ordinal 0 and a source entry at ordinal 1
-remain two candidates.
+The name of every value in that grammar is `i4_local_candidate_key`. It is an
+adapter-local, current-prompt candidate selector/binding identity. It is not
+the already accepted OCGForge `public_action_key`.
 
-For stale-selection protection, a future implementation must create a
-value-owned current-prompt binding containing:
+```text
+I4_LOCAL_CANDIDATE_KEY_IS_OCGFORGE_PUBLIC_ACTION_KEY=NO
+I4_LOCAL_CANDIDATE_KEY_MODEL_INPUT_AUTHORIZED=NO
+I4_LOCAL_CANDIDATE_KEY_I6_COMPATIBILITY_CLAIM=NO
+OCGFORGE_PUBLIC_ACTION_KEY_DERIVATION=I6_OWNED
+I6_BYTE_EXACT_COMPATIBILITY=UNPROVEN
+```
+
+The OCGForge contract `ocgforge.public_action_identity.v1` owns the distinct
+future value `public_action.v1.<lowercase hexadecimal canonical descriptor
+bytes>`. I4A0 references that boundary but does not reimplement it, create a
+second translation identity, or alias the local selector to it. I6 will later
+prove how an accepted semantic candidate descriptor maps to the OCGForge
+descriptor and exact `public_action_key`.
+
+Equal descriptions, equal card codes, and equal visible references do not
+justify deduplication. A source entry at ordinal 0 and a source entry at
+ordinal 1 remain two candidates and have distinct local keys. For OPTION,
+their required `option_value` fields must also preserve their semantic values.
+
+The private current-prompt binding is a value-owned record containing:
 
 ```text
 prompt_instance_ordinal : u64
 message_id/family       : exact one of the seven families
-ordered candidate keys   : complete current domain
+ordered candidate descriptors : complete current domain
+ordered i4_local_candidate_keys : complete current domain
 private key-to-response binding for this prompt only
 ```
 
 The first accepted I4 prompt in semantic GAME_MSG order has ordinal 0. The
 ordinal increments once, with checked arithmetic, for each subsequently
 accepted I4 prompt. TCP reads, chunk boundaries, threads, allocation order,
-and wall time never advance it. A selected key is valid only when its prompt
-ordinal, family, and complete current domain match the current binding. Thus a
-selection from prompt A is rejected even when prompt B has identical-looking
-candidate fields. A failed or unsupported prompt creates no usable binding.
+and wall time never advance it. A selected local key is valid only when its
+prompt ordinal, family, and complete current domain match the current binding.
+Thus a selection from prompt A is rejected even when prompt B has an identical
+local key and identical-looking candidate fields. A failed or unsupported
+prompt creates no usable binding.
 
 ## 4. Response envelope and no fallback
 
@@ -228,7 +396,7 @@ RETRY_WITH_OTHER_POLICY=NO
 
 When a source prompt contains one legal candidate, the future adapter still
 publishes one candidate and waits for the agent/model selection. The pinned
-core may internally resolve a position or simple-AI path without sending a
+core internally resolves a position or simple-AI path without sending a
 prompt; that upstream behavior is not an adapter permission to auto-answer an
 I4 prompt that was received. Unsupported, stale, unbound, malformed, or
 ambiguous values fail closed and never submit a replacement response.
@@ -439,7 +607,7 @@ MSG_SELECT_EFFECTYN:NO  -> i32 0 -> 00 00 00 00
 MSG_SELECT_EFFECTYN:YES -> i32 1 -> 01 00 00 00
 ```
 
-The core accepts only response integers 0 and 1. A public candidate may carry
+The core accepts only response integers 0 and 1. A public candidate carries
 the normalized card reference and a proven description identifier only after
 the current perspective proves them. Raw location bytes and raw response
 bytes stay private. An unproven required card reference fails closed.
@@ -631,9 +799,9 @@ MSG_SELECT_POSITION:FACEDOWN_DEFENSE -> i32 8 -> 08 00 00 00
 ```
 
 The card code is a wire fact, not automatically a public identity. Since this
-layout carries no card locator, a future public candidate may expose the code
-only when the current perspective independently proves that scalar identity;
-otherwise the prompt fails closed. No raw coordinate is invented.
+layout carries no card locator, `position_card_code` is present exactly when
+`POSITION_CARD_CODE_SAFE` is true; a false predicate fails the whole prompt.
+No raw coordinate is invented.
 
 ## 12. Complete-domain invariant and duplicates
 
@@ -704,7 +872,7 @@ MALFORMED_PROMPT
 UNSUPPORTED_PROMPT_LAYOUT
 UNPROVEN_PUBLIC_REFERENCE
 UNPROVEN_CANDIDATE_DOMAIN
-INVALID_PUBLIC_ACTION_KEY
+INVALID_I4_LOCAL_CANDIDATE_KEY
 STALE_PROMPT_BINDING
 INVALID_RESPONSE_BINDING
 ```

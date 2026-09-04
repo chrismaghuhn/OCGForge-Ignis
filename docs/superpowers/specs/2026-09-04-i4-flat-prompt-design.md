@@ -6,7 +6,7 @@ Accepted base: `4a054c3e0f0be10b704a1614ae275d4ce630ddce`
 
 ## 1. Purpose and boundary
 
-I4A0 freezes the facts a later I4 implementation may consume for exactly
+I4A0 freezes the facts a later I4 implementation can consume for exactly
 seven flat prompt families. It deliberately stops before production decoding,
 candidate construction, response sending, model input, or live server use.
 
@@ -20,7 +20,7 @@ future I4 prompt boundary
         └─ current-prompt-local private response binding
 ```
 
-The rules engine remains the pinned EDOPro/ocgcore authority. Ignis may not
+The rules engine remains the pinned EDOPro/ocgcore authority. Ignis must not
 recompute legality, pick the first action, infer a missing option, or repair an
 invalid response. A prompt is publishable only when both directions are
 proven:
@@ -206,7 +206,87 @@ not a zero-based bit index. I4 V1 rejects a received zero/singleton prompt or
 any bit outside `0x0f`; it never reproduces the core's direct-resolution
 shortcut as an adapter auto-answer.
 
-## 4. Domain and privacy decisions
+## 4. Exact candidate schema and identity ownership
+
+The accepted public decision surface is a fixed split, not an open-ended bag
+of useful fields:
+
+```text
+FlatPromptPublicContextV1
+FlatPublicCandidateDescriptorV1
+```
+
+The common context always contains exactly:
+
+```text
+contract_id   = ocgforge-ignis.flat-prompt-projection.v1
+prompt_family = one of the seven frozen I4 family names
+acting_player = absolute player 0 or 1
+```
+
+Family-specific context is fixed as follows:
+
+| Family | Required context | Conditional context | Context fields absent |
+| --- | --- | --- | --- |
+| BATTLECMD | common context | none | effect description, mode, position, transition, option, chain metadata |
+| IDLECMD | common context | none | effect description, mode, position, transition, option, chain metadata |
+| EFFECTYN | common context, proven effect-card public locator, effect description ID | effect card code under `CARD_CODE_SAFE` | position, transition, option, chain metadata |
+| YESNO | common context, yes/no description ID | none | all card fields, position, transition, option, chain metadata |
+| OPTION | common context | none | all card fields, description/effect, position, transition, option-shared metadata |
+| CHAIN | common context, spe count, forced, both hint timings | none | position, transition, option |
+| POSITION | common context, validated position mask | position card code under `POSITION_CARD_CODE_SAFE`; false proof fails the whole prompt | card locator, description/effect, transition, option, chain metadata |
+
+Each candidate descriptor has exactly these possible members:
+
+```text
+i4_local_candidate_key
+choice_kind
+source_section
+source_ordinal
+public_semantic_card_locator
+card_code
+description_or_effect_id
+client_mode
+direct_attackable
+position_value
+transition_token
+option_value
+```
+
+Section 3 of the normative contract contains the complete required/absent/
+conditional matrix for every candidate kind. `ABSENT` is actual absence, not
+null, zero, an empty string, or a caller-selected omission. Every conditional
+member follows its named predicate exactly. Card-bearing BATTLECMD, IDLECMD,
+and CHAIN entries require a proven public semantic locator; EFFECTYN requires
+that locator in shared context; POSITION has no wire locator and requires the
+exact safe-code predicate. OPTION requires its decoded u64 option value, so a
+different public option value remains distinguishable even when its ordinal is
+the same in another prompt.
+
+The I4 local ASCII selector is named `i4_local_candidate_key`:
+
+```text
+I4_LOCAL_CANDIDATE_KEY_IS_OCGFORGE_PUBLIC_ACTION_KEY=NO
+I4_LOCAL_CANDIDATE_KEY_MODEL_INPUT_AUTHORIZED=NO
+I4_LOCAL_CANDIDATE_KEY_I6_COMPATIBILITY_CLAIM=NO
+OCGFORGE_PUBLIC_ACTION_KEY_DERIVATION=I6_OWNED
+I6_BYTE_EXACT_COMPATIBILITY=UNPROVEN
+```
+
+The already accepted OCGForge contract
+`ocgforge.public_action_identity.v1` owns the separate
+`public_action.v1.<lowercase hexadecimal canonical descriptor bytes>` value.
+I4A0 neither aliases nor derives that value. I6 owns the future mapping from
+the exact Ignis candidate descriptor to the OCGForge descriptor and the
+byte-exact `public_action_key` proof.
+
+The private current-prompt binding contains `prompt_instance_ordinal`, the
+family, the complete ordered public descriptors and local keys, and the exact
+response body. A repeated local key across prompt instances is valid only
+with the matching ordinal, family, and complete current domain. The ordinal
+never enters the future OCGForge identity or model input.
+
+## 5. Domain and privacy decisions
 
 The exact source-response domain is the cardinality of all repeated entries,
 flag-created transitions, position-bit expansions, scalar choices, and the
@@ -230,11 +310,12 @@ hidden opponent identity or deck order
 ```
 
 Source section/entry ordinals are public semantic disambiguators. They do not
-encode or derive from internal entity IDs. Public candidate keys are local to
-the current prompt; private binding values are never serialized into public
-candidate data or model input.
+encode or derive from internal entity IDs. I4 local candidate keys are local
+to the current prompt; private binding values are never serialized into public
+candidate data or model input. The OCGForge `public_action_key` name and
+format remain an I6-owned, unproven boundary.
 
-## 5. Negative and metamorphic evidence
+## 6. Negative and metamorphic evidence
 
 The vector fixture covers all seven families with independently constructed
 positive payloads and includes:
@@ -252,11 +333,11 @@ positive payloads and includes:
 The fixture records raw bytes as restricted protocol research evidence. It does
 not authorize exposing those bytes or private bindings to a public candidate.
 
-## 6. Resulting implementation boundary
+## 7. Resulting implementation boundary
 
 The inventory now records the seven layouts as frozen but retains
 `support_status=OUT_OF_SCOPE` and `planned_slice=I4`. This means a later I4
-implementation may consume the contract only after independent review. It
+implementation can consume the contract only after independent review. It
 must still prove runtime behavior, privacy, complete-domain coverage, and
 response submission in a separate authorization.
 

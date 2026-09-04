@@ -16,6 +16,13 @@
     "implementation_status": "inventory_only",
     "public_server": "forbidden"
   },
+  "i4a0_public_binding_contract": {
+    "contract_id": "ocgforge-ignis.flat-prompt-projection.v1",
+    "local_key_field": "i4_local_candidate_key",
+    "ocgforge_public_action_key": "I6_OWNED_ABSENT",
+    "candidate_descriptor_matrix": "NORMATIVE_CONTRACT",
+    "implementation_status": "NOT_IMPLEMENTED"
+  },
   "upstream_pins": {
     "edopro_repository": "https://github.com/edo9300/edopro",
     "edopro_commit": "30935e847165a9ef0e547fb51a43f36168fab7c7",
