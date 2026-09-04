@@ -102,7 +102,34 @@ var tests = new (string Name, Action Body)[]
         I3C0PublicSemanticLocatorTests.TestDeterministicCultureIndependentValue),
 
     ("I3C0 public API keeps internal identities private",
-        I3C0PublicSemanticLocatorTests.TestPublicApiBoundary)
+        I3C0PublicSemanticLocatorTests.TestPublicApiBoundary),
+
+    ("I3C projects core perspective state with absolute participants",
+        I3CPublicStateProjectionTests.TestCorePerspectiveState),
+
+    ("I3C preserves own knowledge and redacts unknown opponent identity",
+        I3CPublicStateProjectionTests.TestKnowledgeProjection),
+
+    ("I3C hidden populations preserve counts without stable hidden locators",
+        I3CPublicStateProjectionTests.TestHiddenPopulationProjection),
+
+    ("I3C locator generation is semantic and independent of mirror identity",
+        I3CPublicStateProjectionTests.TestSemanticLocatorIndependence),
+
+    ("I3C paired hidden worlds have identical canonical public bytes",
+        I3CPublicStateProjectionTests.TestPairedHiddenWorlds),
+
+    ("I3C canonical bytes and SHA256 are deterministic across culture/order",
+        I3CPublicStateProjectionTests.TestCanonicalDeterminism),
+
+    ("I3C SZONE/layout mapping is explicit and fails closed when unproven",
+        I3CPublicStateProjectionTests.TestSzoneLayoutMapping),
+
+    ("I3C public API exposes no mirror/protocol/private identity",
+        I3CPublicStateProjectionTests.TestPublicApiBoundary),
+
+    ("I3C canonical byte storage is not externally mutable",
+        I3CPublicStateProjectionTests.TestCanonicalByteStorageIsolation)
 };
 
 int passed = 0;
