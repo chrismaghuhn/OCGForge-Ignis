@@ -31,6 +31,7 @@ var tests = new (string Name, Action Body)[]
     ("I3B mirror applies movement and relations transactionally", TestMirrorMovementAndRelations),
     ("I3B face-down transitions destroy stale card facts", TestFaceDownTransition),
     ("I3B provenance and locator-safe query semantics", TestProvenanceAndLocatorSafety),
+    ("I3B visibility flags may overlap without local legality", TestVisibilityFlagOverlap),
     ("I3B draw LP and terminal state are fail closed", TestDrawLpAndTerminal),
     ("I3B update data preserves wire query order", TestUpdateDataWireOrder),
     ("I3B stream chunking preserves mirror semantics", TestMirrorChunking)
@@ -1104,6 +1105,114 @@ static void TestProvenanceAndLocatorSafety()
         property => typeof(ModernQueryPayloadV1).IsAssignableFrom(property.PropertyType)));
     False(typeof(MirrorSnapshotV1).GetProperties().Any(
         property => property.PropertyType == typeof(ModernLocInfoV1)));
+}
+
+static void TestVisibilityFlagOverlap()
+{
+    ModernLocInfoV1 empty = new(0, 0, 0, 0);
+
+    (PerspectiveStateMirrorV1 faceUpMirror, GameplayMessageDecoderV1 faceUpDecoder) =
+        CreateMirror(0x00);
+    ModernLocInfoV1 faceUpSlot = new(0, 0x04, 0, 0x04);
+    True(faceUpMirror.Apply(DecodeMessage(
+        faceUpDecoder,
+        MoveMessage(0, empty, faceUpSlot, 0))).IsSuccess);
+    ModernQueryV1 faceUpHiddenQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0x10203040u)),
+        QueryRecord(QueryFlagV1.Position, U32(0x00000004u)),
+        QueryRecord(QueryFlagV1.IsHidden, new byte[] { 1 }),
+        QueryEnd());
+    MirrorApplyResult faceUpHidden = faceUpMirror.Apply(DecodeMessage(
+        faceUpDecoder,
+        UpdateCardMessage(0, 0x04, 0, faceUpHiddenQuery)));
+    True(faceUpHidden.IsSuccess, faceUpHidden.Error.ToString());
+    Equal(
+        MirrorProvenanceV1.PublicProtocolFact,
+        faceUpMirror.Snapshot.Cards.Single().CardCode.Provenance);
+
+    (PerspectiveStateMirrorV1 publicHiddenMirror,
+        GameplayMessageDecoderV1 publicHiddenDecoder) = CreateMirror(0x00);
+    ModernLocInfoV1 hiddenSlot = new(0, 0x02, 0, 0x08);
+    True(publicHiddenMirror.Apply(DecodeMessage(
+        publicHiddenDecoder,
+        MoveMessage(0, empty, hiddenSlot, 0))).IsSuccess);
+    ModernQueryV1 publicHiddenQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0x50607080u)),
+        QueryRecord(QueryFlagV1.Position, U32(0x00000008u)),
+        QueryRecord(QueryFlagV1.IsPublic, new byte[] { 1 }),
+        QueryRecord(QueryFlagV1.IsHidden, new byte[] { 1 }),
+        QueryEnd());
+    MirrorApplyResult publicHidden = publicHiddenMirror.Apply(DecodeMessage(
+        publicHiddenDecoder,
+        UpdateCardMessage(0, 0x02, 0, publicHiddenQuery)));
+    True(publicHidden.IsSuccess, publicHidden.Error.ToString());
+    Equal(
+        MirrorProvenanceV1.PublicProtocolFact,
+        publicHiddenMirror.Snapshot.Cards.Single().CardCode.Provenance);
+
+    (PerspectiveStateMirrorV1 opponentMirror, GameplayMessageDecoderV1 opponentDecoder) =
+        CreateMirror(0x00);
+    ModernLocInfoV1 opponentHiddenSlot = new(1, 0x02, 0, 0x08);
+    True(opponentMirror.Apply(DecodeMessage(
+        opponentDecoder,
+        MoveMessage(0, empty, opponentHiddenSlot, 0))).IsSuccess);
+    ModernQueryV1 opponentHiddenQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0x90a0b0c0u)),
+        QueryRecord(QueryFlagV1.IsHidden, new byte[] { 1 }),
+        QueryRecord(QueryFlagV1.Position, U32(0x00000008u)),
+        QueryEnd());
+    MirrorApplyResult opponentHidden = opponentMirror.Apply(DecodeMessage(
+        opponentDecoder,
+        UpdateCardMessage(1, 0x02, 0, opponentHiddenQuery)));
+    True(opponentHidden.IsSuccess, opponentHidden.Error.ToString());
+    MirrorCardSnapshotV1 opponentCard = opponentMirror.Snapshot.Cards.Single();
+    False(opponentCard.CardCode.IsKnown);
+    Equal(MirrorProvenanceV1.UnknownRedacted, opponentCard.CardCode.Provenance);
+
+    (PerspectiveStateMirrorV1 firstOrderMirror, GameplayMessageDecoderV1 firstOrderDecoder) =
+        CreateMirror(0x00);
+    True(firstOrderMirror.Apply(DecodeMessage(
+        firstOrderDecoder,
+        MoveMessage(0, empty, hiddenSlot, 0))).IsSuccess);
+    ModernQueryV1 firstOrderQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0x01020304u)),
+        QueryRecord(QueryFlagV1.Position, U32(0x00000008u)),
+        QueryRecord(QueryFlagV1.IsHidden, new byte[] { 1 }),
+        QueryRecord(QueryFlagV1.IsPublic, new byte[] { 1 }),
+        QueryEnd());
+    True(firstOrderMirror.Apply(DecodeMessage(
+        firstOrderDecoder,
+        UpdateCardMessage(0, 0x02, 0, firstOrderQuery))).IsSuccess);
+
+    (PerspectiveStateMirrorV1 secondOrderMirror, GameplayMessageDecoderV1 secondOrderDecoder) =
+        CreateMirror(0x00);
+    True(secondOrderMirror.Apply(DecodeMessage(
+        secondOrderDecoder,
+        MoveMessage(0, empty, hiddenSlot, 0))).IsSuccess);
+    ModernQueryV1 secondOrderQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.IsPublic, new byte[] { 1 }),
+        QueryRecord(QueryFlagV1.IsHidden, new byte[] { 1 }),
+        QueryRecord(QueryFlagV1.Position, U32(0x00000008u)),
+        QueryRecord(QueryFlagV1.Code, U32(0x01020304u)),
+        QueryEnd());
+    True(secondOrderMirror.Apply(DecodeMessage(
+        secondOrderDecoder,
+        UpdateCardMessage(0, 0x02, 0, secondOrderQuery))).IsSuccess);
+    Equal(
+        firstOrderMirror.Snapshot.Cards.Single().CardCode.Provenance,
+        secondOrderMirror.Snapshot.Cards.Single().CardCode.Provenance);
+
+    string beforeFailure = firstOrderMirror.Snapshot.ToDeterministicString();
+    ModernQueryV1 unknownReferenceQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0xa1b2c3d4u)),
+        QueryRecord(QueryFlagV1.ReasonCard, LocInfo(0, 0x04, 0, 0x04)),
+        QueryEnd());
+    MirrorApplyResult failed = firstOrderMirror.Apply(DecodeMessage(
+        firstOrderDecoder,
+        UpdateCardMessage(0, 0x02, 0, unknownReferenceQuery)));
+    False(failed.IsSuccess);
+    Equal(GameplayErrorCode.UnknownMirrorReference, failed.Error);
+    Equal(beforeFailure, firstOrderMirror.Snapshot.ToDeterministicString());
 }
 
 static void TestFaceDownTransition()

@@ -941,21 +941,7 @@ public sealed class PerspectiveStateMirrorV1
             }
         }
 
-        if (isPublic && isHidden)
-        {
-            context = default;
-            error = GameplayErrorCode.InvalidStateTransition;
-            return false;
-        }
-
         bool faceUp = hasPosition && (position & PositionFaceUp) != 0;
-        if (isHidden && faceUp)
-        {
-            context = default;
-            error = GameplayErrorCode.InvalidStateTransition;
-            return false;
-        }
-
         bool identityPublic = isPublic || faceUp;
         bool self = MapPlayer(entity.Perspective, entity.Address.Controller) ==
                     MirrorParticipantRoleV1.Self;
