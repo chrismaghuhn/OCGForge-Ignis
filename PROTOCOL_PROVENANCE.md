@@ -217,6 +217,30 @@ fixture is copied.
 | ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | operations.cpp and processor.cpp, chain/equip/target writers | Chain lifecycle indexes and relation messages reference protocol-visible card locations; I3B may retain only resolved value-owned internal references and must fail closed when a required reference is absent or ambiguous | 2026-09-04 | wire layout/structural rule |
 | ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | field.h, `player_info` | The authoritative LP storage is signed 32-bit and the protocol writes the nonnegative value as uint32; I3B rejects a wire value outside the representable nonnegative authoritative range before applying it | 2026-09-04 | semantic width/arithmetic rule |
 
+## I3B remediation 01 boundaries
+
+The following entries document the remediation's semantic boundary. The
+upstream protocol supplies bytes and visibility-related fields; the
+perspective-sensitive classification is an Ignis mirror policy applied only
+after the established MSG_START perspective and complete query context are
+available. It is not a claim that every protocol-delivered code is public.
+
+| External repository | Exact commit | Source path / symbol | Fact learned | Date | Classification |
+| --- | --- | --- | --- | --- | --- |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/client_card.cpp, `ClientCard::UpdateInfo`; gframe/duelclient.cpp, query consumers | `QUERY_CODE`, `QUERY_POSITION`, `QUERY_IS_PUBLIC`, and `QUERY_IS_HIDDEN` arrive as separate fields; code visibility requires the complete position/visibility context rather than query-record order | 2026-09-04 | observed behavior/privacy boundary |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp, `MSG_MOVE`, `MSG_POS_CHANGE`, and `MSG_DRAW` cases | Addressed message payloads may carry card codes together with a destination/position; an opponent hidden-card code is not thereby a public fact, while a face-up card is publicly established by the protocol state | 2026-09-04 | wire layout/privacy boundary |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/core_utils.cpp, `ReadLocInfo` and query readers | `loc_info` is a decode-local controller/location/sequence/position address; it is used to resolve an already represented client entity and is not a persistent public identity | 2026-09-04 | wire layout/identity boundary |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | field/query writers for `QUERY_CODE`, `QUERY_POSITION`, `QUERY_IS_PUBLIC`, and `QUERY_IS_HIDDEN` | Query records can provide identity and visibility context in an order independent of the semantic classification pass; the mirror must retain only proven scalar values or resolved internal references | 2026-09-04 | wire layout/privacy boundary |
+
+I3B therefore classifies a nonzero self-held hidden card code as
+`PerspectivePrivateFact`, a proven face-up/public code as
+`PublicProtocolFact`, and an opponent hidden identity as
+`UnknownRedacted`. Query-derived loc_info values are resolved to existing
+value-owned internal entity references during the transactional candidate
+build; an unresolved required reference fails closed. No raw loc_info,
+protocol address object, public locator bytes, locator hash, or public
+projection identity is part of the mirror semantic state.
+
 ## Provenance boundaries
 
 The pinned CardScripts, BabelCDB, and Distribution commits identify a future

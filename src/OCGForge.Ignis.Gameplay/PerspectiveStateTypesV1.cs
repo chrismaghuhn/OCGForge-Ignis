@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text;
 
 namespace OCGForge.Ignis.Gameplay;
@@ -44,6 +46,246 @@ public static class MirrorValueV1
         new(false, default!, MirrorProvenanceV1.UnknownRedacted);
 }
 
+[SuppressMessage(
+    "Naming",
+    "CA1720:IdentifiersShouldNotContainTypeNames",
+    Justification = "The kind names describe the exact protocol scalar widths.")]
+public enum MirrorQueryValueKindV1 : byte
+{
+    Unknown = 0,
+    UInt8 = 1,
+    UInt32 = 2,
+    Int32 = 3,
+    UInt64 = 4,
+    UInt32Pair = 5,
+    UInt32Vector = 6,
+    PackedUInt32Vector = 7,
+    EntityReference = 8,
+    EntityReferenceVector = 9
+}
+
+public sealed class MirrorQueryValueV1 : IEquatable<MirrorQueryValueV1>
+{
+    private readonly uint[] uint32Values;
+    private readonly ReadOnlyCollection<uint> uint32ValuesView;
+    private readonly MirrorEntityIdV1[] entityReferences;
+    private readonly ReadOnlyCollection<MirrorEntityIdV1> entityReferencesView;
+
+    private MirrorQueryValueV1(
+        MirrorQueryValueKindV1 kind,
+        bool isKnown,
+        MirrorProvenanceV1 provenance,
+        byte uint8Value,
+        uint uint32Value,
+        int int32Value,
+        ulong uint64Value,
+        uint linkMarker,
+        IEnumerable<uint>? uint32Values = null,
+        IEnumerable<MirrorEntityIdV1>? entityReferences = null)
+    {
+        Kind = kind;
+        IsKnown = isKnown;
+        Provenance = provenance;
+        UInt8Value = uint8Value;
+        UInt32Value = uint32Value;
+        Int32Value = int32Value;
+        UInt64Value = uint64Value;
+        LinkMarker = linkMarker;
+        this.uint32Values = uint32Values?.ToArray() ?? Array.Empty<uint>();
+        uint32ValuesView = Array.AsReadOnly(this.uint32Values);
+        this.entityReferences = entityReferences?.ToArray() ??
+            Array.Empty<MirrorEntityIdV1>();
+        entityReferencesView = Array.AsReadOnly(this.entityReferences);
+    }
+
+    public MirrorQueryValueKindV1 Kind { get; }
+
+    public bool IsKnown { get; }
+
+    public MirrorProvenanceV1 Provenance { get; }
+
+    public byte UInt8Value { get; }
+
+    public uint UInt32Value { get; }
+
+    public int Int32Value { get; }
+
+    public ulong UInt64Value { get; }
+
+    public uint LinkMarker { get; }
+
+    public IReadOnlyList<uint> UInt32Values => uint32ValuesView;
+
+    public int EntityReferenceCount => entityReferences.Length;
+
+    internal IReadOnlyList<MirrorEntityIdV1> EntityReferences =>
+        entityReferencesView;
+
+    internal static MirrorQueryValueV1 Unknown() =>
+        new(
+            MirrorQueryValueKindV1.Unknown,
+            false,
+            MirrorProvenanceV1.UnknownRedacted,
+            0,
+            0,
+            0,
+            0,
+            0);
+
+    internal static MirrorQueryValueV1 UInt8(
+        byte value,
+        MirrorProvenanceV1 provenance) =>
+        new(
+            MirrorQueryValueKindV1.UInt8,
+            true,
+            provenance,
+            value,
+            0,
+            0,
+            0,
+            0);
+
+    internal static MirrorQueryValueV1 UInt32(
+        uint value,
+        MirrorProvenanceV1 provenance) =>
+        new(
+            MirrorQueryValueKindV1.UInt32,
+            true,
+            provenance,
+            0,
+            value,
+            0,
+            0,
+            0);
+
+    internal static MirrorQueryValueV1 Int32(
+        int value,
+        MirrorProvenanceV1 provenance) =>
+        new(
+            MirrorQueryValueKindV1.Int32,
+            true,
+            provenance,
+            0,
+            0,
+            value,
+            0,
+            0);
+
+    internal static MirrorQueryValueV1 UInt64(
+        ulong value,
+        MirrorProvenanceV1 provenance) =>
+        new(
+            MirrorQueryValueKindV1.UInt64,
+            true,
+            provenance,
+            0,
+            0,
+            0,
+            value,
+            0);
+
+    internal static MirrorQueryValueV1 UInt32Pair(
+        uint value,
+        uint marker,
+        MirrorProvenanceV1 provenance) =>
+        new(
+            MirrorQueryValueKindV1.UInt32Pair,
+            true,
+            provenance,
+            0,
+            value,
+            0,
+            0,
+            marker);
+
+    internal static MirrorQueryValueV1 UInt32Vector(
+        IEnumerable<uint> values,
+        MirrorProvenanceV1 provenance,
+        bool packed) =>
+        new(
+            packed
+                ? MirrorQueryValueKindV1.PackedUInt32Vector
+                : MirrorQueryValueKindV1.UInt32Vector,
+            true,
+            provenance,
+            0,
+            0,
+            0,
+            0,
+            0,
+            values);
+
+    internal static MirrorQueryValueV1 EntityReference(
+        MirrorEntityIdV1 value) =>
+        new(
+            MirrorQueryValueKindV1.EntityReference,
+            true,
+            MirrorProvenanceV1.DerivedFromProvenPublicFacts,
+            0,
+            0,
+            0,
+            0,
+            0,
+            entityReferences: new[] { value });
+
+    internal static MirrorQueryValueV1 EntityReferenceVector(
+        IEnumerable<MirrorEntityIdV1> values) =>
+        new(
+            MirrorQueryValueKindV1.EntityReferenceVector,
+            true,
+            MirrorProvenanceV1.DerivedFromProvenPublicFacts,
+            0,
+            0,
+            0,
+            0,
+            0,
+            entityReferences: values);
+
+    internal string ToDeterministicString()
+    {
+        StringBuilder builder = new();
+        builder.Append((byte)Kind).Append('|')
+            .Append(IsKnown ? 'K' : 'U').Append('|')
+            .Append((byte)Provenance).Append('|')
+            .Append(UInt8Value).Append('|')
+            .Append(UInt32Value).Append('|')
+            .Append(Int32Value).Append('|')
+            .Append(UInt64Value).Append('|')
+            .Append(LinkMarker).Append('|');
+        foreach (uint value in uint32Values)
+        {
+            builder.Append(value).Append(',');
+        }
+
+        builder.Append('|');
+        foreach (MirrorEntityIdV1 value in entityReferences)
+        {
+            builder.Append(value.Ordinal).Append(',');
+        }
+
+        return builder.ToString();
+    }
+
+    public bool Equals(MirrorQueryValueV1? other) =>
+        other is not null &&
+        Kind == other.Kind &&
+        IsKnown == other.IsKnown &&
+        Provenance == other.Provenance &&
+        UInt8Value == other.UInt8Value &&
+        UInt32Value == other.UInt32Value &&
+        Int32Value == other.Int32Value &&
+        UInt64Value == other.UInt64Value &&
+        LinkMarker == other.LinkMarker &&
+        uint32Values.AsSpan().SequenceEqual(other.uint32Values) &&
+        entityReferences.AsSpan().SequenceEqual(other.entityReferences);
+
+    public override bool Equals(object? obj) =>
+        obj is MirrorQueryValueV1 other && Equals(other);
+
+    public override int GetHashCode() =>
+        MirrorHashV1.Stable(ToDeterministicString());
+}
+
 internal readonly record struct MirrorEntityIdV1(ulong Ordinal);
 
 public readonly record struct MirrorTerminalSnapshotV1(
@@ -62,91 +304,36 @@ public enum MirrorChainStatusV1 : byte
 
 public sealed class MirrorQueryFieldSnapshotV1 : IEquatable<MirrorQueryFieldSnapshotV1>
 {
-    private readonly MirrorProvenanceV1 provenance =
-        MirrorProvenanceV1.PublicProtocolFact;
-
-    public MirrorQueryFieldSnapshotV1(ModernQueryFieldV1 field)
+    internal MirrorQueryFieldSnapshotV1(
+        QueryFlagV1 flag,
+        MirrorQueryValueV1 value)
     {
-        Field = field ?? throw new ArgumentNullException(nameof(field));
+        Flag = flag;
+        Value = value ?? throw new ArgumentNullException(nameof(value));
     }
 
-    public ModernQueryFieldV1 Field { get; }
+    public QueryFlagV1 Flag { get; }
 
-    public QueryFlagV1 Flag => Field.Flag;
+    public MirrorQueryValueV1 Value { get; }
 
-    public ModernQueryPayloadV1 Payload => Field.Payload;
+    public bool IsKnown => Value.IsKnown;
 
-    public MirrorProvenanceV1 Provenance => provenance;
+    public MirrorProvenanceV1 Provenance => Value.Provenance;
 
     internal string ToDeterministicString()
     {
-        StringBuilder builder = new();
-        builder.Append((uint)Flag).Append('=');
-        switch (Payload)
-        {
-            case ModernQueryUInt8PayloadV1 value:
-                builder.Append(value.Value);
-                break;
-            case ModernQueryUInt32PayloadV1 value:
-                builder.Append(value.Value);
-                break;
-            case ModernQueryInt32PayloadV1 value:
-                builder.Append(value.Value);
-                break;
-            case ModernQueryUInt64PayloadV1 value:
-                builder.Append(value.Value);
-                break;
-            case ModernQueryLocInfoPayloadV1 value:
-                AppendLocInfo(builder, value.Value);
-                break;
-            case ModernQueryLinkPayloadV1 value:
-                builder.Append(value.Link).Append(',').Append(value.LinkMarker);
-                break;
-            case ModernQueryLocInfoVectorPayloadV1 value:
-                foreach (ModernLocInfoV1 locInfo in value.Values)
-                {
-                    AppendLocInfo(builder, locInfo);
-                    builder.Append(';');
-                }
-
-                break;
-            case ModernQueryUInt32VectorPayloadV1 value:
-                foreach (uint item in value.Values)
-                {
-                    builder.Append(item).Append(',');
-                }
-
-                break;
-            case ModernQueryPackedUInt32VectorPayloadV1 value:
-                foreach (uint item in value.Values)
-                {
-                    builder.Append(item).Append(',');
-                }
-
-                break;
-        }
-
-        return builder.ToString();
+        return ((uint)Flag).ToString(CultureInfo.InvariantCulture) + "=" +
+               Value.ToDeterministicString();
     }
 
     public bool Equals(MirrorQueryFieldSnapshotV1? other) =>
-        other is not null && Field.Equals(other.Field);
+        other is not null && Flag == other.Flag && Value.Equals(other.Value);
 
     public override bool Equals(object? obj) =>
         obj is MirrorQueryFieldSnapshotV1 other && Equals(other);
 
     public override int GetHashCode() =>
         MirrorHashV1.Stable(ToDeterministicString());
-
-    private static void AppendLocInfo(
-        StringBuilder builder,
-        ModernLocInfoV1 locInfo)
-    {
-        builder.Append(locInfo.Controller).Append(':')
-            .Append(locInfo.Location).Append(':')
-            .Append(locInfo.Sequence).Append(':')
-            .Append(locInfo.Position);
-    }
 }
 
 public sealed class MirrorCardSnapshotV1 : IEquatable<MirrorCardSnapshotV1>
@@ -375,7 +562,6 @@ public sealed class MirrorChainSnapshotV1 : IEquatable<MirrorChainSnapshotV1>
         uint chainSize,
         MirrorEntityIdV1 card,
         MirrorValueV1<uint> cardCode,
-        ModernLocInfoV1 location,
         ulong description,
         MirrorChainStatusV1 status,
         IEnumerable<MirrorEntityIdV1> targets)
@@ -383,7 +569,6 @@ public sealed class MirrorChainSnapshotV1 : IEquatable<MirrorChainSnapshotV1>
         ChainSize = chainSize;
         Card = card;
         CardCode = cardCode;
-        Location = location;
         Description = description;
         Status = status;
         this.targets = targets.ToArray();
@@ -396,8 +581,6 @@ public sealed class MirrorChainSnapshotV1 : IEquatable<MirrorChainSnapshotV1>
 
     public MirrorValueV1<uint> CardCode { get; }
 
-    public ModernLocInfoV1 Location { get; }
-
     public ulong Description { get; }
 
     public MirrorChainStatusV1 Status { get; }
@@ -409,7 +592,6 @@ public sealed class MirrorChainSnapshotV1 : IEquatable<MirrorChainSnapshotV1>
         ChainSize == other.ChainSize &&
         Card.Equals(other.Card) &&
         CardCode == other.CardCode &&
-        Location.Equals(other.Location) &&
         Description == other.Description &&
         Status == other.Status &&
         targets.AsSpan().SequenceEqual(other.targets);
@@ -428,10 +610,6 @@ public sealed class MirrorChainSnapshotV1 : IEquatable<MirrorChainSnapshotV1>
             .Append(CardCode.IsKnown ? 'K' : 'U').Append(':')
             .Append(CardCode.Value).Append(':')
             .Append((byte)CardCode.Provenance).Append('|')
-            .Append(Location.Controller).Append(':')
-            .Append(Location.Location).Append(':')
-            .Append(Location.Sequence).Append(':')
-            .Append(Location.Position).Append('|')
             .Append(Description).Append('|')
             .Append((byte)Status).Append('|');
         foreach (MirrorEntityIdV1 target in targets)

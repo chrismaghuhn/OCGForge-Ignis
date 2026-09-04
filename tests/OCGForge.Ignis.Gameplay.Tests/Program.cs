@@ -30,6 +30,7 @@ var tests = new (string Name, Action Body)[]
     ("I3B mirror initializes perspective and authoritative turn state", TestMirrorInitialization),
     ("I3B mirror applies movement and relations transactionally", TestMirrorMovementAndRelations),
     ("I3B face-down transitions destroy stale card facts", TestFaceDownTransition),
+    ("I3B provenance and locator-safe query semantics", TestProvenanceAndLocatorSafety),
     ("I3B draw LP and terminal state are fail closed", TestDrawLpAndTerminal),
     ("I3B update data preserves wire query order", TestUpdateDataWireOrder),
     ("I3B stream chunking preserves mirror semantics", TestMirrorChunking)
@@ -951,6 +952,158 @@ static void TestDrawLpAndTerminal()
         DecodeMessage(decoder, new byte[] { 40, 0 }));
     False(afterTerminal.IsSuccess);
     Equal(GameplayErrorCode.TerminalStateMutation, afterTerminal.Error);
+}
+
+static void TestProvenanceAndLocatorSafety()
+{
+    (PerspectiveStateMirrorV1 selfMirror, GameplayMessageDecoderV1 selfDecoder) =
+        CreateMirror(0x00, deckCount0: 3, deckCount1: 3);
+    True(selfMirror.Apply(DecodeMessage(
+        selfDecoder,
+        DrawMessage(0, (0x11223344u, 0x00000008u)))).IsSuccess);
+    MirrorCardSnapshotV1 selfHand = selfMirror.Snapshot.Cards.Single(
+        card => card.Zone == MirrorZoneV1.Hand);
+    Equal(MirrorProvenanceV1.PerspectivePrivateFact, selfHand.CardCode.Provenance);
+
+    ModernQueryV1 selfQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0xaabbccddu)),
+        QueryRecord(QueryFlagV1.Position, U32(0x00000008u)),
+        QueryEnd());
+    True(selfMirror.Apply(DecodeMessage(
+        selfDecoder,
+        UpdateCardMessage(0, 0x02, 0, selfQuery))).IsSuccess);
+    MirrorCardSnapshotV1 updatedSelfHand = selfMirror.Snapshot.Cards.Single(
+        card => card.Zone == MirrorZoneV1.Hand);
+    Equal(MirrorProvenanceV1.PerspectivePrivateFact, updatedSelfHand.CardCode.Provenance);
+    Equal(
+        MirrorProvenanceV1.PerspectivePrivateFact,
+        updatedSelfHand.QueryFields.Single(field => field.Flag == QueryFlagV1.Code).Provenance);
+
+    (PerspectiveStateMirrorV1 publicMirror, GameplayMessageDecoderV1 publicDecoder) =
+        CreateMirror(0x00);
+    ModernLocInfoV1 empty = new(0, 0, 0, 0);
+    ModernLocInfoV1 publicSlot = new(0, 0x04, 0, 0x04);
+    True(publicMirror.Apply(DecodeMessage(
+        publicDecoder,
+        MoveMessage(0, empty, publicSlot, 0))).IsSuccess);
+    ModernQueryV1 publicQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0x12345678u)),
+        QueryRecord(QueryFlagV1.Position, U32(0x00000004u)),
+        QueryEnd());
+    True(publicMirror.Apply(DecodeMessage(
+        publicDecoder,
+        UpdateCardMessage(0, 0x04, 0, publicQuery))).IsSuccess);
+    MirrorCardSnapshotV1 publicCard = publicMirror.Snapshot.Cards.Single();
+    Equal(MirrorProvenanceV1.PublicProtocolFact, publicCard.CardCode.Provenance);
+    Equal(
+        MirrorProvenanceV1.PublicProtocolFact,
+        publicCard.QueryFields.Single(field => field.Flag == QueryFlagV1.Code).Provenance);
+
+    (PerspectiveStateMirrorV1 firstOrderMirror, GameplayMessageDecoderV1 firstOrderDecoder) =
+        CreateMirror(0x00);
+    True(firstOrderMirror.Apply(DecodeMessage(
+        firstOrderDecoder,
+        MoveMessage(0, empty, publicSlot, 0))).IsSuccess);
+    ModernQueryV1 firstOrderQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0x10203040u)),
+        QueryRecord(QueryFlagV1.Position, U32(0x00000004u)),
+        QueryEnd());
+    True(firstOrderMirror.Apply(DecodeMessage(
+        firstOrderDecoder,
+        UpdateCardMessage(0, 0x04, 0, firstOrderQuery))).IsSuccess);
+
+    (PerspectiveStateMirrorV1 secondOrderMirror, GameplayMessageDecoderV1 secondOrderDecoder) =
+        CreateMirror(0x00);
+    True(secondOrderMirror.Apply(DecodeMessage(
+        secondOrderDecoder,
+        MoveMessage(0, empty, publicSlot, 0))).IsSuccess);
+    ModernQueryV1 secondOrderQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Position, U32(0x00000004u)),
+        QueryRecord(QueryFlagV1.Code, U32(0x10203040u)),
+        QueryEnd());
+    True(secondOrderMirror.Apply(DecodeMessage(
+        secondOrderDecoder,
+        UpdateCardMessage(0, 0x04, 0, secondOrderQuery))).IsSuccess);
+    Equal(
+        firstOrderMirror.Snapshot.Cards.Single().CardCode.Provenance,
+        secondOrderMirror.Snapshot.Cards.Single().CardCode.Provenance);
+
+    (PerspectiveStateMirrorV1 referenceMirror, GameplayMessageDecoderV1 referenceDecoder) =
+        CreateMirror(0x00);
+    ModernLocInfoV1 referenceSource = new(0, 0x04, 0, 0x04);
+    ModernLocInfoV1 referenceTarget = new(0, 0x04, 1, 0x04);
+    True(referenceMirror.Apply(DecodeMessage(
+        referenceDecoder,
+        MoveMessage(0, empty, referenceSource, 0))).IsSuccess);
+    True(referenceMirror.Apply(DecodeMessage(
+        referenceDecoder,
+        MoveMessage(0, empty, referenceTarget, 0))).IsSuccess);
+    ModernQueryV1 referenceQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Position, U32(0x00000004u)),
+        QueryRecord(QueryFlagV1.ReasonCard, LocInfo(0, 0x04, 1, 0x04)),
+        QueryRecord(
+            QueryFlagV1.TargetCard,
+            Join(U32(1), LocInfo(0, 0x04, 1, 0x04))),
+        QueryEnd());
+    True(referenceMirror.Apply(DecodeMessage(
+        referenceDecoder,
+        UpdateCardMessage(0, 0x04, 0, referenceQuery))).IsSuccess);
+    MirrorCardSnapshotV1 referenceCard = referenceMirror.Snapshot.Cards.Single(
+        card => card.Zone == MirrorZoneV1.MonsterZone && card.Sequence == 0);
+    MirrorQueryFieldSnapshotV1 reasonField = referenceCard.QueryFields.Single(
+        field => field.Flag == QueryFlagV1.ReasonCard);
+    MirrorQueryFieldSnapshotV1 targetField = referenceCard.QueryFields.Single(
+        field => field.Flag == QueryFlagV1.TargetCard);
+    Equal(MirrorQueryValueKindV1.EntityReference, reasonField.Value.Kind);
+    Equal(MirrorQueryValueKindV1.EntityReferenceVector, targetField.Value.Kind);
+    Equal(1, reasonField.Value.EntityReferenceCount);
+    Equal(1, targetField.Value.EntityReferenceCount);
+
+    string beforeUnknownReference = referenceMirror.Snapshot.ToDeterministicString();
+    ModernQueryV1 unknownReferenceQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.ReasonCard, LocInfo(0, 0x04, 2, 0x04)),
+        QueryEnd());
+    MirrorApplyResult unknownReference = referenceMirror.Apply(DecodeMessage(
+        referenceDecoder,
+        UpdateCardMessage(0, 0x04, 0, unknownReferenceQuery)));
+    False(unknownReference.IsSuccess);
+    Equal(GameplayErrorCode.UnknownMirrorReference, unknownReference.Error);
+    Equal(beforeUnknownReference, referenceMirror.Snapshot.ToDeterministicString());
+
+    (PerspectiveStateMirrorV1 opponentMirror, GameplayMessageDecoderV1 opponentDecoder) =
+        CreateMirror(0x00);
+    ModernLocInfoV1 opponentHand = new(1, 0x02, 0, 0x08);
+    True(opponentMirror.Apply(DecodeMessage(
+        opponentDecoder,
+        MoveMessage(0x55667788, empty, opponentHand, 0))).IsSuccess);
+    MirrorCardSnapshotV1 hiddenOpponent = opponentMirror.Snapshot.Cards.Single();
+    False(hiddenOpponent.CardCode.IsKnown);
+    Equal(MirrorProvenanceV1.UnknownRedacted, hiddenOpponent.CardCode.Provenance);
+    ModernQueryV1 hiddenOpponentQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0x99887766u)),
+        QueryRecord(QueryFlagV1.Position, U32(0x00000008u)),
+        QueryEnd());
+    True(opponentMirror.Apply(DecodeMessage(
+        opponentDecoder,
+        UpdateCardMessage(1, 0x02, 0, hiddenOpponentQuery))).IsSuccess);
+    MirrorCardSnapshotV1 updatedHiddenOpponent = opponentMirror.Snapshot.Cards.Single();
+    False(updatedHiddenOpponent.CardCode.IsKnown);
+    Equal(MirrorProvenanceV1.UnknownRedacted, updatedHiddenOpponent.CardCode.Provenance);
+    Equal(
+        MirrorProvenanceV1.UnknownRedacted,
+        updatedHiddenOpponent.QueryFields.Single(field => field.Flag == QueryFlagV1.Code)
+            .Provenance);
+
+    Null(typeof(MirrorChainSnapshotV1).GetProperty(
+        "Location",
+        BindingFlags.Instance | BindingFlags.Public));
+    Null(typeof(MirrorQueryFieldSnapshotV1).GetProperty(
+        "Field",
+        BindingFlags.Instance | BindingFlags.Public));
+    False(typeof(MirrorQueryFieldSnapshotV1).GetProperties().Any(
+        property => typeof(ModernQueryPayloadV1).IsAssignableFrom(property.PropertyType)));
+    False(typeof(MirrorSnapshotV1).GetProperties().Any(
+        property => property.PropertyType == typeof(ModernLocInfoV1)));
 }
 
 static void TestFaceDownTransition()

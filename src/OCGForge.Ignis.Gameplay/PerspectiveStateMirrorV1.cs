@@ -234,7 +234,12 @@ public sealed class PerspectiveStateMirrorV1
 
         if (payload.CardCode != 0)
         {
-            entity.CardCode = MirrorValueV1.Known(payload.CardCode);
+            ApplyCardCodeObservation(
+                candidate,
+                entity,
+                address,
+                payload.CardCode,
+                payload.CurrentPosition);
         }
 
         return GameplayErrorCode.None;
@@ -407,7 +412,12 @@ public sealed class PerspectiveStateMirrorV1
 
         if (payload.CardCode != 0)
         {
-            entity.CardCode = MirrorValueV1.Known(payload.CardCode);
+            ApplyCardCodeObservation(
+                candidate,
+                entity,
+                current,
+                payload.CardCode,
+                payload.Current.Position);
         }
 
         candidate.Entities.Add(current, entity);
@@ -736,7 +746,7 @@ public sealed class PerspectiveStateMirrorV1
             return GameplayErrorCode.UnknownMirrorReference;
         }
 
-        return ApplyQuery(entity, payload.Query);
+        return ApplyQuery(candidate, entity, payload.Query);
     }
 
     private static GameplayErrorCode ApplyUpdateData(
@@ -783,7 +793,7 @@ public sealed class PerspectiveStateMirrorV1
                 return GameplayErrorCode.UnknownMirrorReference;
             }
 
-            GameplayErrorCode error = ApplyQuery(entity, query);
+            GameplayErrorCode error = ApplyQuery(candidate, entity, query);
             if (error != GameplayErrorCode.None)
             {
                 return error;
@@ -794,6 +804,7 @@ public sealed class PerspectiveStateMirrorV1
     }
 
     private static GameplayErrorCode ApplyQuery(
+        MirrorState candidate,
         EntityState entity,
         ModernQueryV1 query)
     {
@@ -802,47 +813,324 @@ public sealed class PerspectiveStateMirrorV1
             return GameplayErrorCode.None;
         }
 
+        if (!TryBuildQueryContext(
+                entity,
+                query,
+                out QueryContext context,
+                out GameplayErrorCode contextError))
+        {
+            return contextError;
+        }
+
+        List<MirrorQueryFieldSnapshotV1> semanticFields = new(
+            query.Fields.Count);
         foreach (ModernQueryFieldV1 field in query.Fields)
+        {
+            if (!TryCreateSemanticQueryField(
+                    candidate,
+                    context,
+                    field,
+                    out MirrorQueryFieldSnapshotV1? semanticField,
+                    out GameplayErrorCode fieldError))
+            {
+                return fieldError;
+            }
+
+            semanticFields.Add(semanticField!);
+        }
+
+        if (context.IdentityProvenance == MirrorProvenanceV1.UnknownRedacted)
+        {
+            entity.CardCode = MirrorValueV1.Unknown<uint>();
+            entity.QueryFields.RemoveAll(
+                field => !IsAlwaysPublicQueryField(field.Flag));
+        }
+
+        foreach (MirrorQueryFieldSnapshotV1 field in semanticFields)
         {
             switch (field.Flag)
             {
-                case QueryFlagV1.Code when field.Payload is ModernQueryUInt32PayloadV1 code:
-                    entity.CardCode = MirrorValueV1.Known(code.Value);
+                case QueryFlagV1.Code:
+                    entity.CardCode = field.Value.IsKnown
+                        ? MirrorValueV1.Known(
+                            field.Value.UInt32Value,
+                            field.Value.Provenance)
+                        : MirrorValueV1.Unknown<uint>();
                     break;
-                case QueryFlagV1.Position when field.Payload is ModernQueryUInt32PayloadV1 position:
-                    entity.Position = MirrorValueV1.Known(position.Value);
-                    break;
-                case QueryFlagV1.Owner when field.Payload is ModernQueryUInt8PayloadV1 owner:
-                    if (owner.Value > 1)
+                case QueryFlagV1.Position:
+                    if (!field.Value.IsKnown ||
+                        field.Value.Kind != MirrorQueryValueKindV1.UInt32)
                     {
-                        return GameplayErrorCode.InvalidParticipant;
+                        return GameplayErrorCode.MalformedQuery;
+                    }
+
+                    entity.Position = MirrorValueV1.Known(
+                        field.Value.UInt32Value,
+                        field.Value.Provenance);
+                    break;
+                case QueryFlagV1.Owner:
+                    if (!field.Value.IsKnown ||
+                        field.Value.Kind != MirrorQueryValueKindV1.UInt8 ||
+                        field.Value.UInt8Value > 1)
+                    {
+                        return field.Value.Kind == MirrorQueryValueKindV1.UInt8
+                            ? GameplayErrorCode.InvalidParticipant
+                            : GameplayErrorCode.MalformedQuery;
                     }
 
                     entity.Owner = MirrorValueV1.Known(
-                        MapPlayer(entity.Perspective, owner.Value));
+                        MapPlayer(entity.Perspective, field.Value.UInt8Value),
+                        field.Value.Provenance);
                     break;
-                case QueryFlagV1.Code:
-                case QueryFlagV1.Position:
-                case QueryFlagV1.Owner:
-                    return GameplayErrorCode.MalformedQuery;
             }
 
             int existing = entity.QueryFields.FindIndex(
                 item => item.Flag == field.Flag);
-            MirrorQueryFieldSnapshotV1 snapshot =
-                new(field);
             if (existing >= 0)
             {
-                entity.QueryFields[existing] = snapshot;
+                entity.QueryFields[existing] = field;
             }
             else
             {
-                entity.QueryFields.Add(snapshot);
+                entity.QueryFields.Add(field);
             }
         }
 
         return GameplayErrorCode.None;
     }
+
+    private static bool TryBuildQueryContext(
+        EntityState entity,
+        ModernQueryV1 query,
+        out QueryContext context,
+        out GameplayErrorCode error)
+    {
+        bool hasPosition = entity.Position.IsKnown;
+        uint position = entity.Position.Value;
+        bool isPublic = false;
+        bool isHidden = false;
+        foreach (ModernQueryFieldV1 field in query.Fields)
+        {
+            switch (field.Flag)
+            {
+                case QueryFlagV1.Position when
+                    field.Payload is ModernQueryUInt32PayloadV1 positionPayload:
+                    hasPosition = true;
+                    position = positionPayload.Value;
+                    break;
+                case QueryFlagV1.Position:
+                    context = default;
+                    error = GameplayErrorCode.MalformedQuery;
+                    return false;
+                case QueryFlagV1.IsPublic when
+                    field.Payload is ModernQueryUInt8PayloadV1 publicPayload:
+                    isPublic = publicPayload.Value != 0;
+                    break;
+                case QueryFlagV1.IsPublic:
+                    context = default;
+                    error = GameplayErrorCode.MalformedQuery;
+                    return false;
+                case QueryFlagV1.IsHidden when
+                    field.Payload is ModernQueryUInt8PayloadV1 hiddenPayload:
+                    isHidden = hiddenPayload.Value != 0;
+                    break;
+                case QueryFlagV1.IsHidden:
+                    context = default;
+                    error = GameplayErrorCode.MalformedQuery;
+                    return false;
+            }
+        }
+
+        if (isPublic && isHidden)
+        {
+            context = default;
+            error = GameplayErrorCode.InvalidStateTransition;
+            return false;
+        }
+
+        bool faceUp = hasPosition && (position & PositionFaceUp) != 0;
+        if (isHidden && faceUp)
+        {
+            context = default;
+            error = GameplayErrorCode.InvalidStateTransition;
+            return false;
+        }
+
+        bool identityPublic = isPublic || faceUp;
+        bool self = MapPlayer(entity.Perspective, entity.Address.Controller) ==
+                    MirrorParticipantRoleV1.Self;
+        MirrorProvenanceV1 identityProvenance = identityPublic
+            ? MirrorProvenanceV1.PublicProtocolFact
+            : self
+                ? MirrorProvenanceV1.PerspectivePrivateFact
+                : MirrorProvenanceV1.UnknownRedacted;
+        context = new QueryContext(
+            identityProvenance,
+            faceUp,
+            isPublic,
+            isHidden);
+        error = GameplayErrorCode.None;
+        return true;
+    }
+
+    private static bool TryCreateSemanticQueryField(
+        MirrorState candidate,
+        QueryContext context,
+        ModernQueryFieldV1 field,
+        out MirrorQueryFieldSnapshotV1? semanticField,
+        out GameplayErrorCode error)
+    {
+        semanticField = null;
+        error = GameplayErrorCode.None;
+        MirrorProvenanceV1 provenance = QueryProvenance(field.Flag, context);
+        switch (field.Payload)
+        {
+            case ModernQueryUInt8PayloadV1 value:
+                if (field.Flag == QueryFlagV1.Owner && value.Value > 1)
+                {
+                    error = GameplayErrorCode.InvalidParticipant;
+                    return false;
+                }
+
+                semanticField = new MirrorQueryFieldSnapshotV1(
+                    field.Flag,
+                    MirrorQueryValueV1.UInt8(value.Value, provenance));
+                return true;
+            case ModernQueryUInt32PayloadV1 value:
+                semanticField = new MirrorQueryFieldSnapshotV1(
+                    field.Flag,
+                    provenance == MirrorProvenanceV1.UnknownRedacted
+                        ? MirrorQueryValueV1.Unknown()
+                        : MirrorQueryValueV1.UInt32(value.Value, provenance));
+                return true;
+            case ModernQueryInt32PayloadV1 value:
+                semanticField = new MirrorQueryFieldSnapshotV1(
+                    field.Flag,
+                    provenance == MirrorProvenanceV1.UnknownRedacted
+                        ? MirrorQueryValueV1.Unknown()
+                        : MirrorQueryValueV1.Int32(value.Value, provenance));
+                return true;
+            case ModernQueryUInt64PayloadV1 value:
+                semanticField = new MirrorQueryFieldSnapshotV1(
+                    field.Flag,
+                    provenance == MirrorProvenanceV1.UnknownRedacted
+                        ? MirrorQueryValueV1.Unknown()
+                        : MirrorQueryValueV1.UInt64(value.Value, provenance));
+                return true;
+            case ModernQueryLinkPayloadV1 value:
+                semanticField = new MirrorQueryFieldSnapshotV1(
+                    field.Flag,
+                    provenance == MirrorProvenanceV1.UnknownRedacted
+                        ? MirrorQueryValueV1.Unknown()
+                        : MirrorQueryValueV1.UInt32Pair(
+                            value.Link,
+                            value.LinkMarker,
+                            provenance));
+                return true;
+            case ModernQueryUInt32VectorPayloadV1 value:
+                semanticField = new MirrorQueryFieldSnapshotV1(
+                    field.Flag,
+                    provenance == MirrorProvenanceV1.UnknownRedacted
+                        ? MirrorQueryValueV1.Unknown()
+                        : MirrorQueryValueV1.UInt32Vector(
+                            value.Values,
+                            provenance,
+                            packed: false));
+                return true;
+            case ModernQueryPackedUInt32VectorPayloadV1 value:
+                semanticField = new MirrorQueryFieldSnapshotV1(
+                    field.Flag,
+                    provenance == MirrorProvenanceV1.UnknownRedacted
+                        ? MirrorQueryValueV1.Unknown()
+                        : MirrorQueryValueV1.UInt32Vector(
+                            value.Values,
+                            provenance,
+                            packed: true));
+                return true;
+            case ModernQueryLocInfoPayloadV1 value:
+                if (!TryResolveEntity(
+                        candidate,
+                        value.Value,
+                        out MirrorEntityIdV1 entityId,
+                        out error))
+                {
+                    return false;
+                }
+
+                semanticField = new MirrorQueryFieldSnapshotV1(
+                    field.Flag,
+                    MirrorQueryValueV1.EntityReference(entityId));
+                return true;
+            case ModernQueryLocInfoVectorPayloadV1 value:
+                List<MirrorEntityIdV1> references = new(value.Values.Count);
+                foreach (ModernLocInfoV1 locInfo in value.Values)
+                {
+                    if (!TryResolveEntity(
+                            candidate,
+                            locInfo,
+                            out MirrorEntityIdV1 resolvedEntityId,
+                            out error))
+                    {
+                        return false;
+                    }
+
+                    references.Add(resolvedEntityId);
+                }
+
+                semanticField = new MirrorQueryFieldSnapshotV1(
+                    field.Flag,
+                    MirrorQueryValueV1.EntityReferenceVector(references));
+                return true;
+            default:
+                error = GameplayErrorCode.MalformedQuery;
+                return false;
+        }
+    }
+
+    private static bool TryResolveEntity(
+        MirrorState candidate,
+        ModernLocInfoV1 locInfo,
+        out MirrorEntityIdV1 entityId,
+        out GameplayErrorCode error)
+    {
+        entityId = default;
+        if (!TryNormalizeAddress(locInfo, out MirrorAddress address, out error))
+        {
+            return false;
+        }
+
+        if (!candidate.Entities.TryGetValue(address, out EntityState? entity))
+        {
+            error = GameplayErrorCode.UnknownMirrorReference;
+            return false;
+        }
+
+        entityId = entity.Id;
+        error = GameplayErrorCode.None;
+        return true;
+    }
+
+    private static MirrorProvenanceV1 QueryProvenance(
+        QueryFlagV1 flag,
+        QueryContext context) =>
+        flag is QueryFlagV1.Position or
+            QueryFlagV1.Owner or
+            QueryFlagV1.IsPublic or
+            QueryFlagV1.IsHidden
+            ? MirrorProvenanceV1.PublicProtocolFact
+            : context.IdentityProvenance;
+
+    private static bool IsAlwaysPublicQueryField(QueryFlagV1 flag) =>
+        flag is QueryFlagV1.Position or
+            QueryFlagV1.Owner or
+            QueryFlagV1.IsPublic or
+            QueryFlagV1.IsHidden;
+
+    private readonly record struct QueryContext(
+        MirrorProvenanceV1 IdentityProvenance,
+        bool FaceUp,
+        bool IsPublic,
+        bool IsHidden);
 
     private static GameplayErrorCode ApplyDraw(
         MirrorState candidate,
@@ -985,7 +1273,9 @@ public sealed class PerspectiveStateMirrorV1
 
         if (payload.CardCode != 0)
         {
-            entity.CardCode = MirrorValueV1.Known(payload.CardCode);
+            entity.CardCode = MirrorValueV1.Known(
+                payload.CardCode,
+                MirrorProvenanceV1.PublicProtocolFact);
         }
 
         candidate.PendingChain = new ChainState(
@@ -993,8 +1283,9 @@ public sealed class PerspectiveStateMirrorV1
             entity.Id,
             payload.CardCode == 0
                 ? MirrorValueV1.Unknown<uint>()
-                : MirrorValueV1.Known(payload.CardCode),
-            payload.Location,
+                : MirrorValueV1.Known(
+                    payload.CardCode,
+                    MirrorProvenanceV1.PublicProtocolFact),
             payload.Description);
         return GameplayErrorCode.None;
     }
@@ -1283,7 +1574,7 @@ public sealed class PerspectiveStateMirrorV1
             new MirrorEntityIdV1(ordinal),
             address,
             hasCardCode
-                ? MirrorValueV1.Known(cardCode)
+                ? CreateCardCodeValue(candidate, address, cardCode, position)
                 : MirrorValueV1.Unknown<uint>(),
             address.IsOverlay
                 ? MirrorValueV1.Unknown<uint>()
@@ -1291,6 +1582,52 @@ public sealed class PerspectiveStateMirrorV1
             MirrorValueV1.Unknown<MirrorParticipantRoleV1>(),
             candidate.Perspective);
         return true;
+    }
+
+    private static void ApplyCardCodeObservation(
+        MirrorState candidate,
+        EntityState entity,
+        MirrorAddress address,
+        uint cardCode,
+        uint position)
+    {
+        MirrorValueV1<uint> value = CreateCardCodeValue(
+            candidate,
+            address,
+            cardCode,
+            position);
+        entity.CardCode = value;
+        if (!value.IsKnown)
+        {
+            entity.QueryFields.RemoveAll(
+                field => !IsAlwaysPublicQueryField(field.Flag));
+        }
+    }
+
+    private static MirrorValueV1<uint> CreateCardCodeValue(
+        MirrorState candidate,
+        MirrorAddress address,
+        uint cardCode,
+        uint position)
+    {
+        if (cardCode == 0)
+        {
+            return MirrorValueV1.Unknown<uint>();
+        }
+
+        if (!address.IsOverlay && (position & PositionFaceUp) != 0)
+        {
+            return MirrorValueV1.Known(
+                cardCode,
+                MirrorProvenanceV1.PublicProtocolFact);
+        }
+
+        return MapPlayer(candidate.Perspective, address.Controller) ==
+               MirrorParticipantRoleV1.Self
+            ? MirrorValueV1.Known(
+                cardCode,
+                MirrorProvenanceV1.PerspectivePrivateFact)
+            : MirrorValueV1.Unknown<uint>();
     }
 
     private static bool CanRemoveEntity(MirrorState candidate, EntityState entity)
@@ -1582,7 +1919,6 @@ public sealed class PerspectiveStateMirrorV1
                 chain.ChainSize,
                 chain.Card,
                 chain.CardCode,
-                chain.Location,
                 chain.Description,
                 chain.Status,
                 chain.Targets))
@@ -1685,13 +2021,11 @@ public sealed class PerspectiveStateMirrorV1
             uint chainSize,
             MirrorEntityIdV1 card,
             MirrorValueV1<uint> cardCode,
-            ModernLocInfoV1 location,
             ulong description)
         {
             ChainSize = chainSize;
             Card = card;
             CardCode = cardCode;
-            Location = location;
             Description = description;
         }
 
@@ -1701,8 +2035,6 @@ public sealed class PerspectiveStateMirrorV1
 
         internal MirrorValueV1<uint> CardCode { get; }
 
-        internal ModernLocInfoV1 Location { get; }
-
         internal ulong Description { get; }
 
         internal MirrorChainStatusV1 Status { get; set; }
@@ -1711,7 +2043,7 @@ public sealed class PerspectiveStateMirrorV1
 
         internal ChainState Clone()
         {
-            ChainState clone = new(ChainSize, Card, CardCode, Location, Description)
+            ChainState clone = new(ChainSize, Card, CardCode, Description)
             {
                 Status = Status
             };
