@@ -261,14 +261,40 @@ The public snapshot's existing `Zone` and `Locator` are authoritative. The
 helper may call the existing locator codec to validate a candidate locator
 shape for comparison, but it never returns a newly created locator.
 
+The indexed compatibility predicate is explicit and symmetric with the
+resolved private Mirror zone:
+
+```text
+INDEXED_ZONE_COMPATIBLE(resolved MirrorZoneV1, accepted PublicSemanticZoneV1)
+
+MirrorZoneV1.MonsterZone
+    ↔ PublicSemanticZoneV1.MonsterZone only
+
+MirrorZoneV1.Graveyard
+    ↔ PublicSemanticZoneV1.Graveyard only
+
+MirrorZoneV1.Banished
+    ↔ PublicSemanticZoneV1.Banished only
+
+MirrorZoneV1.SpellTrapZone
+    ↔ PublicSemanticZoneV1.SpellTrapZone
+      or PublicSemanticZoneV1.FieldZone
+      or PublicSemanticZoneV1.PendulumRelevantState
+```
+
+This is a compatibility check, not a public-zone classifier. I4B never chooses
+which S/T semantic zone applies. That value is already selected by I3D and is
+read from `accepted PublicCardStateV1.Zone`.
+
 The permitted correlation forms are:
 
 ```text
 INDEXED_VISIBLE_CORRELATION
     exact absolute player
+    INDEXED_ZONE_COMPATIBLE(resolved MirrorZoneV1, accepted PublicSemanticZoneV1)
     exact semantic PublicSemanticZoneV1 already present on the accepted card
     exact resolved indexed sequence
-    accepted card must already carry the matching I3D indexed locator form
+    accepted card locator parses to the exact player, accepted zone, and sequence
     exactly one accepted card required
 
 HAND_OR_EXTRA_PUBLIC_ORDINAL_CORRELATION
@@ -652,6 +678,16 @@ CURRENT_GAMEPLAY_TEST_COUNT=67
 PLANNED_NEW_I4B_TEST_GROUPS=18
 EXPECTED_GAMEPLAY_TEST_COUNT=85
 ```
+
+`EffectYnIndexedCorrelation` and the corresponding CHAIN correlation group
+must include a same-player/same-sequence cross-zone case. The test must place
+an indexed MonsterZone card and an indexed SpellTrapZone-family card at the
+same numeric sequence and prove that only the accepted card whose
+`PublicSemanticZoneV1` satisfies `INDEXED_ZONE_COMPATIBLE` can match. It must
+also cover accepted `SpellTrapZone`, `FieldZone`, and
+`PendulumRelevantState` values. I4B may reject or accept a candidate based on
+this compatibility predicate, but I3D alone chooses the concrete S/T public
+zone; I4B never classifies it.
 
 The groups cover every required positive, negative, correlation, authority,
 privacy, staleness, ownership, deterministic, and I4A/I3 regression case.

@@ -244,7 +244,11 @@ The tests must assert the exact 24-byte layout, shared context, NO/YES order,
 0/1 binding, malformed/trailing/legacy/player/controller/location failures,
 all authority barriers, indexed/Hand/Extra/Overlay/Main Deck correlation,
 CardCode-safe/unsafe variants, ambiguity, no raw sequence identity, source
-ownership, stale rejection, and privacy reflection.
+ownership, stale rejection, and privacy reflection. The indexed group must
+include a same-player/same-sequence cross-zone case and accepted
+`SpellTrapZone`, `FieldZone`, and `PendulumRelevantState` cases. It must prove
+that the accepted semantic zone participates in the match and that a card from
+another indexed zone with the same sequence cannot match.
 
 - [ ] **Step 4: Cover the eight CHAIN groups.**
 
@@ -619,8 +623,28 @@ resolution. If zero or multiple captured cards match, return
 For non-pile, non-overlay resolved cards, inspect accepted
 `PublicCardStateV1` entries and their already-classified `Zone` and
 `PublicSemanticLocatorV1`. Use the existing locator codec only to validate a
-candidate locator shape for comparison. Require exactly one accepted card with
-all three required indexed facts:
+candidate locator shape for comparison. First apply this compatibility
+predicate; it never chooses a public zone:
+
+```text
+INDEXED_ZONE_COMPATIBLE(resolved MirrorZoneV1, accepted PublicSemanticZoneV1)
+
+MirrorZoneV1.MonsterZone
+    ↔ PublicSemanticZoneV1.MonsterZone only
+
+MirrorZoneV1.Graveyard
+    ↔ PublicSemanticZoneV1.Graveyard only
+
+MirrorZoneV1.Banished
+    ↔ PublicSemanticZoneV1.Banished only
+
+MirrorZoneV1.SpellTrapZone
+    ↔ PublicSemanticZoneV1.SpellTrapZone
+      or PublicSemanticZoneV1.FieldZone
+      or PublicSemanticZoneV1.PendulumRelevantState
+```
+
+Then require exactly one accepted card with all three required indexed facts:
 
 ```text
 exact absolute player
@@ -628,8 +652,10 @@ exact accepted PublicSemanticZoneV1 already classified by I3D
 exact resolved indexed sequence
 ```
 
-The accepted card's existing indexed locator must encode those facts. Do not
-construct or return the comparison locator.
+The accepted card's existing indexed locator must parse to the exact player,
+accepted zone, and sequence. Do not construct or return the comparison locator.
+For SpellTrapZone, I4B accepts only the three listed I3D-classified values and
+does not select among them.
 
 The helper must not add a `MirrorZoneV1 → PublicSemanticZoneV1` switch. The
 accepted snapshot's existing public `Zone` is the I3D classification authority.
