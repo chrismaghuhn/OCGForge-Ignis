@@ -107,6 +107,8 @@
     "unknown_flag_policy": "FAIL_CLOSED",
     "known_unadmitted_flag_policy": "FAIL_CLOSED",
     "composite_flag_policy": "FAIL_CLOSED",
+    "duplicate_flag_occurrence_policy": "FAIL_CLOSED",
+    "duplicate_flag_occurrence_scope": "WITHIN_ONE_MODERN_QUERY_BEFORE_QUERY_END",
     "known_query_flag_count": 27,
     "admitted_flag_count": 26,
     "known_unsupported_flag_count": 0,
@@ -1010,6 +1012,22 @@
           "payload_contract_id": "UNKNOWN",
           "record_hex": "08 00 03 00 00 00 78 56 34 12",
           "expected": "FAIL_CLOSED; flag=QUERY_CODE|QUERY_POSITION"
+        }
+      ],
+      "duplicate_flag_vectors": [
+        {
+          "case": "DUPLICATE_FLAG_OCCURRENCE",
+          "scope": "ONE_MODERN_QUERY_V1",
+          "flag": "QUERY_CODE",
+          "query_hex": "08 00 01 00 00 00 78 56 34 12 08 00 01 00 00 00 78 56 34 12 04 00 00 00 00 80",
+          "expected": "FAIL_CLOSED_NO_PARTIAL_MIRROR_MUTATION"
+        },
+        {
+          "case": "DUPLICATE_FLAG_OCCURRENCE",
+          "scope": "ONE_MODERN_QUERY_V1",
+          "flag": "QUERY_OVERLAY_CARD",
+          "query_hex": "0C 00 00 00 01 00 01 00 00 00 78 56 34 12 0C 00 00 00 01 00 01 00 00 00 78 56 34 12 04 00 00 00 00 80",
+          "expected": "FAIL_CLOSED_NO_PARTIAL_MIRROR_MUTATION"
         }
       ],
       "required_negative_cases_by_payload_contract": {

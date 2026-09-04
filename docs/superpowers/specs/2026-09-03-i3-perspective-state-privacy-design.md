@@ -792,7 +792,11 @@ redefine or revise them.
 The pinned modern core defines 26 data flags and one outer-grammar sentinel.
 Every definition is listed below in ascending numeric `u32` order. A normal
 query record admits exactly one data-flag value; zero, an unknown value, or a
-bitwise-composite value is not an admitted flag.
+bitwise-composite value is not an admitted flag. Within one query value before
+its `QUERY_END`, each admitted data flag may occur at most once. A duplicate
+admitted occurrence is malformed and fails closed without partial mirror
+mutation. This rule does not prohibit the same flag in two separate query
+values in a `ModernQueryStreamV1`.
 
 The exact definition sites are `ocgapi_constants.h#QUERY_*`. The exact modern
 writers are `card.cpp#card::get_infos`; the corresponding reader/size logic is
@@ -897,10 +901,18 @@ An unknown, zero, composite, or known-but-unadmitted flag is
 `FAIL_CLOSED`. It is never skipped, treated as opaque, mapped to a legacy
 width, normalized into another flag, or partially applied.
 
+A second occurrence of an admitted flag within the same `ModernQueryV1`,
+before `QUERY_END`, is also `FAIL_CLOSED`. The first occurrence is not
+committed before this query-level duplicate check can succeed; scalar overwrite
+and vector append behavior are both forbidden. Two separately terminated
+queries in one stream may repeat a flag because their duplicate scope is
+independent.
+
 The machine inventory's `validation_vectors` contains one canonical positive
 record for each of the 26 admitted flags. It also contains shape-complete
 truncated and wrong-size/trailing vectors, counted-vector length-mismatch and
-bound-overflow vectors, two unknown/composite-flag vectors, and inherited
+bound-overflow vectors, two duplicate-occurrence vectors (one scalar and one
+counted vector), two unknown/composite-flag vectors, and inherited
 outer-grammar regressions for `ONFIELD_SKIPPED`, `QUERY_END`, truncated
 nonzero records, exact stream boundaries, and multiple complete records. The
 hex strings are independently constructed record bytes; they are not copied
