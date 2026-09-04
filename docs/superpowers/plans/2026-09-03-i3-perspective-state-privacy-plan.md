@@ -2,24 +2,32 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Specify and later implement the separately reviewable I3A–I3D gameplay-message, perspective, knowledge, locator, and public-projection slices, with the I3C0/I3D0 byte-codec freezes preceding their implementations, without introducing a second rules authority or hidden-information leak.
+**Goal:** Record the separately reviewable I3A–I3D gameplay-message, perspective, knowledge, locator, and public-projection slices, including the accepted I3C0/I3C history and the I3D0 freeze, without introducing a second rules authority or hidden-information leak.
 
-**Architecture:** A future platform-neutral Gameplay layer consumes one claimed I2 handoff, processes pending bytes before new reads, decodes only the modern pinned GAME_MSG stream, and owns a single `PerspectiveStateMirror`. A separate projection boundary converts only accepted perspective-safe values to `PublicContractProjectionV1`; private response binding, model input, and audit traces remain outside I3.
+**Architecture:** The platform-neutral Gameplay layer consumes one claimed I2 handoff, processes pending bytes before new reads, decodes only the modern pinned GAME_MSG stream, and owns a single `PerspectiveStateMirror`. The accepted I3C boundary reduces that mirror to `PublicStateSnapshotV1` and canonical compact UTF-8 JSON; I3D0 freezes those existing bytes and the versioned `public_projection_id`. Private response binding, model input, and audit traces remain outside I3.
 
 **Tech Stack:** C# / .NET 10, deterministic managed byte parsing, accepted `OCGForge.Ignis.Protocol` and I2 Client contracts, custom deterministic executable tests, no third-party runtime dependencies, no embedded ocgcore.
 
 ---
 
-Execution status: CONTRACT_FREEZE_ONLY; all implementation tasks remain `NOT_RUN` and unauthorized.
+Execution status: I3A/I3B0/I3B/I3C0/I3C `FINAL_PASS`; I3D0 is the current documentation-only freeze; I3D remains `NOT_AUTHORIZED`.
 Frozen slice order: `I3A → I3B0 → I3B → I3C0 → I3C → I3D0 → I3D`.
+
+The unchecked checklist items in the historical task sections preserve the
+original execution plan. Current acceptance status is authoritative from the
+summary above: I3A, I3B0, I3B, I3C0, and I3C are accepted; I3D0 is this
+documentation-only reconciliation; I3D and all later slices remain
+unauthorized.
 
 ## Frozen inputs and non-negotiable boundaries
 
 - Base contract: `ocgforge-ignis.gameplay.perspective-privacy.v1`.
 - Inventory: `ocgforge-ignis.game_message_support.v1`.
+- Accepted public-state contract: `ocgforge-ignis.public-state-projection.v1`.
+- Accepted locator contract: `ocgforge-ignis.public-semantic-locator.v1`.
 - Runtime: EDOPro `30935e847165a9ef0e547fb51a43f36168fab7c7`, ocgcore gitlink `46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57`.
 - I2 handoff: `FINAL_GAMEPLAY_PERSPECTIVE=UNRESOLVED_AT_I2_HANDOFF`.
-- I3 production is not authorized by this plan. The frozen sequence is `I3A → I3B0 → I3B → I3C0 → I3C → I3D0 → I3D`; each implementation or documentation-freeze slice requires a new explicit task, its own branch/commit/PR, focused gates, independent review, and a stop.
+- Each slice requires its own explicit authorization, focused gates, independent review, and stop. The accepted I3C implementation is evidence for the current I3D0 reconciliation; I3D remains separately unauthorized.
 - EDOPro remains the sole rules/legal authority. I3 never recomputes legality, selects a prompt answer, creates candidates, scores a model, or binds a response.
 - `ANNOUNCE_CARD`, Tag/Relay, Match/Siding, observer gameplay, reconnect, public servers, IPC, WPF, and model integration remain fail-closed or out of scope.
 
@@ -41,6 +49,9 @@ exactly-once claim, pending-byte-first access, live transport ownership, and
 exactly-once close on failure.
 
 ## Task 1: I3A GAME_MSG decoder foundation
+
+Status: `FINAL_PASS` on accepted main; checklist retained as historical
+execution detail.
 
 **Files:**
 
@@ -87,6 +98,9 @@ host flag, RPS outcome, or TP choice.
 
 ## Task 2: I3B0 query-flag union freeze (documentation only)
 
+Status: `FINAL_PASS` on accepted main; checklist retained as historical
+execution detail.
+
 This is a separate contract-freeze task between I3A and I3B. It creates no
 production project or runtime parser.
 
@@ -116,6 +130,9 @@ production project or runtime parser.
 
 ## Task 3: I3B deterministic PerspectiveStateMirror
 
+Status: `FINAL_PASS` on accepted main; checklist retained as historical
+execution detail.
+
 **Files:**
 
 - Create future `src/OCGForge.Ignis.Gameplay/PerspectiveStateMirrorV1.cs`.
@@ -136,6 +153,9 @@ production project or runtime parser.
 - [ ] **Step 6: Stop.** Do not add knowledge-destroying policy beyond explicit hooks, public projection, candidates, or response selection. Commit and review I3B separately.
 
 ## Task 4: I3C0 semantic-locator codec freeze (documentation only)
+
+Status: `FINAL_PASS` on accepted main; checklist retained as historical
+execution detail.
 
 This is a separate contract-freeze task. It creates no production project or
 runtime implementation and must be independently reviewed before I3C.
@@ -162,70 +182,61 @@ runtime implementation and must be independently reviewed before I3C.
 - [ ] **Step 4: Stop.** I3C0 does not implement the codec or the knowledge
   reducer. A separate implementation authorization is required after review.
 
-## Task 5: I3C card knowledge and semantic locators
+## Task 5: I3C accepted perspective-safe public state projection
 
-**Files:**
+Status: `FINAL_PASS` on accepted main. This task supersedes the original
+card-knowledge-only description; its implementation history remains in the
+repository commits and is not rewritten by I3D0.
 
-- Create future `src/OCGForge.Ignis.Gameplay/CardKnowledgeV1.cs`.
-- Create future `src/OCGForge.Ignis.Gameplay/PublicSemanticLocatorV1.cs`.
-- Create future `src/OCGForge.Ignis.Gameplay/KnowledgeBoundaryReducerV1.cs`.
-- Create future `tests/OCGForge.Ignis.Gameplay.Tests/CardKnowledgeAndLocatorTests.cs`.
-- Add exact provenance for shuffle/reorder/reveal behavior.
+**Accepted files:**
 
-- [ ] **Step 1: Write RED knowledge tests.** Assert `UnknownIdentity`, `KnownPrivateIdentity(card_code)`, and `KnownPublicIdentity(card_code)` are distinct typed values. Assert own private cards may retain legitimate identity, opponent hidden cards do not, and `card_code=0` is never the unknown sentinel.
+- `src/OCGForge.Ignis.Gameplay/PublicStateProjectionV1.cs`;
+- `tests/OCGForge.Ignis.Gameplay.Tests/Program.cs`;
+- `tests/OCGForge.Ignis.Gameplay.Tests/Tests/I3CPublicStateProjectionTests.cs`;
+- `docs/contracts/public-state-projection-v1.md`.
 
-- [ ] **Step 2: Write RED locator lifecycle tests.** Assert deterministic create/retain/move/rebind/destroy/replace behavior, distinct locators for duplicate public card codes, no code-as-locator shortcut, no pointer/object/PID/path/time inputs, and no dependence on unordered iteration.
-
-- [ ] **Step 3: Implement knowledge-destroying transitions.** For `MSG_SHUFFLE_DECK`, `MSG_SHUFFLE_HAND`, `MSG_SHUFFLE_EXTRA`, `MSG_SHUFFLE_SET_CARD`, `MSG_REVERSE_DECK`, `MSG_SWAP_GRAVE_DECK`, ambiguous randomized movement, and ambiguous reorder, destroy stale hidden continuity. `MSG_REFRESH_DECK` is consumed as an exact empty presentation/control signal and supplies no player-scoped mutation. Retain identity only when a complete perspective-legitimate mapping is explicitly proven.
-
-- [ ] **Step 4: Add metamorphic privacy tests.** Mutate hidden opponent identities, hidden deck order, stale post-reveal identities, equal-code duplicate histories, and ambiguous source locators. Require the same public locator table and public meaning where legitimate public knowledge is unchanged; require old hidden locators to disappear after destruction.
-
-- [ ] **Step 5: Verify I3C.** Run all I3B tests plus paired hidden-world fixtures A–E, fresh-process output comparison, no-secret scan, no-control-metadata scan, and explicit resource-failure tests. Do not add probability, archetype inference, elimination, or hidden-deck reconstruction.
-
-- [ ] **Step 6: Stop.** Do not implement the locator codec, `PublicContractProjectionV1`, or any model-facing identity in the same task. I3C consumes only the accepted I3C0 codec contract and is reviewed separately.
+- [x] **Step 1: Reduce the accepted mirror.** Project only proven mirror facts into immutable `PublicStateSnapshotV1` values with absolute p0/p1 participants, perspective-safe card knowledge, semantic locators, and explicit fail-closed errors.
+- [x] **Step 2: Freeze accepted I3C behavior as evidence.** Emit compact UTF-8 JSON with fixed property order, ordinal card ordering, JSON `null` for absent optionals, and the raw lowercase SHA-256. Do not add relations, chains, events, query dumps, response binding, candidates, model input, or an I6 claim.
+- [x] **Step 3: Verify privacy and determinism.** Cover paired hidden worlds, internal allocation-order independence, culture/order determinism, SZONE mapping, public API boundaries, and canonical-byte storage isolation. The accepted result is `43/43` Gameplay tests with no model-input or cross-oracle acceptance claim.
+- [x] **Step 4: Stop.** I3C does not authorize I3D0 retroactively or authorize I4/I5.
 
 ## Task 6: I3D0 public-projection identity/codec freeze (documentation only)
 
-This is a separate contract-freeze task after I3C and before I3D. It creates no
-production project or runtime implementation.
+Status: current documentation-only reconciliation task. It creates no
+production project, runtime implementation, test code, fixture, or dependency.
 
 **Files:**
 
-- Modify the owning I3 design/spec document only.
-- Add no C# source, project, fixture, or runtime dependency.
+- `docs/contracts/public-state-projection-v1.md`;
+- `docs/superpowers/specs/2026-09-03-i3-perspective-state-privacy-design.md`;
+- `docs/superpowers/plans/2026-09-03-i3-perspective-state-privacy-plan.md`.
 
-- [ ] **Step 1: Freeze the projection domain.** Define the exact projection
-  domain tag, schema/version bytes, participant/zone/entity field order,
-  integer widths, endian order, enum codes, and explicit optional/unknown and
-  knowledge-union encodings.
-- [ ] **Step 2: Freeze canonical projection bytes.** Define vector count and
-  ordering rules, relation encoding, the public locator table encoding, and
-  the exact public identity hash algorithm and prefix. Exclude raw protocol,
-  private-control, hidden-opponent, execution, and model-derived fields.
-- [ ] **Step 3: Add codec-freeze evidence.** Add golden projection bytes and
-  paired-hidden-world metamorphic cases A–E, including process-restart and
-  chunking invariance. Leave all implementation gates `NOT_RUN`.
-- [ ] **Step 4: Stop.** I3D0 does not implement projection or identity code. A
-  separate implementation authorization is required after review.
+- [x] **Step 1: Reconcile history.** Record that I3 implemented canonical bytes before I3D0, that I3D0 does not retroactively authorize that implementation, and that this task freezes the already accepted I3C V1 bytes.
+- [x] **Step 2: Freeze the existing JSON codec.** Freeze `CANONICAL_ENCODING=UTF8_COMPACT_JSON`, exact top-level/participant/card field order, p0/p1 and ordinal locator ordering, JSON `null` optional encoding, and the absence of relation, chain, event, and separate locator-table vectors.
+- [x] **Step 3: Freeze digest and identity definitions.** Freeze raw SHA-256 over the exact canonical bytes and `public_projection_id = ocgforge-ignis.public-state-projection.v1.` plus the 64-character lowercase digest; do not add a production identity property.
+- [x] **Step 4: Freeze evidence and future acceptance.** Document the independently verified golden vectors, privacy/determinism exclusions, immutability rule, and paired-world A–E requirements. Keep `I3D_PAIRED_WORLD_ACCEPTANCE=NOT_RUN`.
+- [x] **Step 5: Stop.** I3D0 does not implement I3D or authorize I4/I5.
 
-## Task 7: I3D PublicContractProjection and paired-world acceptance
+## Task 7: I3D remaining privacy/acceptance closure
+
+Status: `NOT_AUTHORIZED`; I3D0 does not start this task.
 
 **Files:**
 
-- Create future `src/OCGForge.Ignis.Gameplay/PublicContractProjectionV1.cs`.
-- Create future `src/OCGForge.Ignis.Gameplay/PublicGameplayIdentityV1.cs`.
+- Extend the accepted `src/OCGForge.Ignis.Gameplay/PublicStateProjectionV1.cs` only if a separately authorized I3D design requires an identity-binding seam.
+- Create future I3D identity-boundary tests under `tests/OCGForge.Ignis.Gameplay.Tests/`.
 - Create future `tests/OCGForge.Ignis.Gameplay.Tests/PublicProjectionPrivacyTests.cs`.
 - Use `fixtures/gameplay/v1/paired-hidden-worlds/` for deterministic fixture descriptions and expected hashes.
 
-- [ ] **Step 1: Write RED projection tests.** Assert projection values are copied/value-owned, stable under source mutation, explicitly encode known/unknown knowledge, preserve duplicate public entities, and exclude raw bytes, protocol offsets, socket state, endpoint, password, PID, wall clock, path, object identity, response binding, and model-derived fields.
+- [ ] **Step 1: Add I3D acceptance tests.** Assert the accepted I3C projection and future `public_projection_id` binding remain value-owned, stable under source mutation, perspective-safe, and free of raw/control/model data.
 
-- [ ] **Step 2: Implement the projection boundary.** Consume only the accepted mirror and locator table. Emit `PublicContractProjectionV1` plus a separate `public_projection_id`; never reuse a transport/provenance digest as gameplay identity. Reject publication when a required mirror field is ambiguous or when an unclassified field would enter the output.
+- [ ] **Step 2: Implement the remaining identity boundary.** Consume the accepted `PublicStateSnapshotV1` and bind the separately frozen `public_projection_id`; do not change canonical JSON, add a second codec, or create a second projection type.
 
-- [ ] **Step 3: Consume the accepted I3D0 codec.** Encode only according to the separately accepted projection domain, field order, optional/knowledge encoding, locator-table encoding, and identity hash/prefix. I3D must not make new byte-level identity decisions. Do not use map iteration or mutable aliases.
+- [ ] **Step 3: Preserve the accepted codec.** I3D must use the I3D0 field order, null encoding, ordinal sorting, raw digest, and identity prefix exactly; it must not use map iteration or mutable aliases.
 
-- [ ] **Step 4: Add paired-hidden-world acceptance.** Implement fixture classes A–E: different hidden opponent hands, different hidden deck order, reveal-then-hide knowledge destruction, duplicate equal-code public cards, and TCP chunking variants. Require byte-identical projection, public locator table, and public identity for semantically equal public worlds.
+- [ ] **Step 4: Add paired-hidden-world acceptance.** Implement fixture classes A–E: different hidden opponent hands, different hidden deck order, reveal-then-hide knowledge destruction, duplicate equal-code public cards, and TCP chunking variants. Require byte-identical projection, embedded locators, raw digest, and `public_projection_id` for semantically equal public worlds.
 
-- [ ] **Step 5: Verify I3D and boundaries.** Run I1/I2 regression, all I3 tests, fresh-process identity comparison, raw metadata leak scan, and no-candidate/no-legality/no-model scan. Keep `TRAINING_ELIGIBILITY=NO` and `AUTHORITATIVE_MODEL_INPUT=NO` for raw protocol diagnostics.
+- [ ] **Step 5: Verify I3D and boundaries.** Run I1/I2 regression, all I3 tests, fresh-process identity comparison, raw metadata leak scan, and no-candidate/no-legality/no-model scan. Keep `MODEL_INPUT_READY=NO` and `I6_CROSS_ORACLE_ACCEPTED=NO`.
 
 - [ ] **Step 6: Stop.** Do not implement I4/I5 prompt projection, private response binding, model input, runner IPC, checkpoint binding, or OCGForge cross-oracle.
 
@@ -241,7 +252,7 @@ production project or runtime implementation.
 
 - [ ] **Step 2: Add narrow hosted CI.** Restore, build Release, and run only the authorized I3 slice plus I1/I2 regressions. No EDOPro download, socket connection, public network, public server, model runner, or WPF.
 
-- [ ] **Step 3: Run the frozen gate checklist.** The implementation task may report only gates actually run. Apply I3-G00 through I3-G22 exactly as defined in the contract; all gates are `NOT_RUN` for I3A0.
+- [ ] **Step 3: Run the frozen gate checklist.** Each implementation task may report only gates actually run. I3C is accepted on main; I3D0 adds no runtime gate, and I3D must run its separately authorized privacy/identity gates.
 
 - [ ] **Step 4: Scope-audit before each slice commit.** Reject `.dll`, `.exe`, CDB, deck, checkpoint, copied upstream source, public endpoint, I4/I5 candidate type, model/IPC/UI code, or a Protocol→Gameplay reverse dependency.
 

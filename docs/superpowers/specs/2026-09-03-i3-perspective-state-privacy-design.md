@@ -1,11 +1,11 @@
 # OCGForge-Ignis I3A0 — Gameplay Perspective, State, and Privacy Contract
 
 Status: I3A0_CONTRACT_FREEZE=AUTHORIZED
-Production code authorization: NO
-I3A_AUTHORIZED: NO
-I3B_AUTHORIZED: NO
-I3C_AUTHORIZED: NO
-I3D_AUTHORIZED: NO
+Production code authorization at I3A0: NO
+I3A_AUTHORIZED_AT_I3A0: NO
+I3B_AUTHORIZED_AT_I3A0: NO
+I3C_AUTHORIZED_AT_I3A0: NO
+I3D_AUTHORIZED_AT_I3A0: NO
 Date: 2026-09-03
 
 Accepted main base: `8badf37a4c3645060b05935236143f0cbd683dec`
@@ -18,19 +18,42 @@ Semantic projection status:
 
 ```text
 PUBLIC_PROJECTION_SEMANTICS_FROZEN=YES
-PUBLIC_PROJECTION_CODEC_STATUS=NOT_FROZEN_REQUIRES_I3D0
+PUBLIC_PROJECTION_CODEC_STATUS=FROZEN_BY_I3D0
 LOCATOR_SEMANTICS_FROZEN=YES
-LOCATOR_CODEC_STATUS=NOT_FROZEN_REQUIRES_I3C0
+LOCATOR_CODEC_STATUS=FROZEN_BY_I3C0
 ```
 
-The I3A0 contract freezes the privacy-safe semantic shape and lifecycle, not
-the byte-level locator or public-projection identity codec. No implementation
-may invent those bytes before the separate documentation-only I3C0 and I3D0
-freezes.
+The following is the current reconciliation of the historical I3A0 design
+with the accepted later slices:
 
-This document freezes the design boundary only. It does not implement a
-GAME_MSG decoder, a gameplay state mirror, prompt projection, model input, or
-any later I3 slice.
+```text
+I3A=FINAL_PASS
+I3B0=FINAL_PASS
+I3B=FINAL_PASS
+I3C0=FINAL_PASS
+I3C=FINAL_PASS
+I3D0=DOCUMENTATION_ONLY_FREEZE
+I3D=NOT_AUTHORIZED
+```
+
+Historical I3A0 status: the contract froze the privacy-safe semantic shape and
+lifecycle before either byte-level codec was accepted. I3C0 later froze the
+public semantic locator syntax. I3C then implemented and accepted
+`PublicStateSnapshotV1`, canonical compact UTF-8 JSON, and a raw SHA-256 before
+I3D0 was executed. I3D0 now freezes those existing bytes and defines the
+versioned `public_projection_id`; it does not retroactively authorize I3C.
+
+```text
+I3C_IMPLEMENTED_CANONICAL_BYTES_BEFORE_I3D0=YES
+I3D0_RETROACTIVE_IMPLEMENTATION_AUTHORIZATION=NO
+I3D0_ACTION=freeze the already independently reviewed and accepted I3C V1 bytes without changing them
+```
+
+At its original I3A0 checkpoint, this document froze the design boundary only;
+it did not implement a GAME_MSG decoder, a gameplay state mirror, prompt
+projection, model input, or any later I3 slice. The current accepted
+implementation status is recorded above and does not change that historical
+record.
 
 ## 1. Authority and purpose
 
@@ -40,7 +63,7 @@ I3 owns the boundary after the accepted I2 gameplay transport handoff:
 accepted I2 handoff
   → validated GAME_MSG decoding
   → PerspectiveStateMirror
-  → PublicContractProjection
+  → accepted I3C PublicStateSnapshotV1 projection
 ```
 
 EDOPro and its exact V1 ocgcore runtime remain the sole authorities for game
@@ -73,7 +96,7 @@ The following layers are distinct contracts, not aliases of one state object:
 | --- | --- | --- | --- |
 | `RawProtocolState` | transport/protocol boundary | exact accepted I2 handoff, raw GAME_MSG bytes, transport progress | model input, public semantic identity |
 | `PerspectiveStateMirror` | I3 | only perspective-legitimate gameplay facts and explicit unknowns | omniscient opponent identity, engine pointers, response bytes |
-| `PublicContractProjection` | I3 | deterministic, value-owned, perspective-safe model-facing state | raw offsets, socket/control metadata, private response binding |
+| `PublicStateSnapshotV1` projection | accepted I3C | deterministic, value-owned, perspective-safe public state | raw offsets, socket/control metadata, private response binding |
 | `PrivateResponseBinding` | I4/I5 later | selected semantic key to original CTOS response | I3 state or model feature |
 | `ModelRunnerBoundary` | I7 later | accepted model contract and scores | raw protocol or gameplay transport |
 | `PublicAuditTrace` | I10 later | redacted semantic evidence | hidden identity, password, raw socket data |
@@ -403,25 +426,26 @@ create
 ```
 
 Locator allocation order may use canonical semantic message order, but never
-transport chunk order. The canonical public locator table is ordered by the
-public locator's deterministic creation ordinal, with participant, zone, and
-slot fields encoded in fixed contract order. A destroyed hidden locator never
-reappears under the same public identity.
+transport chunk order. A destroyed hidden locator never reappears under the
+same public identity. I3C0 later froze the accepted locator syntax without
+creating a second identity domain.
 
-The semantic lifecycle above is frozen for I3A0. Its identity domain, schema,
-integer widths, endian order, enum codes, optional encoding, knowledge-union
-encoding, locator encoding, and hash/prefix bytes are intentionally not frozen.
-The documentation-only `I3C0` task must freeze the complete semantic-locator
-codec before I3C implementation.
+The I3A0 wording about a separate canonical public locator table is historical
+and is superseded for the accepted V1 public-state bytes. `PublicStateSnapshotV1`
+embeds each emitted `PublicSemanticLocatorV1` in its card's `locator` property;
+V1 has no separate locator-table vector. I3D0 freezes the accepted JSON
+representation and does not change the I3C0 locator contract.
 
 Two equal-code public cards receive two distinct locators when they are two
 distinct proven entities. If a message cannot distinguish two possible source
 entities, the transition fails closed instead of choosing one.
 
-## 10. PublicContractProjection V1
+## 10. PublicStateSnapshotV1 / accepted public projection V1
 
-The projection is the only future model-facing gameplay state input. It is
-value-owned, deterministic, perspective-safe, and explicit about unknowns.
+The I3A0 design described a future public projection as value-owned,
+deterministic, perspective-safe, and explicit about unknowns. The following
+list is retained as historical semantic provenance:
+
 It may contain:
 
 - the established `Self`/`Opponent` perspective role;
@@ -446,11 +470,15 @@ It must not contain:
 - inferred archetypes, probabilities, beliefs, or model-derived facts;
 - incomplete or fabricated legal candidate data.
 
-The semantic projection shape is frozen, but I3A0 does not freeze its byte
-encoding or `public_projection_id`. The documentation-only `I3D0` task must
-freeze the complete projection identity/codec before I3D implementation. The
-I3 projection is not declared byte-equal to OCGForge `PlayerObservation`; I6
-owns byte-exact cross-oracle and compatibility evidence.
+The list above records the I3A0 semantic design. The accepted I3C V1 domain is
+the narrower `PublicStateSnapshotV1` contract: it includes the top-level state,
+the p0/p1 participant vector, and the ordered card vector, but no chain,
+relation, event, query-field, response-binding, or separate locator-table
+vector. I3C implemented its canonical bytes before I3D0; I3D0 freezes those
+existing bytes and defines `public_projection_id` without retroactive
+implementation authorization. The I3 projection is not declared byte-equal to
+OCGForge `PlayerObservation`; I6 owns byte-exact cross-oracle and compatibility
+evidence.
 
 ## 11. Normative information-flow table
 
@@ -495,12 +523,14 @@ AUTHORITATIVE_MODEL_INPUT=NO
 
 The future I3D acceptance harness must construct paired histories with equal
 legitimate public knowledge and different hidden opponent information. It must
-require byte-identical:
+require byte-identical `PublicStateSnapshotV1` bytes, embedded public
+locators, raw SHA-256, and versioned `public_projection_id`:
 
 ```text
-PublicContractProjection
-public semantic locator table
-public state identity
+PublicStateSnapshotV1
+embedded public locators
+raw SHA-256
+public_projection_id
 ```
 
 Required fixture classes are:
@@ -512,6 +542,13 @@ Required fixture classes are:
 | C | a revealed card becomes hidden and continuity is destroyed | old public identity absent; resulting unknown projection equal |
 | D | duplicate equal-code cards have different internal histories | distinct current public locators where entities are public; no history leak |
 | E | same semantic stream with different TCP chunking | mirror, projection, locators, identity |
+
+I3D0 freezes this acceptance matrix; it does not claim that the I3D gates
+have run:
+
+```text
+I3D_PAIRED_WORLD_ACCEPTANCE=NOT_RUN
+```
 
 Internal values may differ only where they are legitimately perspective-known
 and are excluded from the projection. Hidden opponent differences alone are not
@@ -527,30 +564,41 @@ public_projection_id
 transport_protocol_provenance_id
 ```
 
-`public_projection_id` will be a versioned digest of the canonical public
-projection only after I3D0 freezes its exact domain and byte codec. A future
-gameplay semantic identity may include the canonical perspective mirror, but
-only fields allowed by the mirror contract. The transport/provenance identity
-contains pins and execution facts and is never used as gameplay identity.
+I3C accepted the raw SHA-256 of the canonical public-state JSON before I3D0.
+I3D0 freezes the following versioned identity without changing the hash input:
 
-Canonical order is fixed as:
+```text
+raw_digest = SHA256(canonical_public_projection_bytes)
+raw_digest_format = 64 lowercase hexadecimal characters
+PUBLIC_PROJECTION_ID_PREFIX=ocgforge-ignis.public-state-projection.v1.
+public_projection_id = PUBLIC_PROJECTION_ID_PREFIX + raw_digest
+```
 
-1. schema/domain identifier;
-2. participants `Self`, `Opponent`;
-3. zones in the declared enum order;
-4. slots and card/entity relationships by canonical numeric position;
-5. card knowledge/property fields in declared field order;
-6. chain/public relationships in protocol semantic order;
-7. public locator table in locator creation order.
+The prefix is not part of the SHA-256 input. A future gameplay semantic
+identity may include the canonical perspective mirror, but only fields allowed
+by the mirror contract. The transport/provenance identity contains pins and
+execution facts and is never used as gameplay identity.
+
+The accepted V1 canonical order is exactly:
+
+1. top-level `contract_id`, `perspective_player`, `duel_flags`, `turn_count`,
+   `turn_player`, `phase`, `terminal`, `participants`, `cards`;
+2. participants `p0`, then `p1`, with
+   `absolute_player`, `life_points`, `main_deck_count`, `hand_count`,
+   `extra_deck_count`;
+3. cards sorted by ordinal `PublicSemanticLocatorV1.Value`, with
+   `locator`, `absolute_player`, `zone`, `card_code`, `position`;
+4. absent optional values encoded as JSON `null`.
 
 No raw packet buffer, unread count, TCP chunk, endpoint, password, PID, wall
 clock, task/thread ID, path, address, mutable alias, or unordered iteration
 participates in these identities.
 
-I3A0 freezes the semantic ordering above, not a byte-level identity contract.
-The exact locator codec is an I3C0 prerequisite; the exact public projection
-identity/codec is an I3D0 prerequisite. Until those tasks are accepted, no
-production code may emit or compare a public identity digest.
+The preceding I3A0 ordering is retained as historical design provenance. The
+accepted I3C JSON order above is now authoritative. I3C emitted the raw digest
+before I3D0, and I3D0 freezes that existing digest definition and the versioned
+identity without retroactively authorizing I3C. The locator codec remains
+owned by I3C0. Neither digest is an I6 cross-oracle claim.
 
 ## 14. Fail-closed GAME_MSG handling
 
@@ -766,7 +814,9 @@ any other message layout.
 
 ## 17. Ordered I3 implementation slices
 
-The following are separate future tasks. I3A0 does not authorize any of them.
+At the I3A0 checkpoint, the following were separate future tasks and I3A0 did
+not authorize any of them. The accepted later status is recorded in the
+current reconciliation block at the top of this document.
 The frozen order is:
 
 ```text
@@ -1001,58 +1051,73 @@ allocation, PID, time, task/thread scheduling, filesystem paths, hash-map
 iteration, and TCP chunking. I3C0 adds no production code and leaves I3
 implementation gates `NOT_RUN`.
 
-### I3C — card knowledge and semantic locators
+### I3C — accepted perspective-safe public state projection
 
-Owner: I3 knowledge/identity subsystem.
+Owner: I3 State / Privacy boundary.
 
-Inputs: I3B mirror transitions, the accepted I3C0 locator codec contract,
-visible query/reveal facts, and knowledge-boundary messages such as shuffle,
-reverse, remove, and confirm families.
+Inputs: the accepted `PerspectiveStateMirrorV1`, the accepted I3C0 public
+semantic locator contract, and explicit pinned layout context.
 
-Outputs: explicit card knowledge union, lifecycle-safe mirror locators, and
-canonical invalidation/replacement events.
+Outputs: the accepted immutable `PublicStateSnapshotV1`, compact canonical
+UTF-8 JSON bytes, and the raw lowercase SHA-256 exposed by the I3C
+implementation. The V1 output contains no chain, relation, event,
+query-field, response-binding, candidate, or separate locator-table vector.
 
-Required negative tests include hidden opponent identity injection, stale
-identity after every shuffle family, ambiguous `MSG_MOVE`/`MSG_SHUFFLE_SET_CARD`,
-duplicate equal-code cards, locator collision, inferred deck order, and
-knowledge equality across paired hidden worlds.
+I3C preserves legitimate perspective-private knowledge, redacts unknown
+opponent hidden identity, orders participants as p0 then p1, orders cards by
+ordinal locator value, and fails closed on unproven knowledge or locators. I3C
+does not claim model-input compatibility or I6 cross-oracle acceptance.
 
-Non-goals: probability, archetype inference, hidden-deck reconstruction,
-prompt projection, model input, and response binding.
+The accepted implementation history is explicit:
 
-Stop condition: any identity continuity that is not independently proven is
-destroyed and represented as unknown; no best-effort rebind is allowed.
+```text
+I3C_IMPLEMENTED_CANONICAL_BYTES_BEFORE_I3D0=YES
+I3D0_RETROACTIVE_IMPLEMENTATION_AUTHORIZATION=NO
+```
 
 ### I3D0 — public-projection identity/codec freeze (documentation only)
 
-Owner: I3 contract governance. This is a documentation-only prerequisite after
-I3C and before I3D; it does not implement projection or identity code.
+Owner: I3 contract governance. This is the current documentation-only
+reconciliation after I3C and before I3D. It adds no production code and does
+not retroactively authorize I3.
 
-The I3D0 contract must freeze, with exact golden bytes and paired-world
-evidence:
+I3D0 freezes the already accepted I3C V1 representation exactly:
 
-- projection identity domain and schema/version encoding;
-- participant, zone, entity, relationship, and locator-table field order;
-- integer widths, endian order, enum codes, vector ordering, and count rules;
-- optional, unknown, and knowledge-union encoding; and
-- the exact `public_projection_id` hash algorithm and prefix.
+- `CANONICAL_ENCODING=UTF8_COMPACT_JSON`;
+- fixed top-level, participant, and card property order;
+- participants in p0/p1 order and cards by ordinal locator value;
+- JSON `null` for every absent optional value;
+- no relation, chain, event, or separate locator-table vector;
+- raw SHA-256 over the exact canonical bytes; and
+- `public_projection_id = ocgforge-ignis.public-state-projection.v1.` plus
+  that raw digest.
 
-The frozen codec must exclude raw protocol bytes/offsets, private-control
-values, hidden opponent identities, execution metadata, response bindings, and
-model-derived values. It must not claim byte equality with OCGForge
-`PlayerObservation`. I3D0 adds no production code and leaves I3 implementation
-gates `NOT_RUN`.
+```text
+I3D0_V1_RELATION_VECTOR=ABSENT
+I3D0_V1_CHAIN_VECTOR=ABSENT
+I3D0_V1_EVENT_VECTOR=ABSENT
+I3D0_V1_SEPARATE_LOCATOR_TABLE=ABSENT
+I3D_PAIRED_WORLD_ACCEPTANCE=NOT_RUN
+```
 
-### I3D — PublicContractProjection and privacy acceptance
+The prefix is not hashed. The frozen bytes exclude raw protocol values,
+private-control values, hidden opponent identities, execution metadata,
+response bindings, and model-derived values. I3D0 does not add a production
+`PublicProjectionId` property, claim byte equality with OCGForge
+`PlayerObservation`, or claim I6 cross-oracle acceptance. I3D remains the
+owner of implementation and paired-world acceptance.
+
+### I3D — remaining public projection privacy acceptance
 
 Owner: I3 public projection/identity boundary.
 
 Inputs: only the accepted perspective-safe mirror, the accepted I3C0 locator
 codec, and the accepted I3D0 projection identity/codec contract.
 
-Outputs: versioned public projection value objects, canonical bytes, public
-locator table, and separate public projection identity exactly as frozen by
-I3D0. I3D makes no new byte-level identity decision.
+Outputs: the remaining I3 privacy/acceptance closure and the separately
+implemented and bound `public_projection_id`, exactly as frozen by I3D0. I3D
+adds no new byte-level identity decision and does not add a separate V1 locator
+table.
 
 Required negative tests include all information-flow rows marked non-public,
 paired hidden worlds A–E, raw metadata scan, projection mutation/aliasing,
@@ -1066,8 +1131,10 @@ field prevents projection publication and returns a typed privacy failure.
 
 ## 18. Frozen I3 acceptance gates
 
-The numbered I3 gate set is frozen for later implementation. All gates are
-`NOT_RUN` after this documentation-only I3A0 task:
+The numbered I3 gate set below is the historical I3A0 baseline. It records that
+the gates were `NOT_RUN` at the end of the original documentation-only task;
+it does not override the accepted I3A/I3B/I3C0/I3C results or the current I3D0
+documentation-only status recorded above.
 
 ```text
 I3-G00  accepted I0/I1/I2 boundaries unchanged = NOT_RUN
