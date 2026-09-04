@@ -132,6 +132,18 @@ GetHashCode uses a deterministic value-only hash for ordinary .NET collection
 use. It is not a gameplay hash, trace hash, build hash, provenance hash, or
 cross-oracle identity contract.
 
+## Valid-by-construction rule
+
+PublicSemanticLocatorV1 is a sealed reference type with a private constructor.
+Every non-null instance is created only from an admitted canonical form by a
+TryCreate method or by TryParse after exact canonical comparison.
+
+The default state of PublicSemanticLocatorV1 is null and represents absence,
+not an empty locator. Failure outputs from the Try APIs are null where a
+locator output is required. There is no empty-string sentinel and no path from
+default(PublicSemanticLocatorV1) to Value or ToString that yields an
+authoritative locator value.
+
 ## Explicit non-goals
 
 I3C0 does not implement:

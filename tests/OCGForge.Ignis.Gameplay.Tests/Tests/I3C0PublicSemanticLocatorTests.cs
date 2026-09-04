@@ -25,8 +25,8 @@ internal static class I3C0PublicSemanticLocatorTests
 
         foreach (string value in canonical)
         {
-            True(PublicSemanticLocatorV1.TryParse(value, out PublicSemanticLocatorV1 locator));
-            Equal(value, locator.Value);
+            True(PublicSemanticLocatorV1.TryParse(value, out PublicSemanticLocatorV1? locator));
+            Equal(value, locator!.Value);
             Equal(value, locator.ToString());
         }
 
@@ -34,23 +34,23 @@ internal static class I3C0PublicSemanticLocatorTests
             0,
             PublicSemanticZoneV1.Hand,
             3,
-            out PublicSemanticLocatorV1 indexed));
-        Equal("p0:HAND:3", indexed.Value);
+            out PublicSemanticLocatorV1? indexed));
+        Equal("p0:HAND:3", indexed!.Value);
 
         True(PublicSemanticLocatorV1.TryCreatePublicOrdinal(
             1,
             PublicSemanticZoneV1.Hand,
             12345678,
             0,
-            out PublicSemanticLocatorV1 publicOrdinal));
-        Equal("p1:HAND:public:12345678:0", publicOrdinal.Value);
+            out PublicSemanticLocatorV1? publicOrdinal));
+        Equal("p1:HAND:public:12345678:0", publicOrdinal!.Value);
 
         True(PublicSemanticLocatorV1.TryCreateOverlay(
             0,
             2,
             1,
-            out PublicSemanticLocatorV1 overlay));
-        Equal("p0:OVERLAY:2:1", overlay.Value);
+            out PublicSemanticLocatorV1? overlay));
+        Equal("p0:OVERLAY:2:1", overlay!.Value);
     }
 
     internal static void TestMalformedFormsFailClosed()
@@ -179,26 +179,26 @@ internal static class I3C0PublicSemanticLocatorTests
                 PublicSemanticZoneV1.Hand,
                 12345678,
                 0,
-                out PublicSemanticLocatorV1 created));
-            Equal("p1:HAND:public:12345678:0", created.Value);
+                out PublicSemanticLocatorV1? created));
+            Equal("p1:HAND:public:12345678:0", created!.Value);
 
             True(PublicSemanticLocatorV1.TryParse(
                 "p0:HAND:3",
-                out PublicSemanticLocatorV1 first));
+                out PublicSemanticLocatorV1? first));
             True(PublicSemanticLocatorV1.TryParse(
                 "p0:HAND:3",
-                out PublicSemanticLocatorV1 same));
+                out PublicSemanticLocatorV1? same));
             True(PublicSemanticLocatorV1.TryParse(
                 "p0:HAND:10",
-                out PublicSemanticLocatorV1 ten));
+                out PublicSemanticLocatorV1? ten));
             True(PublicSemanticLocatorV1.TryParse(
                 "p0:HAND:2",
-                out PublicSemanticLocatorV1 two));
+                out PublicSemanticLocatorV1? two));
 
             Equal(first, same);
-            Equal(first.GetHashCode(), same.GetHashCode());
+            Equal(first!.GetHashCode(), same!.GetHashCode());
             Equal(2069333687, first.GetHashCode());
-            True(ten.CompareTo(two) < 0);
+            True(ten!.CompareTo(two) < 0);
             True(ten < two);
             True(ten <= two);
             True(two > ten);
@@ -214,6 +214,14 @@ internal static class I3C0PublicSemanticLocatorTests
 
     internal static void TestPublicApiBoundary()
     {
+        PublicSemanticLocatorV1 defaultLocator = default!;
+        Null(defaultLocator);
+
+        False(PublicSemanticLocatorV1.TryParse(
+            string.Empty,
+            out PublicSemanticLocatorV1? rejected));
+        Null(rejected);
+
         Type locatorType = typeof(PublicSemanticLocatorV1);
         PropertyInfo[] publicProperties = locatorType.GetProperties(
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);

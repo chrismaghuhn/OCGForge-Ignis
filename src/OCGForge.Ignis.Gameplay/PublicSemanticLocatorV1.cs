@@ -15,29 +15,30 @@ public enum PublicSemanticZoneV1 : byte
     Overlay = 8
 }
 
-public readonly struct PublicSemanticLocatorV1 :
+public sealed class PublicSemanticLocatorV1 :
     IEquatable<PublicSemanticLocatorV1>,
     IComparable<PublicSemanticLocatorV1>
 {
     private const uint FnvOffsetBasis = 2166136261;
     private const uint FnvPrime = 16777619;
 
-    private readonly string? value;
+    private readonly string value;
 
     private PublicSemanticLocatorV1(string canonicalValue)
     {
+        ArgumentException.ThrowIfNullOrEmpty(canonicalValue);
         value = canonicalValue;
     }
 
-    public string Value => value ?? string.Empty;
+    public string Value => value;
 
     public static bool TryCreateIndexed(
         byte absolutePlayer,
         PublicSemanticZoneV1 zone,
         uint sequence,
-        out PublicSemanticLocatorV1 locator)
+        out PublicSemanticLocatorV1? locator)
     {
-        locator = default;
+        locator = null;
         if (!IsAbsolutePlayer(absolutePlayer) ||
             !TryGetIndexedZoneToken(zone, out string zoneToken))
         {
@@ -54,9 +55,9 @@ public readonly struct PublicSemanticLocatorV1 :
         PublicSemanticZoneV1 zone,
         uint cardCode,
         uint ordinal,
-        out PublicSemanticLocatorV1 locator)
+        out PublicSemanticLocatorV1? locator)
     {
-        locator = default;
+        locator = null;
         if (!IsAbsolutePlayer(absolutePlayer) ||
             cardCode == 0 ||
             !TryGetPublicOrdinalZoneToken(zone, out string zoneToken))
@@ -73,9 +74,9 @@ public readonly struct PublicSemanticLocatorV1 :
         byte absolutePlayer,
         uint parentSequence,
         uint overlaySequence,
-        out PublicSemanticLocatorV1 locator)
+        out PublicSemanticLocatorV1? locator)
     {
-        locator = default;
+        locator = null;
         if (!IsAbsolutePlayer(absolutePlayer))
         {
             return false;
@@ -88,9 +89,9 @@ public readonly struct PublicSemanticLocatorV1 :
 
     public static bool TryParse(
         string? text,
-        out PublicSemanticLocatorV1 locator)
+        out PublicSemanticLocatorV1? locator)
     {
-        locator = default;
+        locator = null;
         if (string.IsNullOrEmpty(text) || ContainsForbiddenCharacter(text))
         {
             return false;
@@ -183,7 +184,8 @@ public readonly struct PublicSemanticLocatorV1 :
         }
     }
 
-    public bool Equals(PublicSemanticLocatorV1 other) =>
+    public bool Equals(PublicSemanticLocatorV1? other) =>
+        other is not null &&
         string.Equals(Value, other.Value, StringComparison.Ordinal);
 
     public override bool Equals(object? obj) =>
@@ -201,40 +203,54 @@ public readonly struct PublicSemanticLocatorV1 :
         return unchecked((int)hash);
     }
 
-    public int CompareTo(PublicSemanticLocatorV1 other) =>
-        string.CompareOrdinal(Value, other.Value);
+    public int CompareTo(PublicSemanticLocatorV1? other) =>
+        other is null ? 1 : string.CompareOrdinal(Value, other.Value);
 
     public override string ToString() => Value;
 
     public static bool operator ==(
-        PublicSemanticLocatorV1 left,
-        PublicSemanticLocatorV1 right) =>
-        left.Equals(right);
+        PublicSemanticLocatorV1? left,
+        PublicSemanticLocatorV1? right) =>
+        left is null
+            ? right is null
+            : right is not null && left.Equals(right);
 
     public static bool operator !=(
-        PublicSemanticLocatorV1 left,
-        PublicSemanticLocatorV1 right) =>
-        !left.Equals(right);
+        PublicSemanticLocatorV1? left,
+        PublicSemanticLocatorV1? right) =>
+        !(left == right);
 
     public static bool operator <(
-        PublicSemanticLocatorV1 left,
-        PublicSemanticLocatorV1 right) =>
-        left.CompareTo(right) < 0;
+        PublicSemanticLocatorV1? left,
+        PublicSemanticLocatorV1? right) =>
+        CompareNullable(left, right) < 0;
 
     public static bool operator <=(
-        PublicSemanticLocatorV1 left,
-        PublicSemanticLocatorV1 right) =>
-        left.CompareTo(right) <= 0;
+        PublicSemanticLocatorV1? left,
+        PublicSemanticLocatorV1? right) =>
+        CompareNullable(left, right) <= 0;
 
     public static bool operator >(
-        PublicSemanticLocatorV1 left,
-        PublicSemanticLocatorV1 right) =>
-        left.CompareTo(right) > 0;
+        PublicSemanticLocatorV1? left,
+        PublicSemanticLocatorV1? right) =>
+        CompareNullable(left, right) > 0;
 
     public static bool operator >=(
-        PublicSemanticLocatorV1 left,
-        PublicSemanticLocatorV1 right) =>
-        left.CompareTo(right) >= 0;
+        PublicSemanticLocatorV1? left,
+        PublicSemanticLocatorV1? right) =>
+        CompareNullable(left, right) >= 0;
+
+    private static int CompareNullable(
+        PublicSemanticLocatorV1? left,
+        PublicSemanticLocatorV1? right)
+    {
+        if (left is null)
+        {
+            return right is null ? 0 : -1;
+        }
+
+        return right is null ? 1 : left.CompareTo(right);
+    }
 
     private static bool ContainsForbiddenCharacter(string text)
     {
@@ -255,9 +271,9 @@ public readonly struct PublicSemanticLocatorV1 :
     private static bool TryAcceptCanonical(
         string input,
         string canonical,
-        out PublicSemanticLocatorV1 locator)
+        out PublicSemanticLocatorV1? locator)
     {
-        locator = default;
+        locator = null;
         if (!string.Equals(input, canonical, StringComparison.Ordinal))
         {
             return false;
