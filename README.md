@@ -13,9 +13,10 @@ dependency direction never points back from OCGForge to this repository.
 
 The merged `main` baseline contains the I0 repository bootstrap, the final I1
 deterministic protocol codec, the final I2 connection/lobby/pre-duel Client,
-and the final I3A0 gameplay perspective/privacy contract freeze. This branch
-contains the separately authorized I3A GAME_MSG decoder foundation and final
-gameplay-perspective establishment for independent review.
+the final I3A0 gameplay perspective/privacy contract freeze, and the final I3A
+GAME_MSG decoder foundation. This branch contains the separately authorized
+I3B deterministic PerspectiveStateMirror implementation for independent
+review.
 
 - repository charter and governance;
 - frozen V1 architecture;
@@ -30,13 +31,15 @@ gameplay-perspective establishment for independent review.
 - the I3A0 gameplay-message support inventory and perspective/privacy design
   contract;
 - the I3A strict modern GAME_MSG foundation, MSG_START parser, and immutable
-  gameplay-perspective value only.
+  gameplay-perspective value;
+- the I3B query union decoder and deterministic perspective state mirror.
 
-The original I0 commit contained no production implementation. I3A adds only
-the platform-neutral decoder foundation, explicit I2 handoff boundary, and
-MSG_START perspective establishment. There is still no gameplay state mirror,
-I3B0 query-flag union, semantic locator, public projection, model-runner code,
-WPF/UI code, copied source, or external runtime asset.
+The original I0 commit contained no production implementation. I3A adds the
+platform-neutral decoder foundation, explicit I2 handoff boundary, and
+MSG_START perspective establishment. I3B adds only the accepted I3B0 query
+union consumption and structural mirror reducer. There is still no semantic
+locator, public projection, model-runner code, WPF/UI code, copied source, or
+external runtime asset.
 
 The user-authorized I0 evidence records the accepted OCGForge recovery head as
 f13d19cab2b3677149f4caa25ef3c755623ded41 with:
@@ -175,8 +178,8 @@ I10  audit trace and first-divergence tooling
 I11  Windows release and controlled human readiness
 ~~~
 
-I3A is the current decoder/perspective implementation slice. It does not
-authorize I3B0, I3B, or any later implementation slice.
+I3B is the current decoder/mirror implementation slice. It does not authorize
+I3C0, I3C, I3D0, I3D, or any later implementation slice.
 
 Completion of I0 does not authorize I1. Each later task requires its own
 authorization, focused gates, independent review, and stop point.

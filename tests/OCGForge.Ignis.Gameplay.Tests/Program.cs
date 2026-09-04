@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Reflection;
 using OCGForge.Ignis.Client;
 using OCGForge.Ignis.Gameplay;
 using OCGForge.Ignis.Protocol;
@@ -23,7 +24,15 @@ var tests = new (string Name, Action Body)[]
     ("short inner message fails through complete outer frame", TestShortInnerMessage),
     ("malformed outer frame fails closed", TestMalformedOuterFrame),
     ("privacy values exclude control metadata", TestPrivacyBoundary),
-    ("fresh decoder values are immutable by construction", TestValueOwnership)
+    ("fresh decoder values are immutable by construction", TestValueOwnership),
+    ("I3B query union decodes every admitted flag", TestQueryUnion),
+    ("I3B query failures are strict and atomic", TestQueryFailures),
+    ("I3B mirror initializes perspective and authoritative turn state", TestMirrorInitialization),
+    ("I3B mirror applies movement and relations transactionally", TestMirrorMovementAndRelations),
+    ("I3B face-down transitions destroy stale card facts", TestFaceDownTransition),
+    ("I3B draw LP and terminal state are fail closed", TestDrawLpAndTerminal),
+    ("I3B update data preserves wire query order", TestUpdateDataWireOrder),
+    ("I3B stream chunking preserves mirror semantics", TestMirrorChunking)
 };
 
 int passed = 0;
@@ -429,6 +438,16 @@ static void TestPrivacyBoundary()
     AssertDoesNotContainForbidden(result.ToString(), forbidden);
     AssertDoesNotContainForbidden(result.Message!.ToString(), forbidden);
     AssertDoesNotContainForbidden(result.Perspective!.ToString(), forbidden);
+    False(typeof(MirrorEntityIdV1).IsPublic);
+    Null(typeof(MirrorCardSnapshotV1).GetProperty(
+        "EntityId",
+        BindingFlags.Instance | BindingFlags.Public));
+    Null(typeof(MirrorSnapshotV1).GetProperty(
+        "PendingChain",
+        BindingFlags.Instance | BindingFlags.Public));
+    Null(typeof(MirrorSnapshotV1).GetProperty(
+        "TargetRelations",
+        BindingFlags.Instance | BindingFlags.Public));
 }
 
 static void TestValueOwnership()
@@ -439,6 +458,593 @@ static void TestValueOwnership()
     GameplayMessageDecodeResult result = new GameplayMessageDecoderV1().Decode(payload);
     True(result.IsSuccess);
     Equal((byte)0x00, result.Message!.Start.PlayerType);
+}
+
+static void TestQueryUnion()
+{
+    byte[] query = Join(
+        QueryRecord(QueryFlagV1.Code, U32(0x11223344)),
+        QueryRecord(QueryFlagV1.Position, U32(0x55667788)),
+        QueryRecord(QueryFlagV1.Alias, U32(0x01020304)),
+        QueryRecord(QueryFlagV1.Type, U32(0x05060708)),
+        QueryRecord(QueryFlagV1.Level, U32(0x090a0b0c)),
+        QueryRecord(QueryFlagV1.Rank, U32(0x0d0e0f10)),
+        QueryRecord(QueryFlagV1.Attribute, U32(0x11121314)),
+        QueryRecord(QueryFlagV1.Race, U64(0x1122334455667788)),
+        QueryRecord(QueryFlagV1.Attack, I32(-100)),
+        QueryRecord(QueryFlagV1.Defense, I32(2100)),
+        QueryRecord(QueryFlagV1.BaseAttack, I32(1900)),
+        QueryRecord(QueryFlagV1.BaseDefense, I32(1600)),
+        QueryRecord(QueryFlagV1.Reason, U32(0x15161718)),
+        QueryRecord(QueryFlagV1.ReasonCard, LocInfo(0, 0x10, 2, 0x1)),
+        QueryRecord(QueryFlagV1.EquipCard, LocInfo(1, 0x04, 3, 0x4)),
+        QueryRecord(
+            QueryFlagV1.TargetCard,
+            Join(U32(1), LocInfo(0, 0x04, 0, 0x1))),
+        QueryRecord(
+            QueryFlagV1.OverlayCard,
+            Join(U32(1), U32(0x21222324))),
+        QueryRecord(
+            QueryFlagV1.Counters,
+            Join(U32(1), U32(0x25262728))),
+        QueryRecord(QueryFlagV1.Owner, new byte[] { 1 }),
+        QueryRecord(QueryFlagV1.Status, U32(0x29303132)),
+        QueryRecord(QueryFlagV1.IsPublic, new byte[] { 1 }),
+        QueryRecord(QueryFlagV1.LScale, U32(0x33343536)),
+        QueryRecord(QueryFlagV1.RScale, U32(0x37383940)),
+        QueryRecord(QueryFlagV1.Link, Join(U32(2), U32(0x41424344))),
+        QueryRecord(QueryFlagV1.IsHidden, new byte[] { 0 }),
+        QueryRecord(QueryFlagV1.Cover, U32(0x45464748)),
+        QueryEnd());
+
+    ModernQueryDecodeResult decoded = ModernQueryDecoderV1.Decode(query);
+    True(decoded.IsSuccess, decoded.Error.ToString());
+    NotNull(decoded.Value);
+    Equal(26, decoded.Value!.Fields.Count);
+    Equal(QueryFlagV1.Code, decoded.Value.Fields[0].Flag);
+    Equal(QueryFlagV1.Cover, decoded.Value.Fields[^1].Flag);
+    Equal(
+        0x11223344u,
+        ((ModernQueryUInt32PayloadV1)decoded.Value.Fields[0].Payload).Value);
+    Equal(
+        -100,
+        ((ModernQueryInt32PayloadV1)decoded.Value.Fields[8].Payload).Value);
+    Equal(
+        0x1122334455667788ul,
+        ((ModernQueryUInt64PayloadV1)decoded.Value.Fields[7].Payload).Value);
+    Equal(
+        1,
+        ((ModernQueryLocInfoVectorPayloadV1)decoded.Value.Fields[15].Payload)
+            .Values.Count);
+    Equal(
+        0x41424344u,
+        ((ModernQueryLinkPayloadV1)decoded.Value.Fields[23].Payload).LinkMarker);
+
+    byte[] streamBody = Join(new byte[] { 0, 0 }, query, query);
+    ModernQueryStreamDecodeResult stream = ModernQueryDecoderV1.DecodeStream(
+        Join(U32((uint)streamBody.Length), streamBody));
+    True(stream.IsSuccess, stream.Error.ToString());
+    Equal(3, stream.Values.Count);
+    True(stream.Values[0].IsOnFieldSkipped);
+    Equal(stream.Values[1], stream.Values[2]);
+}
+
+static void TestQueryFailures()
+{
+    ModernQueryDecodeResult duplicateScalar = ModernQueryDecoderV1.Decode(
+        Join(
+            QueryRecord(QueryFlagV1.Code, U32(1)),
+            QueryRecord(QueryFlagV1.Code, U32(2)),
+            QueryEnd()));
+    False(duplicateScalar.IsSuccess);
+    Equal(GameplayErrorCode.DuplicateQueryFlag, duplicateScalar.Error);
+
+    ModernQueryDecodeResult duplicateVector = ModernQueryDecoderV1.Decode(
+        Join(
+            QueryRecord(QueryFlagV1.OverlayCard, Join(U32(1), U32(3))),
+            QueryRecord(QueryFlagV1.OverlayCard, Join(U32(1), U32(4))),
+            QueryEnd()));
+    False(duplicateVector.IsSuccess);
+    Equal(GameplayErrorCode.DuplicateQueryFlag, duplicateVector.Error);
+
+    byte[] oneQuery = Join(QueryRecord(QueryFlagV1.Code, U32(7)), QueryEnd());
+    ModernQueryStreamDecodeResult repeatedAcrossQueries =
+        ModernQueryDecoderV1.DecodeStream(
+            Join(U32((uint)(oneQuery.Length * 2)), oneQuery, oneQuery));
+    True(repeatedAcrossQueries.IsSuccess, repeatedAcrossQueries.Error.ToString());
+    Equal(2, repeatedAcrossQueries.Values.Count);
+
+    foreach (uint invalidFlag in new uint[] { 0, 3, 0x04000000 })
+    {
+        ModernQueryDecodeResult invalid = ModernQueryDecoderV1.Decode(
+            Join(QueryRecordRaw(invalidFlag, U32(1)), QueryEnd()));
+        False(invalid.IsSuccess);
+        Equal(GameplayErrorCode.UnsupportedQueryFlag, invalid.Error);
+    }
+
+    ModernQueryDecodeResult shortFlag = ModernQueryDecoderV1.Decode(
+        new byte[] { 8, 0, 1 });
+    False(shortFlag.IsSuccess);
+    Equal(GameplayErrorCode.MalformedQuery, shortFlag.Error);
+
+    ModernQueryDecodeResult shortVector = ModernQueryDecoderV1.Decode(
+        Join(
+            QueryRecord(QueryFlagV1.TargetCard, U32(1)),
+            QueryEnd()));
+    False(shortVector.IsSuccess);
+    Equal(GameplayErrorCode.QueryLengthMismatch, shortVector.Error);
+
+    ModernQueryDecodeResult countOverflow = ModernQueryDecoderV1.Decode(
+        Join(
+            QueryRecord(QueryFlagV1.TargetCard, U32(uint.MaxValue)),
+            QueryEnd()));
+    False(countOverflow.IsSuccess);
+    Equal(GameplayErrorCode.QueryCountOverflow, countOverflow.Error);
+
+    ModernQueryDecodeResult trailing = ModernQueryDecoderV1.Decode(
+        Join(
+            new byte[] { 9, 0, 1, 0, 0, 0, 0x78, 0x56, 0x34, 0x12, 0xaa },
+            QueryEnd()));
+    False(trailing.IsSuccess);
+    Equal(GameplayErrorCode.QueryLengthMismatch, trailing.Error);
+
+    ModernQueryDecodeResult missingTerminator = ModernQueryDecoderV1.Decode(
+        QueryRecord(QueryFlagV1.Code, U32(1)));
+    False(missingTerminator.IsSuccess);
+    Equal(GameplayErrorCode.MalformedQuery, missingTerminator.Error);
+}
+
+static void TestMirrorInitialization()
+{
+    GameplayMessageDecoderV1 decoder = new();
+    GameplayMessageDecodeResult start = decoder.Decode(
+        new StocGameMessagePayload(CreateStartBytes(0x01)));
+    True(start.IsSuccess);
+
+    MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
+        start.Message!,
+        start.Perspective!);
+    True(created.IsSuccess, created.Error.ToString());
+    PerspectiveStateMirrorV1 mirror = created.Mirror!;
+    MirrorSnapshotV1 snapshot = mirror.Snapshot;
+
+    Equal(2, snapshot.Participants.Count);
+    Equal(MirrorParticipantRoleV1.Self, snapshot.Participants[0].Role);
+    Equal(MirrorParticipantRoleV1.Opponent, snapshot.Participants[1].Role);
+    Equal(7000u, snapshot.Participants[0].LifePoints.Value);
+    Equal(8000u, snapshot.Participants[1].LifePoints.Value);
+    Equal(
+        41u,
+        snapshot.GetParticipant(MirrorParticipantRoleV1.Self)
+            .GetZone(MirrorZoneV1.MainDeck).Count.Value);
+    Equal(
+        16u,
+        snapshot.GetParticipant(MirrorParticipantRoleV1.Self)
+            .GetZone(MirrorZoneV1.ExtraDeck).Count.Value);
+    Equal(0ul, snapshot.TurnCount);
+    False(snapshot.TurnPlayer.IsKnown);
+    False(snapshot.Phase.IsKnown);
+    False(snapshot.Terminal.IsTerminal);
+    Equal(
+        MirrorProvenanceV1.PublicProtocolFact,
+        snapshot.Participants[0].LifePoints.Provenance);
+
+    GameplayMessageV1 turn = DecodeMessage(decoder, new byte[] { 40, 1 });
+    MirrorApplyResult turnResult = mirror.Apply(turn);
+    True(turnResult.IsSuccess, turnResult.Error.ToString());
+    Equal(1ul, mirror.Snapshot.TurnCount);
+    Equal(MirrorParticipantRoleV1.Self, mirror.Snapshot.TurnPlayer.Value);
+
+    GameplayMessageV1 phase = DecodeMessage(decoder, new byte[] { 41, 0x04, 0x00 });
+    MirrorApplyResult phaseResult = mirror.Apply(phase);
+    True(phaseResult.IsSuccess, phaseResult.Error.ToString());
+    Equal((ushort)4, mirror.Snapshot.Phase.Value);
+    AssertDoesNotContainForbidden(
+        mirror.Snapshot.ToString(),
+        new[] { "socket", "endpoint", "password", "pid", "timestamp", "thread" });
+}
+
+static void TestMirrorMovementAndRelations()
+{
+    GameplayMessageDecoderV1 decoder = new();
+    (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 activeDecoder) =
+        CreateMirror(0x00);
+
+    ModernLocInfoV1 empty = new(0, 0, 0, 0);
+    ModernLocInfoV1 hand0 = new(0, 0x02, 0, 0x08);
+    GameplayMessageV1 createFirst = DecodeMessage(
+        activeDecoder,
+        MoveMessage(0x11223344, empty, hand0, 0));
+    MirrorApplyResult createResult = mirror.Apply(createFirst);
+    True(createResult.IsSuccess, createResult.Error.ToString());
+    Equal(1u, mirror.Snapshot.GetZone(MirrorParticipantRoleV1.Self, MirrorZoneV1.Hand).Count.Value);
+    Equal(2u, mirror.Snapshot.GetZone(MirrorParticipantRoleV1.Self, MirrorZoneV1.MainDeck).Count.Value);
+    string beforeInvalidPileSequence = mirror.Snapshot.ToDeterministicString();
+    MirrorApplyResult invalidPileSequence = mirror.Apply(DecodeMessage(
+        activeDecoder,
+        MoveMessage(
+            0x99999999,
+            empty,
+            new ModernLocInfoV1(0, 0x02, 9, 0x08),
+            0)));
+    False(invalidPileSequence.IsSuccess);
+    Equal(GameplayErrorCode.StateCapacityExceeded, invalidPileSequence.Error);
+    Equal(beforeInvalidPileSequence, mirror.Snapshot.ToDeterministicString());
+
+    ModernLocInfoV1 monster0 = new(0, 0x04, 0, 0x01);
+    MirrorApplyResult moveResult = mirror.Apply(
+        DecodeMessage(activeDecoder, MoveMessage(0, hand0, monster0, 0)));
+    True(moveResult.IsSuccess, moveResult.Error.ToString());
+
+    ModernLocInfoV1 handA = new(0, 0x02, 0, 0x08);
+    ModernLocInfoV1 handB = new(0, 0x02, 1, 0x08);
+    True(mirror.Apply(DecodeMessage(
+        activeDecoder,
+        MoveMessage(0xaaaabbbb, empty, handA, 0))).IsSuccess);
+    True(mirror.Apply(DecodeMessage(
+        activeDecoder,
+        MoveMessage(0xccccdddd, empty, handB, 0))).IsSuccess);
+    True(mirror.Apply(DecodeMessage(
+        activeDecoder,
+        MoveMessage(
+            0,
+            handA,
+            new ModernLocInfoV1(0, 0x10, 0, 0x04),
+            0))).IsSuccess);
+    MirrorCardSnapshotV1 shiftedHand = mirror.Snapshot.Cards.Single(
+        card => card.Zone == MirrorZoneV1.Hand);
+    Equal(0xccccddddu, shiftedHand.CardCode.Value);
+    Equal(0u, shiftedHand.Sequence);
+    ModernLocInfoV1 handC = new(0, 0x02, 1, 0x08);
+    True(mirror.Apply(DecodeMessage(
+        activeDecoder,
+        MoveMessage(0xeeeeffff, empty, handC, 0))).IsSuccess);
+    True(mirror.Apply(DecodeMessage(
+        activeDecoder,
+        MoveMessage(
+            0,
+            handC,
+            new ModernLocInfoV1(0, 0x02, 0, 0x08),
+            0))).IsSuccess);
+    MirrorCardSnapshotV1 reorderedFirst = mirror.Snapshot.Cards.Single(
+        card => card.Zone == MirrorZoneV1.Hand && card.Sequence == 0);
+    Equal(0xeeeeffffu, reorderedFirst.CardCode.Value);
+
+    MirrorApplyResult spellTrapSeven = mirror.Apply(DecodeMessage(
+        activeDecoder,
+        MoveMessage(
+            0x12345678,
+            empty,
+            new ModernLocInfoV1(0, 0x08, 7, 0x04),
+            0)));
+    True(spellTrapSeven.IsSuccess, spellTrapSeven.Error.ToString());
+    MirrorApplyResult monsterSix = mirror.Apply(DecodeMessage(
+        activeDecoder,
+        MoveMessage(
+            0x23456789,
+            empty,
+            new ModernLocInfoV1(0, 0x04, 6, 0x04),
+            0)));
+    True(monsterSix.IsSuccess, monsterSix.Error.ToString());
+    string beforeInvalidSpellTrap = mirror.Snapshot.ToDeterministicString();
+    MirrorApplyResult invalidSpellTrap = mirror.Apply(DecodeMessage(
+        activeDecoder,
+        MoveMessage(
+            0x87654321,
+            empty,
+            new ModernLocInfoV1(0, 0x08, 8, 0x04),
+            0)));
+    False(invalidSpellTrap.IsSuccess);
+    Equal(GameplayErrorCode.StateCapacityExceeded, invalidSpellTrap.Error);
+    Equal(beforeInvalidSpellTrap, mirror.Snapshot.ToDeterministicString());
+
+    ModernQueryV1 updateQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0x55667788)),
+        QueryRecord(QueryFlagV1.Position, U32(0x04)),
+        QueryRecord(QueryFlagV1.Owner, new byte[] { 0 }),
+        QueryEnd());
+    MirrorApplyResult updateResult = mirror.Apply(
+        DecodeMessage(activeDecoder, UpdateCardMessage(0, 0x04, 0, updateQuery)));
+    True(updateResult.IsSuccess, updateResult.Error.ToString());
+    MirrorCardSnapshotV1 updatedCard = mirror.Snapshot.Cards.Single(
+        card => card.Zone == MirrorZoneV1.MonsterZone && card.Sequence == 0);
+    Equal(0x55667788u, updatedCard.CardCode.Value);
+    Equal((uint)0x04, updatedCard.Position.Value);
+    Equal(MirrorParticipantRoleV1.Self, updatedCard.Owner.Value);
+
+    ModernQueryV1 invalidOwnerQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0xdeadbeef)),
+        QueryRecord(QueryFlagV1.Owner, new byte[] { 2 }),
+        QueryEnd());
+    string beforeInvalidQuery = mirror.Snapshot.ToDeterministicString();
+    MirrorApplyResult invalidQuery = mirror.Apply(
+        DecodeMessage(activeDecoder, UpdateCardMessage(0, 0x04, 0, invalidOwnerQuery)));
+    False(invalidQuery.IsSuccess);
+    Equal(GameplayErrorCode.InvalidParticipant, invalidQuery.Error);
+    Equal(beforeInvalidQuery, mirror.Snapshot.ToDeterministicString());
+
+    string beforeInvalidSequence = mirror.Snapshot.ToDeterministicString();
+    MirrorApplyResult invalidSequence = mirror.Apply(
+        DecodeMessage(activeDecoder, UpdateCardMessage(0, 0x04, 7, updateQuery)));
+    False(invalidSequence.IsSuccess);
+    Equal(GameplayErrorCode.StateCapacityExceeded, invalidSequence.Error);
+    Equal(beforeInvalidSequence, mirror.Snapshot.ToDeterministicString());
+
+    ModernLocInfoV1 monster1 = new(0, 0x04, 1, 0x04);
+    MirrorApplyResult createSecondResult = mirror.Apply(
+        DecodeMessage(activeDecoder, MoveMessage(0x99aabbcc, empty, monster1, 0)));
+    True(createSecondResult.IsSuccess, createSecondResult.Error.ToString());
+    Equal(7, mirror.Snapshot.Cards.Count);
+
+    string beforeConflict = mirror.Snapshot.ToDeterministicString();
+    MirrorApplyResult conflict = mirror.Apply(
+        DecodeMessage(activeDecoder, MoveMessage(0xabcdef01, empty, monster0, 0)));
+    False(conflict.IsSuccess);
+    Equal(GameplayErrorCode.ConflictingSlotOccupancy, conflict.Error);
+    Equal(beforeConflict, mirror.Snapshot.ToDeterministicString());
+
+    MirrorApplyResult swapResult = mirror.Apply(
+        DecodeMessage(activeDecoder, SwapMessage(monster0, monster1)));
+    True(swapResult.IsSuccess, swapResult.Error.ToString());
+    MirrorCardSnapshotV1 atSlot0 = mirror.Snapshot.Cards.Single(
+        card => card.Zone == MirrorZoneV1.MonsterZone && card.Sequence == 0);
+    Equal(0x99aabbccu, atSlot0.CardCode.Value);
+
+    MirrorApplyResult positionResult = mirror.Apply(
+        DecodeMessage(
+            activeDecoder,
+            PosChangeMessage(0, 0x04, 0, 0x04, 0x08)));
+    True(positionResult.IsSuccess, positionResult.Error.ToString());
+
+    string beforeSet = mirror.Snapshot.ToDeterministicString();
+    MirrorApplyResult setResult = mirror.Apply(
+        DecodeMessage(activeDecoder, SetMessage(0x10203040, monster0)));
+    True(setResult.IsSuccess, setResult.Error.ToString());
+    Equal(beforeSet, mirror.Snapshot.ToDeterministicString());
+
+    MirrorApplyResult targetResult = mirror.Apply(
+        DecodeMessage(activeDecoder, CardTargetMessage(monster0, monster1)));
+    True(targetResult.IsSuccess, targetResult.Error.ToString());
+    Equal(1, mirror.Snapshot.TargetRelations.Count);
+    MirrorApplyResult cancelResult = mirror.Apply(
+        DecodeMessage(activeDecoder, CardTargetMessage(monster0, monster1, true)));
+    True(cancelResult.IsSuccess, cancelResult.Error.ToString());
+    Equal(0, mirror.Snapshot.TargetRelations.Count);
+
+    MirrorApplyResult equipResult = mirror.Apply(
+        DecodeMessage(activeDecoder, EquipMessage(monster0, monster1)));
+    True(equipResult.IsSuccess, equipResult.Error.ToString());
+    Equal(1, mirror.Snapshot.EquipmentRelations.Count);
+    ModernLocInfoV1 monster2 = new(0, 0x04, 2, 0x04);
+    True(mirror.Apply(DecodeMessage(
+        activeDecoder,
+        MoveMessage(0x55660011, empty, monster2, 0))).IsSuccess);
+    MirrorApplyResult retargetResult = mirror.Apply(
+        DecodeMessage(activeDecoder, EquipMessage(monster0, monster2)));
+    True(retargetResult.IsSuccess, retargetResult.Error.ToString());
+    Equal(1, mirror.Snapshot.EquipmentRelations.Count);
+    MirrorApplyResult unequipResult = mirror.Apply(
+        DecodeMessage(activeDecoder, UnequipMessage(monster0)));
+    True(unequipResult.IsSuccess, unequipResult.Error.ToString());
+    Equal(0, mirror.Snapshot.EquipmentRelations.Count);
+
+    MirrorApplyResult chaining = mirror.Apply(
+        DecodeMessage(activeDecoder, ChainingMessage(monster0, 1, 0)));
+    True(chaining.IsSuccess, chaining.Error.ToString());
+    NotEqual(beforeSet, mirror.Snapshot.ToDeterministicString());
+    True(mirror.Snapshot.PendingChain.IsKnown);
+    MirrorApplyResult chained = mirror.Apply(
+        DecodeMessage(activeDecoder, new byte[] { 71, 1 }));
+    True(chained.IsSuccess, chained.Error.ToString());
+    False(mirror.Snapshot.Chains[0].CardCode.IsKnown);
+    MirrorApplyResult target = mirror.Apply(
+        DecodeMessage(activeDecoder, BecomeTargetMessage(monster1)));
+    True(target.IsSuccess, target.Error.ToString());
+    Equal(1, mirror.Snapshot.ChainTargetRelations.Count);
+    True(mirror.Apply(DecodeMessage(activeDecoder, new byte[] { 72, 1 })).IsSuccess);
+    True(mirror.Apply(DecodeMessage(activeDecoder, new byte[] { 75, 1 })).IsSuccess);
+    False(mirror.Apply(DecodeMessage(activeDecoder, new byte[] { 75, 1 })).IsSuccess);
+    True(mirror.Apply(DecodeMessage(activeDecoder, new byte[] { 74 })).IsSuccess);
+    Equal(0, mirror.Snapshot.Chains.Count);
+
+    MirrorApplyResult secondChaining = mirror.Apply(
+        DecodeMessage(activeDecoder, ChainingMessage(monster1, 1, 0)));
+    True(secondChaining.IsSuccess, secondChaining.Error.ToString());
+    True(mirror.Apply(DecodeMessage(activeDecoder, new byte[] { 71, 1 })).IsSuccess);
+    True(mirror.Apply(DecodeMessage(activeDecoder, new byte[] { 72, 1 })).IsSuccess);
+    True(mirror.Apply(DecodeMessage(activeDecoder, new byte[] { 76, 1 })).IsSuccess);
+    True(mirror.Apply(DecodeMessage(activeDecoder, new byte[] { 73, 1 })).IsSuccess);
+    True(mirror.Apply(DecodeMessage(activeDecoder, new byte[] { 74 })).IsSuccess);
+
+    True(mirror.Apply(DecodeMessage(
+        activeDecoder,
+        MoveMessage(
+            0,
+            empty,
+            new ModernLocInfoV1(0, 0x84, 0, 0),
+            0))).IsSuccess);
+    MirrorApplyResult overlayParentSwap = mirror.Apply(
+        DecodeMessage(activeDecoder, SwapMessage(monster0, monster1)));
+    False(overlayParentSwap.IsSuccess);
+    Equal(GameplayErrorCode.InvalidRelation, overlayParentSwap.Error);
+}
+
+static void TestDrawLpAndTerminal()
+{
+    (PerspectiveStateMirrorV1 knownDeckMirror, GameplayMessageDecoderV1 knownDeckDecoder) =
+        CreateMirror(0x00, deckCount0: 2, deckCount1: 2);
+    ModernLocInfoV1 empty = new(0, 0, 0, 0);
+    True(knownDeckMirror.Apply(DecodeMessage(
+        knownDeckDecoder,
+        MoveMessage(
+            0x01020304,
+            empty,
+            new ModernLocInfoV1(0, 0x01, 0, 0x01),
+            0))).IsSuccess);
+    string beforeKnownDeckDraw = knownDeckMirror.Snapshot.ToDeterministicString();
+    MirrorApplyResult knownDeckDraw = knownDeckMirror.Apply(DecodeMessage(
+        knownDeckDecoder,
+        DrawMessage(0, (0x11223344u, 0x00000004u))));
+    False(knownDeckDraw.IsSuccess);
+    Equal(GameplayErrorCode.UnknownMirrorReference, knownDeckDraw.Error);
+    Equal(beforeKnownDeckDraw, knownDeckMirror.Snapshot.ToDeterministicString());
+
+    (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+        CreateMirror(0x00, deckCount0: 3, deckCount1: 3);
+
+    GameplayMessageV1 draw = DecodeMessage(
+        decoder,
+        DrawMessage(0, (0x11223344u, 0x00000004u)));
+    MirrorApplyResult drawResult = mirror.Apply(draw);
+    True(drawResult.IsSuccess, drawResult.Error.ToString());
+    Equal(2u, mirror.Snapshot.GetZone(MirrorParticipantRoleV1.Self, MirrorZoneV1.MainDeck).Count.Value);
+    Equal(1u, mirror.Snapshot.GetZone(MirrorParticipantRoleV1.Self, MirrorZoneV1.Hand).Count.Value);
+    Equal(0x11223344u, mirror.Snapshot.Cards.Single().CardCode.Value);
+
+    GameplayMessageDecodeResult twoDraws = decoder.Decode(
+        new StocGameMessagePayload(
+            DrawMessage(
+                0,
+                (0x11223344u, 0x00000004u),
+                (0xaabbccddu, 0x00000008u))));
+    True(twoDraws.IsSuccess, twoDraws.Error.ToString());
+    Equal(2, twoDraws.Message!.Draw!.Cards.Count);
+    Equal(0x11223344u, twoDraws.Message.Draw.Cards[0].CardCode);
+    Equal(0x00000004u, twoDraws.Message.Draw.Cards[0].Position);
+    Equal(0xaabbccddu, twoDraws.Message.Draw.Cards[1].CardCode);
+    Equal(0x00000008u, twoDraws.Message.Draw.Cards[1].Position);
+
+    True(mirror.Apply(DecodeMessage(decoder, new byte[] { 91, 0, 0xf4, 0x01, 0, 0 })).IsSuccess);
+    Equal(7500u, mirror.Snapshot.Participants[0].LifePoints.Value);
+    True(mirror.Apply(DecodeMessage(decoder, new byte[] { 92, 0, 0xfa, 0, 0, 0 })).IsSuccess);
+    Equal(7750u, mirror.Snapshot.Participants[0].LifePoints.Value);
+    True(mirror.Apply(DecodeMessage(decoder, new byte[] { 94, 1, 0x70, 0x17, 0, 0 })).IsSuccess);
+    Equal(6000u, mirror.Snapshot.Participants[1].LifePoints.Value);
+    True(mirror.Apply(DecodeMessage(decoder, new byte[] { 100, 1, 0xf4, 0x01, 0, 0 })).IsSuccess);
+    Equal(5500u, mirror.Snapshot.Participants[1].LifePoints.Value);
+
+    string beforeLpOverflow = mirror.Snapshot.ToDeterministicString();
+    MirrorApplyResult lpOverflow = mirror.Apply(DecodeMessage(
+        decoder,
+        new byte[] { 92, 0, 0xff, 0xff, 0xff, 0xff }));
+    False(lpOverflow.IsSuccess);
+    Equal(GameplayErrorCode.ArithmeticFailure, lpOverflow.Error);
+    Equal(beforeLpOverflow, mirror.Snapshot.ToDeterministicString());
+
+    GameplayMessageDecodeResult zeroDraw = decoder.Decode(
+        new StocGameMessagePayload(DrawMessage(0)));
+    False(zeroDraw.IsSuccess);
+    Equal(GameplayErrorCode.InvalidDrawCount, zeroDraw.Error);
+
+    GameplayMessageV1 terminal = DecodeMessage(decoder, new byte[] { 5, 2, 0x07 });
+    MirrorApplyResult terminalResult = mirror.Apply(terminal);
+    True(terminalResult.IsSuccess, terminalResult.Error.ToString());
+    True(mirror.Snapshot.Terminal.IsTerminal);
+    Null(mirror.Snapshot.Terminal.Winner);
+    Equal((byte)0x07, mirror.Snapshot.Terminal.WinType);
+
+    MirrorApplyResult duplicateTerminal = mirror.Apply(
+        DecodeMessage(decoder, new byte[] { 5, 2, 0x07 }));
+    False(duplicateTerminal.IsSuccess);
+    Equal(GameplayErrorCode.TerminalStateMutation, duplicateTerminal.Error);
+    MirrorApplyResult afterTerminal = mirror.Apply(
+        DecodeMessage(decoder, new byte[] { 40, 0 }));
+    False(afterTerminal.IsSuccess);
+    Equal(GameplayErrorCode.TerminalStateMutation, afterTerminal.Error);
+}
+
+static void TestFaceDownTransition()
+{
+    (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+        CreateMirror(0x00);
+    ModernLocInfoV1 empty = new(0, 0, 0, 0);
+    ModernLocInfoV1 first = new(0, 0x04, 0, 0x04);
+    ModernLocInfoV1 second = new(0, 0x04, 1, 0x04);
+    True(mirror.Apply(DecodeMessage(
+        decoder,
+        MoveMessage(0x11223344, empty, first, 0))).IsSuccess);
+    True(mirror.Apply(DecodeMessage(
+        decoder,
+        MoveMessage(0x55667788, empty, second, 0))).IsSuccess);
+    True(mirror.Apply(DecodeMessage(
+        decoder,
+        CardTargetMessage(first, second))).IsSuccess);
+    ModernQueryV1 query = DecodeQuery(
+        QueryRecord(QueryFlagV1.Code, U32(0x11223344)),
+        QueryRecord(QueryFlagV1.Type, U32(0x01)),
+        QueryEnd());
+    True(mirror.Apply(DecodeMessage(
+        decoder,
+        UpdateCardMessage(0, 0x04, 0, query))).IsSuccess);
+
+    MirrorApplyResult faceDown = mirror.Apply(DecodeMessage(
+        decoder,
+        PosChangeMessage(0, 0x04, 0, 0x04, 0x08)));
+    True(faceDown.IsSuccess, faceDown.Error.ToString());
+    Equal(0, mirror.Snapshot.TargetRelations.Count);
+    MirrorCardSnapshotV1 hidden = mirror.Snapshot.Cards.Single(
+        card => card.Zone == MirrorZoneV1.MonsterZone && card.Sequence == 0);
+    False(hidden.CardCode.IsKnown);
+    Equal(0, hidden.QueryFields.Count);
+}
+
+static void TestUpdateDataWireOrder()
+{
+    (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+        CreateMirror(0x00);
+    ModernLocInfoV1 empty = new(0, 0, 0, 0);
+    True(mirror.Apply(DecodeMessage(
+        decoder,
+        MoveMessage(0x100, empty, new ModernLocInfoV1(0, 0x02, 0, 0x08), 0))).IsSuccess);
+    True(mirror.Apply(DecodeMessage(
+        decoder,
+        MoveMessage(0x200, empty, new ModernLocInfoV1(0, 0x02, 1, 0x08), 0))).IsSuccess);
+
+    ModernQueryV1 orderedQuery = DecodeQuery(
+        QueryRecord(QueryFlagV1.Position, U32(0x04)),
+        QueryRecord(QueryFlagV1.Code, U32(0xabcdef01)),
+        QueryEnd());
+    byte[] emptyQuery = QueryEnd();
+    GameplayMessageV1 updateData = DecodeMessage(
+        decoder,
+        UpdateDataMessage(0, 0x02, Join(orderedQuery.RawBytes.ToArray(), emptyQuery)));
+    MirrorApplyResult result = mirror.Apply(updateData);
+    True(result.IsSuccess, result.Error.ToString());
+    MirrorCardSnapshotV1 first = mirror.Snapshot.Cards.Single(
+        card => card.Zone == MirrorZoneV1.Hand && card.Sequence == 0);
+    Equal(0xabcdef01u, first.CardCode.Value);
+    Equal(2, first.QueryFields.Count);
+    Equal(QueryFlagV1.Position, first.QueryFields[0].Flag);
+    Equal(QueryFlagV1.Code, first.QueryFields[1].Flag);
+}
+
+static void TestMirrorChunking()
+{
+    byte[] startFrame = WireFrameCodec.EncodeStoc(
+        StocPacketType.GameMsg,
+        CreateStartBytes(0x00));
+    byte[] moveFrame = WireFrameCodec.EncodeStoc(
+        StocPacketType.GameMsg,
+        MoveMessage(
+            0x11223344,
+            new ModernLocInfoV1(0, 0, 0, 0),
+            new ModernLocInfoV1(0, 0x02, 0, 0x08),
+            0));
+    byte[] turnFrame = WireFrameCodec.EncodeStoc(
+        StocPacketType.GameMsg,
+        new byte[] { 40, 0 });
+    byte[] phaseFrame = WireFrameCodec.EncodeStoc(
+        StocPacketType.GameMsg,
+        new byte[] { 41, 4, 0 });
+    byte[] transcript = Join(startFrame, moveFrame, turnFrame, phaseFrame);
+
+    string whole = RunMirrorTranscript(new[] { transcript });
+    string oneByte = RunMirrorTranscript(
+        transcript.Select(value => new[] { value }).ToArray());
+    string irregular = RunMirrorTranscript(
+        Split(transcript, new[] { 1, 2, 7, 3, 11 }));
+    Equal(whole, oneByte);
+    Equal(whole, irregular);
 }
 
 static string RunChunking(byte[][] chunks, out TestTransport transport)
@@ -471,18 +1077,266 @@ static GameplayHandoffOfferV1 CreateHandoff(
     return new GameplayHandoffOfferV1(transport, publicSession, pendingBytes);
 }
 
-static byte[] CreateStartBytes(byte playerType)
+static byte[] CreateStartBytes(
+    byte playerType,
+    ushort deckCount0 = 40,
+    ushort extraCount0 = 15,
+    ushort deckCount1 = 41,
+    ushort extraCount1 = 16)
 {
     byte[] bytes = new byte[18];
     bytes[0] = 4;
     bytes[1] = playerType;
     BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(2, 4), 8000);
     BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(6, 4), 7000);
-    BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(10, 2), 40);
-    BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(12, 2), 15);
-    BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(14, 2), 41);
-    BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(16, 2), 16);
+    BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(10, 2), deckCount0);
+    BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(12, 2), extraCount0);
+    BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(14, 2), deckCount1);
+    BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(16, 2), extraCount1);
     return bytes;
+}
+
+static GameplayMessageV1 DecodeMessage(
+    GameplayMessageDecoderV1 decoder,
+    byte[] bytes)
+{
+    GameplayMessageDecodeResult result = decoder.Decode(
+        new StocGameMessagePayload(bytes));
+    True(result.IsSuccess, result.Error.ToString());
+    NotNull(result.Message);
+    return result.Message!;
+}
+
+static ModernQueryV1 DecodeQuery(params byte[][] records)
+{
+    ModernQueryDecodeResult result = ModernQueryDecoderV1.Decode(
+        Join(records));
+    True(result.IsSuccess, result.Error.ToString());
+    NotNull(result.Value);
+    return result.Value!;
+}
+
+static (PerspectiveStateMirrorV1 Mirror, GameplayMessageDecoderV1 Decoder)
+    CreateMirror(
+        byte playerType,
+        ushort deckCount0 = 2,
+        ushort extraCount0 = 1,
+        ushort deckCount1 = 2,
+        ushort extraCount1 = 1)
+{
+    GameplayMessageDecoderV1 decoder = new();
+    GameplayMessageDecodeResult start = decoder.Decode(
+        new StocGameMessagePayload(
+            CreateStartBytes(
+                playerType,
+                deckCount0,
+                extraCount0,
+                deckCount1,
+                extraCount1)));
+    True(start.IsSuccess, start.Error.ToString());
+    MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
+        start.Message!,
+        start.Perspective!);
+    True(created.IsSuccess, created.Error.ToString());
+    return (created.Mirror!, decoder);
+}
+
+static byte[] QueryRecord(QueryFlagV1 flag, byte[] payload) =>
+    QueryRecordRaw((uint)flag, payload);
+
+static byte[] QueryRecordRaw(uint flag, byte[] payload)
+{
+    byte[] record = new byte[2 + 4 + payload.Length];
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        record.AsSpan(0, 2), checked((ushort)(4 + payload.Length)));
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(2, 4), flag);
+    payload.CopyTo(record, 6);
+    return record;
+}
+
+static byte[] QueryEnd() => new byte[] { 4, 0, 0, 0, 0, 0x80 };
+
+static byte[] U32(uint value)
+{
+    byte[] bytes = new byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
+    return bytes;
+}
+
+static byte[] I32(int value)
+{
+    byte[] bytes = new byte[4];
+    BinaryPrimitives.WriteInt32LittleEndian(bytes, value);
+    return bytes;
+}
+
+static byte[] U64(ulong value)
+{
+    byte[] bytes = new byte[8];
+    BinaryPrimitives.WriteUInt64LittleEndian(bytes, value);
+    return bytes;
+}
+
+static byte[] LocInfo(byte controller, byte location, uint sequence, uint position)
+{
+    byte[] bytes = new byte[10];
+    bytes[0] = controller;
+    bytes[1] = location;
+    BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(2, 4), sequence);
+    BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(6, 4), position);
+    return bytes;
+}
+
+static byte[] UpdateCardMessage(
+    byte player,
+    byte location,
+    byte sequence,
+    ModernQueryV1 query) =>
+    Join(
+        new byte[] { 7, player, location, sequence },
+        query.RawBytes.ToArray());
+
+static byte[] UpdateDataMessage(
+    byte player,
+    byte location,
+    byte[] queryBody) =>
+    Join(new byte[] { 6, player, location }, U32((uint)queryBody.Length), queryBody);
+
+static byte[] MoveMessage(
+    uint cardCode,
+    ModernLocInfoV1 previous,
+    ModernLocInfoV1 current,
+    uint reason) =>
+    Join(
+        new byte[] { 50 },
+        U32(cardCode),
+        LocInfo(previous.Controller, previous.Location, previous.Sequence, previous.Position),
+        LocInfo(current.Controller, current.Location, current.Sequence, current.Position),
+        U32(reason));
+
+static byte[] PosChangeMessage(
+    byte controller,
+    byte location,
+    byte sequence,
+    byte previousPosition,
+    byte currentPosition) =>
+    Join(
+        new byte[] { 53 },
+        U32(0),
+        new byte[] { controller, location, sequence, previousPosition, currentPosition });
+
+static byte[] SetMessage(uint cardCode, ModernLocInfoV1 location) =>
+    Join(
+        new byte[] { 54 },
+        U32(cardCode),
+        LocInfo(location.Controller, location.Location, location.Sequence, location.Position));
+
+static byte[] SwapMessage(ModernLocInfoV1 first, ModernLocInfoV1 second) =>
+    Join(
+        new byte[] { 55 },
+        U32(0),
+        LocInfo(first.Controller, first.Location, first.Sequence, first.Position),
+        U32(0),
+        LocInfo(second.Controller, second.Location, second.Sequence, second.Position));
+
+static byte[] CardTargetMessage(
+    ModernLocInfoV1 source,
+    ModernLocInfoV1 target,
+    bool cancel = false) =>
+    Join(
+        new byte[] { (byte)(cancel ? 97 : 96) },
+        LocInfo(source.Controller, source.Location, source.Sequence, source.Position),
+        LocInfo(target.Controller, target.Location, target.Sequence, target.Position));
+
+static byte[] EquipMessage(ModernLocInfoV1 card, ModernLocInfoV1 target) =>
+    Join(
+        new byte[] { 93 },
+        LocInfo(card.Controller, card.Location, card.Sequence, card.Position),
+        LocInfo(target.Controller, target.Location, target.Sequence, target.Position));
+
+static byte[] UnequipMessage(ModernLocInfoV1 card) =>
+    Join(
+        new byte[] { 95 },
+        LocInfo(card.Controller, card.Location, card.Sequence, card.Position));
+
+static byte[] ChainingMessage(
+    ModernLocInfoV1 card,
+    uint chainSize,
+    uint cardCode = 0x11223344) =>
+    Join(
+        new byte[] { 70 },
+        U32(cardCode),
+        LocInfo(card.Controller, card.Location, card.Sequence, card.Position),
+        new byte[] { card.Controller, card.Location },
+        U32(card.Sequence),
+        U64(0x0102030405060708),
+        U32(chainSize));
+
+static byte[] BecomeTargetMessage(params ModernLocInfoV1[] targets)
+{
+    List<byte[]> parts = new() { new byte[] { 83 }, U32((uint)targets.Length) };
+    parts.AddRange(
+        targets.Select(target =>
+            LocInfo(target.Controller, target.Location, target.Sequence, target.Position)));
+    return Join(parts.ToArray());
+}
+
+static byte[] DrawMessage(
+    byte player,
+    params (uint Code, uint Position)[] cards)
+{
+    List<byte[]> parts = new() { new byte[] { 90, player }, U32((uint)cards.Length) };
+    parts.AddRange(cards.Select(card => Join(U32(card.Code), U32(card.Position))));
+    return Join(parts.ToArray());
+}
+
+static string RunMirrorTranscript(byte[][] chunks)
+{
+    TestTransport transport = new(chunks);
+    GameplayHandoffAcquireResult acquired = GameplayHandoffConsumerV1.TryCreate(
+        CreateHandoff(transport, Array.Empty<byte>()));
+    True(acquired.IsSuccess);
+    GameplayPumpResult start = acquired.Consumer!.PumpAsync(
+        CancellationToken.None).GetAwaiter().GetResult();
+    True(start.IsSuccess, start.Error.ToString());
+    MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
+        start.Message!,
+        start.Perspective!);
+    True(created.IsSuccess, created.Error.ToString());
+
+    GameplayMirrorSessionV1 session = new(start.Session!, created.Mirror!);
+    GameplayMirrorPumpResult move = session.PumpAsync(
+        CancellationToken.None).GetAwaiter().GetResult();
+    True(move.IsSuccess, move.Error.ToString());
+    GameplayMirrorPumpResult turn = session.PumpAsync(
+        CancellationToken.None).GetAwaiter().GetResult();
+    True(turn.IsSuccess, turn.Error.ToString());
+    GameplayMirrorPumpResult phase = session.PumpAsync(
+        CancellationToken.None).GetAwaiter().GetResult();
+    True(phase.IsSuccess, phase.Error.ToString());
+    string result = session.Mirror.Snapshot.ToDeterministicString();
+    session.DisposeAsync().GetAwaiter().GetResult();
+    acquired.Consumer.DisposeAsync().GetAwaiter().GetResult();
+    return result;
+}
+
+static byte[] Join(params byte[][] parts)
+{
+    int length = 0;
+    foreach (byte[] part in parts)
+    {
+        length = checked(length + part.Length);
+    }
+
+    byte[] result = new byte[length];
+    int offset = 0;
+    foreach (byte[] part in parts)
+    {
+        part.CopyTo(result, offset);
+        offset += part.Length;
+    }
+
+    return result;
 }
 
 static byte[][] Split(byte[] bytes, int[] sizes)
@@ -531,6 +1385,14 @@ static void Equal<T>(T expected, T actual)
     if (!EqualityComparer<T>.Default.Equals(expected, actual))
     {
         throw new InvalidOperationException($"expected {expected}; actual {actual}");
+    }
+}
+
+static void NotEqual<T>(T first, T second)
+{
+    if (EqualityComparer<T>.Default.Equals(first, second))
+    {
+        throw new InvalidOperationException($"values unexpectedly equal: {first}");
     }
 }
 

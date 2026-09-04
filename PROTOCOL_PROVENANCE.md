@@ -195,6 +195,28 @@ adds no query-flag union, state-mirror, semantic-locator, or public-projection
 protocol claim. No upstream parser, control flow, source implementation, or
 serialized packet is copied.
 
+## I3B implementation facts
+
+I3B uses the following additional clean-room facts. These entries bind only
+the independently implemented wire reads and structural mirror behavior to
+the exact accepted pins; no upstream source, control flow, or serialized
+fixture is copied.
+
+| External repository | Exact commit | Source path / symbol | Fact learned | Date | Classification |
+| --- | --- | --- | --- | --- | --- |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | ocgapi_constants.h, `LOCATION_*` and position constants | Modern location bits are deck `0x01`, hand `0x02`, monster `0x04`, spell/trap `0x08`, grave `0x10`, removed `0x20`, extra `0x40`, and overlay `0x80`; the overlay bit modifies a monster-zone parent address | 2026-09-04 | numeric constant/structural rule |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | operations.cpp, `Processors::Draw` | `MSG_DRAW` writes player, a uint32 count, and each drawn card as an interleaved uint32 card code followed by uint32 position; the writer emits the message only for a nonzero draw | 2026-09-04 | wire layout/observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp, `MSG_DRAW` case | The modern client consumes each draw record as code then position and removes that many cards from the deck into the hand; it does not provide a physical-card identity discriminator for a previously hidden deck entity | 2026-09-04 | wire layout/identity boundary |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/client_field.cpp, `ClientField::Initial`, `AddCard`, `RemoveCard` | The client owns seven monster slots and eight spell/trap slots; pile insertion/removal uses list order and compacts later pile sequence values, while field slots remain addressed by fixed sequence | 2026-09-04 | structural state rule |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/client_field.cpp, `UpdateFieldCard` and `UpdateCard` | `MSG_UPDATE_DATA` applies successive query records to successive entries of the selected client list, including skipped entries; `MSG_UPDATE_CARD` addresses one selected entry by its explicit sequence | 2026-09-04 | observed behavior/wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp, `MSG_MOVE`, `MSG_POS_CHANGE`, `MSG_SWAP` cases | The client uses the complete previous/current loc_info records for structural movement, updates a position change in place, and exchanges two addressed cards for `MSG_SWAP`; presentation behavior does not replace the structural addresses | 2026-09-04 | observed behavior |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp, `MSG_POS_CHANGE` case | A face-up to face-down position change clears client target state before applying the new position; I3B applies the same conservative boundary to stale mirror relations and card/query facts without creating a new entity | 2026-09-04 | observed behavior/privacy boundary |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | processor.cpp, movement, relation, chain, and LP message writers | Required I3B messages carry the independently frozen uint32 card/reason or amount fields, modern loc_info records, chain indexes, target/equipment addresses, and authoritative LP updates without embedding a second legality decision | 2026-09-04 | wire layout/authority boundary |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/duelclient.cpp, `MSG_SET`, chain, equip, target, LP, and turn/phase cases | `MSG_SET` is consumed as a presentation signal without changing client card structure; chain, target, equipment, LP, turn, and phase cases update or display the addressed values after complete wire reads | 2026-09-04 | observed behavior/effect classification |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | gframe/client_card.cpp, `ClientCard::UpdateInfo` | Query fields are applied only when their corresponding admitted flag is present; I3B retains the complete decoded query fields in wire order and does not reinterpret them as a public projection or semantic locator | 2026-09-04 | observed behavior/privacy boundary |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | operations.cpp and processor.cpp, chain/equip/target writers | Chain lifecycle indexes and relation messages reference protocol-visible card locations; I3B may retain only resolved value-owned internal references and must fail closed when a required reference is absent or ambiguous | 2026-09-04 | wire layout/structural rule |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | field.h, `player_info` | The authoritative LP storage is signed 32-bit and the protocol writes the nonnegative value as uint32; I3B rejects a wire value outside the representable nonnegative authoritative range before applying it | 2026-09-04 | semantic width/arithmetic rule |
+
 ## Provenance boundaries
 
 The pinned CardScripts, BabelCDB, and Distribution commits identify a future
