@@ -671,8 +671,10 @@ exact accepted PublicSemanticZoneV1 already classified by I3D
 exact resolved indexed sequence
 ```
 
-The accepted card's existing indexed locator must parse to the exact player,
-accepted zone, and sequence. Do not construct or return the comparison locator.
+The accepted card's existing indexed locator must equal the local
+`TryCreateIndexed` comparison value for the exact player, accepted zone, and
+sequence. The comparison value is never published, stored, returned, or
+cached.
 For SpellTrapZone, I4B accepts only the three listed I3D-classified values and
 does not select among them.
 
