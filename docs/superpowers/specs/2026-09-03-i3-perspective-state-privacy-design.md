@@ -735,6 +735,35 @@ The following ledger is normative for agreement checking; entries are ordered by
 
 A FROZEN layout has an exact modern V1 field sequence and length/count rule in the JSON layout_catalog. An UNFROZEN layout is not a speculative codec and fails closed until its owning future slice freezes it.
 
+### `MSG_DRAW_V1` exact modern layout
+
+The pinned modern draw message is an interleaved counted sequence:
+
+```text
+u8      message_id = MSG_DRAW (90)
+u8      player
+u32_le  count
+repeat count times:
+    u32_le card_code
+    u32_le position
+```
+
+Each `DrawCardRecordV1` is exactly eight bytes and its order is
+`card_code` then `position` for the same record. The payload size excludes the
+message ID and is `5 + 8*count`; the complete inner message size is
+`6 + 8*count`. I3B V1 requires `count >= 1` because the pinned ocgcore
+`Processors::Draw` writer emits `MSG_DRAW` only inside its `drawn != 0` path.
+The remaining bytes after `player` and `count` must equal exactly `8*count`.
+Checked multiplication is required before allocation or iteration; zero count,
+truncated pairs, a declared count larger than the supplied pairs, and any
+trailing byte fail closed.
+
+The independently constructed count-one, count-two interleaving, zero-count,
+truncated-pair, count-mismatch, trailing-byte, trailing-extra-pair, and
+checked-arithmetic vectors are recorded under `MSG_DRAW_V1.validation_vectors`
+in the machine inventory. This correction does not change I3B0 query flags or
+any other message layout.
+
 ## 17. Ordered I3 implementation slices
 
 The following are separate future tasks. I3A0 does not authorize any of them.

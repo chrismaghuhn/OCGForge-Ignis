@@ -1563,10 +1563,83 @@
       "payload_fields": [
         "u8 player",
         "u32_le count",
-        "repeated u32_le card_code",
-        "u32_le position"
+        "DrawCardRecordV1[count]"
       ],
-      "length_rule": "COUNTED"
+      "record_catalog": {
+        "DrawCardRecordV1": {
+          "fields": [
+            "u32_le card_code",
+            "u32_le position"
+          ],
+          "byte_width": 8,
+          "ordering": "CODE_THEN_POSITION_PER_RECORD"
+        }
+      },
+      "length_rule": "COUNTED_INTERLEAVED",
+      "count_field_width_bits": 32,
+      "minimum_count": 1,
+      "payload_bytes_formula": "5 + (8 * count)",
+      "total_message_bytes_formula": "6 + (8 * count)",
+      "minimum_payload_bytes": 13,
+      "minimum_total_message_bytes": 14,
+      "count_zero_behavior": "FAIL_CLOSED_ZERO_DRAW_COUNT",
+      "exact_remainder_rule": "REMAINING_AFTER_PLAYER_AND_COUNT_EQUALS_8_TIMES_COUNT",
+      "checked_arithmetic": "CHECKED_8_TIMES_COUNT_BEFORE_ALLOCATION_OR_ITERATION",
+      "truncated_behavior": "FAIL_CLOSED_COUNT_LENGTH_MISMATCH",
+      "trailing_behavior": "FAIL_CLOSED_TRAILING_BYTES",
+      "field_offsets": {
+        "message_id": 0,
+        "player": 1,
+        "count": 2,
+        "first_record": 6,
+        "record_width": 8
+      },
+      "validation_vectors": {
+        "positive": [
+          {
+            "case": "COUNT_1",
+            "inner_hex": "5A 00 01 00 00 00 44 33 22 11 88 77 66 55",
+            "expected": "player=0; count=1; cards[0].code=0x11223344; cards[0].position=0x55667788"
+          },
+          {
+            "case": "COUNT_2_INTERLEAVED",
+            "inner_hex": "5A 01 02 00 00 00 44 33 22 11 88 77 66 55 CC BB AA 99 00 FF EE DD",
+            "expected": "player=1; count=2; cards[0]=(0x11223344,0x55667788); cards[1]=(0x99AABBCC,0xDDEEFF00)"
+          }
+        ],
+        "negative": [
+          {
+            "case": "ZERO_COUNT",
+            "inner_hex": "5A 00 00 00 00 00",
+            "expected": "FAIL_CLOSED_ZERO_DRAW_COUNT"
+          },
+          {
+            "case": "TRUNCATED_PAIR",
+            "inner_hex": "5A 00 01 00 00 00 44 33 22 11",
+            "expected": "FAIL_CLOSED_COUNT_LENGTH_MISMATCH"
+          },
+          {
+            "case": "DECLARED_COUNT_EXCEEDS_SUPPLIED_PAIRS",
+            "inner_hex": "5A 00 02 00 00 00 44 33 22 11 88 77 66 55",
+            "expected": "FAIL_CLOSED_COUNT_LENGTH_MISMATCH"
+          },
+          {
+            "case": "TRAILING_BYTE",
+            "inner_hex": "5A 00 01 00 00 00 44 33 22 11 88 77 66 55 AA",
+            "expected": "FAIL_CLOSED_TRAILING_BYTES"
+          },
+          {
+            "case": "TRAILING_EXTRA_PAIR",
+            "inner_hex": "5A 00 01 00 00 00 44 33 22 11 88 77 66 55 CC BB AA 99 00 FF EE DD",
+            "expected": "FAIL_CLOSED_TRAILING_BYTES"
+          },
+          {
+            "case": "COUNT_ARITHMETIC_OVERFLOW",
+            "inner_hex": "5A 00 FF FF FF FF",
+            "expected": "FAIL_CLOSED_BEFORE_ALLOCATION_OR_ITERATION; checked 8*count"
+          }
+        ]
+      }
     },
     "MSG_DAMAGE_V1": {
       "payload_fields": [
