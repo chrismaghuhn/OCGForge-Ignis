@@ -262,6 +262,35 @@ OCGFORGE_PUBLIC_ACTION_KEY_DERIVATION=I6_OWNED
 I6_BYTE_EXACT_COMPATIBILITY=UNPROVEN
 ```
 
+Remediation-02 freezes the public-reference ownership boundary against the
+accepted I3C/I3D projection. The mirror resolves a prompt's source reference
+privately; it is not allowed to publish a candidate locator or card code. A
+future I4 implementation must correlate that private result to a successful
+accepted `PublicStateProjectionResultV1` and copy the exact locator and card
+code from its `PublicStateSnapshotV1.Cards[]`. The locator codec alone is only
+syntax/validation, not publication authority.
+
+```text
+I3D_PUBLIC_STATE_PROJECTION_IS_PUBLIC_LOCATOR_AUTHORITY=YES
+MIRROR_PUBLIC_LOCATOR_AUTHORITY=NO
+PUBLIC_SEMANTIC_LOCATOR_CODEC_ALONE_IS_PUBLICATION_AUTHORITY=NO
+CARD_CODE_AUTHORITY=ACCEPTED_PUBLIC_SNAPSHOT
+```
+
+For indexed visible cards, the permitted correlation is absolute player,
+semantic zone, and semantic sequence. Known HAND/EXTRA_DECK cards use the
+accepted public-ordinal snapshot card only when the public correlation is
+unique; duplicate ambiguity, missing snapshot cards, Main Deck cards, raw
+hand/extra sequence, physical continuity, mirror identity, collection order,
+and allocation order fail closed or remain private. POSITION is different:
+its validated multi-bit mask is the complete domain authority, and an
+unproven card code is absent rather than a reason to reject the prompt.
+
+| Repository | Exact commit | Source path / symbol | Fact learned | Date | Classification |
+| --- | --- | --- | --- | --- | --- |
+| OCGForge-Ignis | 4a054c3e0f0be10b704a1614ae275d4ce630ddce | `docs/contracts/public-state-projection-v1.md#I3D identity ownership`; `src/OCGForge.Ignis.Gameplay/PublicStateProjectionV1.cs#PublicStateProjectionResultV1`, `PublicCardStateV1`, `PublicStateSnapshotV1` | The accepted successful I3C/I3D result is the value-owned public snapshot authority; its `Cards[]` contains the exact public semantic locators and perspective-safe card codes used by the later I4 boundary | 2026-09-04 | accepted public-state authority |
+| OCGForge-Ignis | 4a054c3e0f0be10b704a1614ae275d4ce630ddce | `src/OCGForge.Ignis.Gameplay/PublicSemanticLocatorV1.cs#PublicSemanticLocatorV1`; `docs/contracts/public-semantic-locator-v1.md` | The locator contract validates the syntax of a semantic locator but does not prove that a locator belongs to the current accepted public projection | 2026-09-04 | locator syntax/authority boundary |
+
 | External repository | Exact commit | Source path / symbol | Fact learned | Date | Classification |
 | --- | --- | --- | --- | --- | --- |
 | ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `ocgapi_constants.h#MSG_SELECT_*`, `POS_*` | The seven I4 message IDs are 10, 11, 12, 13, 14, 16, and 19; position values are 0x01, 0x02, 0x04, and 0x08 | 2026-09-04 | numeric constant |

@@ -92,8 +92,10 @@ ModernLocInfoV1 =
 It is exactly 10 bytes. For an overlay card, the pinned core's
 `card::get_info_location` supplies the parent location with the overlay bit,
 the parent sequence, and the overlay sequence in `position`. A location is a
-protocol-local address until the future I4 implementation proves a matching
-perspective-safe `PublicSemanticLocatorV1`.
+protocol-local address. A future I4 implementation may use it only for private
+source resolution and semantic correlation. It must not publish a new locator
+from that address: the published locator must be copied from the successful
+accepted I3D public-state projection described below.
 
 Every `player`/`controller` field that identifies a duel player must be 0 or 1
 in V1. Other values fail closed as an invalid participant. The accepted
@@ -133,42 +135,102 @@ it is false. A false predicate never authorizes a substitute field.
 
 No public context or candidate field exists outside the matrices below.
 
-### Exact predicates
+### Exact predicates and publication authority
 
-The following predicates are normative:
+The following predicates are normative. `PublicSemanticLocatorV1` is the
+accepted locator syntax/validation contract, not a publication authority. The
+only publication authority for a candidate card locator or card code is the
+successful accepted `PublicStateProjectionResultV1` produced by I3D's accepted
+I3C projection:
 
 ```text
-PUBLIC_CARD_REFERENCE_PROVEN(source_reference, mirror) =
-    source_reference resolves to exactly one current mirror card
-    AND the mirror card has a current accepted semantic position
-    AND PublicSemanticLocatorV1 can be created from that semantic position
-    AND no MirrorEntityIdV1, raw loc_info, allocation ordinal, or relation
-        ordinal is used in the resulting locator
+MIRROR_PUBLIC_LOCATOR_AUTHORITY=NO
+PUBLIC_SEMANTIC_LOCATOR_CODEC_ALONE_IS_PUBLICATION_AUTHORITY=NO
+I3D_PUBLIC_STATE_PROJECTION_IS_PUBLIC_LOCATOR_AUTHORITY=YES
+CANDIDATE_LOCATORS_COPIED_FROM_ACCEPTED_PUBLIC_SNAPSHOT=YES
+SYNTHETIC_MIRROR_DERIVED_PUBLIC_LOCATOR=NO
+POSITION_DOMAIN_AUTHORITY=VALIDATED_POSITION_MASK
+POSITION_CARD_LOCATOR=ABSENT
+POSITION_UNBOUND_CARD_CODE_REJECTS_PROMPT=NO
 
-CARD_CODE_SAFE(source_code, referenced_card) =
-    source_code != 0
-    AND referenced_card.CardCode.IsKnown
-    AND referenced_card.CardCode.Provenance is one of
-        PublicProtocolFact, PerspectivePrivateFact,
-        DerivedFromProvenPublicFacts
-    AND referenced_card.CardCode.Value == source_code
+accepted PublicStateProjectionResultV1
+    -> Snapshot
+    -> Snapshot.Cards[]
+    -> exact existing PublicCardStateV1.Locator and CardCode values
+```
 
-POSITION_CARD_CODE_SAFE(source_code, mirror_position_context) =
+The mirror is a private resolution authority only. It may establish which
+current source entity/context a protocol reference addresses, but it cannot
+publish a locator or card code independently.
+
+`accepted_public_projection` is a private authority input to the future I4
+projector; it is not a public context member and is not duplicated into a
+candidate. A successful result is required. The projector copies the exact
+`PublicCardStateV1.Locator` and, when present, the exact `CardCode` from the
+correlated snapshot card. It never calls a locator factory to create a second
+published identity. If the accepted snapshot has no corresponding card, or if
+more than one snapshot card could match without hidden physical continuity,
+the card-bearing prompt fails closed.
+
+```text
+PUBLIC_CARD_REFERENCE_PROVEN(
+    source_reference,
+    mirror,
+    accepted_public_projection
+) =
+    accepted_public_projection.IsSuccess
+    AND accepted_public_projection.Snapshot is present
+    AND source_reference privately resolves to exactly one current mirror
+        entity/context
+    AND exactly one current PublicCardStateV1 in
+        accepted_public_projection.Snapshot.Cards[] correlates to that source
+        through only the permitted perspective-safe semantic facts below
+    AND the candidate's published locator is an exact copy of that
+        PublicCardStateV1.Locator
+    AND no new locator is created by the mirror or by the locator codec
+
+INDEXED_VISIBLE_CORRELATION =
+    exact absolute player + semantic zone + semantic sequence,
+    only for an indexed visible family admitted by the public-state contract
+
+HAND_OR_EXTRA_PUBLIC_ORDINAL_CORRELATION =
+    exact absolute player + zone + known public card code, with exactly one
+    matching PublicCardStateV1 in the accepted public snapshot
+    AND no raw hand/extra sequence, physical continuity, mirror identity,
+        collection order, or allocation order is used
+
+OVERLAY_CORRELATION =
+    exact accepted public overlay semantic components, copied from the
+    matching PublicCardStateV1; no OverlayRelations or mirror identity fallback
+
+MAIN_DECK_CORRELATION =
+    not available in V1 because Main Deck has no per-card public locator
+
+CARD_CODE_SAFE(source_code, accepted_public_card) =
     source_code != 0
-    AND the current perspective mirror contains exactly one current semantic
-        card context bound to this position prompt
-    AND that card's known accepted-provenance code == source_code
+    AND accepted_public_card.CardCode is present
+    AND accepted_public_card.CardCode.Value == source_code
+
+POSITION_CARD_CODE_SAFE(source_code, accepted_position_context) =
+    source_code != 0
+    AND an accepted public-state context explicitly correlates this position
+        prompt to exactly one current public card without deriving a locator
+    AND that PublicCardStateV1.CardCode is present
+    AND that public card code == source_code
 ```
 
 For every card-bearing BATTLECMD, IDLECMD, EFFECTYN, and CHAIN entry,
-`PUBLIC_CARD_REFERENCE_PROVEN` is required. If it is false, the entire prompt
-projection fails closed and no candidate list is published. `CARD_CODE_SAFE`
-controls only whether the separate `card_code` member is included; a false
-`CARD_CODE_SAFE` does not create an unknown code value.
+`PUBLIC_CARD_REFERENCE_PROVEN` is required. If it is false, the entire
+card-bearing prompt projection fails closed and no candidate list is published.
+The public locator is copied from the accepted snapshot, never reconstructed.
+`CARD_CODE_SAFE` controls only whether the separate `card_code` member is
+included; a false `CARD_CODE_SAFE` does not create an unknown code value.
 
-`POSITION_CARD_CODE_SAFE` is required for a POSITION prompt because that wire
-layout has no card locator. If it is false, the entire prompt projection fails
-closed. This prevents a raw card code from becoming an unbound public identity.
+`POSITION_CARD_CODE_SAFE` never controls whether a valid POSITION domain is
+published. POSITION's domain authority is the validated emitted bitmask and
+its card locator is always absent. If `POSITION_CARD_CODE_SAFE` is false,
+`position_card_code` is absent and the complete legal position domain is still
+published. The wire card code is never republished as an unbound identity.
 
 ### Context schema
 
@@ -189,11 +251,11 @@ Family-specific shared context members are:
 | --- | --- | --- | --- |
 | `MSG_SELECT_BATTLECMD` | none beyond common context | none | `description_or_effect_id`, `client_mode`, `position_value`, `transition_token`, `option_value`, chain metadata |
 | `MSG_SELECT_IDLECMD` | none beyond common context | none | `description_or_effect_id`, `client_mode`, `position_value`, `transition_token`, `option_value`, chain metadata |
-| `MSG_SELECT_EFFECTYN` | `effect_card_locator` via `PUBLIC_CARD_REFERENCE_PROVEN`; `effect_description_id` as the u64 prompt description | `effect_card_code` via `CARD_CODE_SAFE` | `position_value`, `transition_token`, `option_value`, chain metadata |
+| `MSG_SELECT_EFFECTYN` | `effect_card_locator` copied from the successful accepted public snapshot via `PUBLIC_CARD_REFERENCE_PROVEN`; `effect_description_id` as the u64 prompt description | `effect_card_code` copied from that same accepted public card via `CARD_CODE_SAFE` | `position_value`, `transition_token`, `option_value`, chain metadata |
 | `MSG_SELECT_YESNO` | `yes_no_description_id` as the u64 prompt description | none | card fields, `position_value`, `transition_token`, `option_value`, chain metadata |
 | `MSG_SELECT_OPTION` | none beyond common context | none | card fields, description/effect field, `position_value`, `transition_token`, chain metadata |
 | `MSG_SELECT_CHAIN` | `chain_spe_count`, `chain_forced`, `chain_hint_timing_for_player`, `chain_hint_timing_for_other_player` | none | card fields, `position_value`, `transition_token`, `option_value` |
-| `MSG_SELECT_POSITION` | `position_allowed_positions_mask` after exact mask validation | `position_card_code` via `POSITION_CARD_CODE_SAFE`; false predicate fails the whole prompt | `position_card_locator`, description/effect field, `transition_token`, `option_value`, chain metadata |
+| `MSG_SELECT_POSITION` | `position_allowed_positions_mask` after exact mask validation | `position_card_code` via `POSITION_CARD_CODE_SAFE`; false predicate means ABSENT and does not reject the valid domain | `position_card_locator`, description/effect field, `transition_token`, `option_value`, chain metadata |
 
 `chain_spe_count` is the exact normalized u8 field. `chain_forced` is the
 normalized boolean. The two hint timings are normalized u32 values. None of
@@ -221,8 +283,11 @@ option_value
 The exact inclusion matrix is below. `REQUIRED=value` denotes the status
 `REQUIRED` with that fixed value. A required card locator has the
 `PUBLIC_CARD_REFERENCE_PROVEN` precondition defined above; a false predicate
-fails the whole prompt. `CONDITIONAL(CARD_CODE_SAFE)` always means the exact
-predicate defined above; it never means “include if useful”.
+fails the card-bearing prompt. The locator is the exact value copied from the
+accepted public snapshot. `CONDITIONAL(CARD_CODE_SAFE)` always means the exact
+predicate defined above; it never means “include if useful”. For POSITION,
+`CONDITIONAL(POSITION_CARD_CODE_SAFE)` is absent when false and never removes
+the validated position domain.
 
 #### BATTLECMD candidates
 
@@ -480,8 +545,8 @@ zero-based ordinal within that section:
 
 The core validates kind 0..3, section bounds, and transition flags. The
 `card_code` and coordinates are not public identity; an entry requiring a
-card reference must be normalized through the current perspective mirror and
-the accepted public locator contract.
+card reference is resolved privately through the current perspective mirror
+and then correlated to, and copied from, the accepted public-state snapshot.
 
 ## 6. MSG_SELECT_IDLECMD (11)
 
@@ -578,8 +643,10 @@ coordinates do not collapse. Exact response bindings are:
 
 The transition flags are the core's already computed legal choices. Ignis
 does not infer a phase transition or add a generic pass. A card-bearing
-candidate cannot be public until its card reference is proven through the
-current perspective and `PublicSemanticLocatorV1`.
+candidate cannot be public until its card reference is proven by a unique
+correlation to the accepted public-state snapshot. The mirror only performs
+private source resolution, and `PublicSemanticLocatorV1` only validates or
+compares the copied syntax.
 
 ## 7. MSG_SELECT_EFFECTYN (12)
 
@@ -608,9 +675,11 @@ MSG_SELECT_EFFECTYN:YES -> i32 1 -> 01 00 00 00
 ```
 
 The core accepts only response integers 0 and 1. A public candidate carries
-the normalized card reference and a proven description identifier only after
-the current perspective proves them. Raw location bytes and raw response
-bytes stay private. An unproven required card reference fails closed.
+the normalized card reference copied from the accepted public-state snapshot
+and a proven description identifier only after the private source reference
+has been uniquely correlated to that snapshot card. Raw location bytes and
+raw response bytes stay private. An unproven required card reference fails
+closed.
 
 ## 8. MSG_SELECT_YESNO (13)
 
@@ -800,8 +869,10 @@ MSG_SELECT_POSITION:FACEDOWN_DEFENSE -> i32 8 -> 08 00 00 00
 
 The card code is a wire fact, not automatically a public identity. Since this
 layout carries no card locator, `position_card_code` is present exactly when
-`POSITION_CARD_CODE_SAFE` is true; a false predicate fails the whole prompt.
-No raw coordinate is invented.
+`POSITION_CARD_CODE_SAFE` is true. When the predicate is false, the field is
+absent; the validated multi-bit mask still produces its complete ordered
+position domain. No raw coordinate or locator is invented, and an unbound card
+code does not reject the position prompt.
 
 ## 12. Complete-domain invariant and duplicates
 
@@ -853,9 +924,12 @@ model output, teacher output, archetype inference, beliefs, or probabilities
 
 The seven prompt messages are delivered by the pinned server only to the
 selecting player. That routing does not waive the Ignis public boundary: a
-future projection still uses the established perspective mirror and the
-accepted public semantic locator contract. If the public visibility or card
-reference proof is missing, the candidate domain fails closed.
+future projection resolves source references privately through the established
+perspective mirror, but copies published card locators and card codes only from
+the accepted successful I3D public-state projection. If a required card
+reference is absent or ambiguous in that snapshot, the card-bearing candidate
+domain fails closed. A false POSITION card-code predicate only omits that
+conditional field; it does not remove a valid mask-derived position domain.
 
 The semantic candidate order, keys, prompt ordinal, and private binding
 association depend only on the complete accepted prompt and semantic GAME_MSG
@@ -879,9 +953,10 @@ INVALID_RESPONSE_BINDING
 
 Every failure returns no authoritative candidate domain and sends no response.
 Count arithmetic, source-section bounds, boolean/enum values, participant and
-location proof, position masks, chain cancel rules, and legacy-width rejection
-are all fail-closed checks. No retry policy, teacher, random action, first
-candidate, generic pass, or partial answer is allowed.
+required card-reference proof, position masks, chain cancel rules, and
+legacy-width rejection are all fail-closed checks. A missing conditional
+POSITION card code is not a failure. No retry policy, teacher, random action,
+first candidate, generic pass, or partial answer is allowed.
 
 ## 15. Evidence and non-goals
 

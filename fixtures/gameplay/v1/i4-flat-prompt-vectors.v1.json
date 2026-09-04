@@ -724,9 +724,9 @@
         "contract_id": "ocgforge-ignis.flat-prompt-projection.v1",
         "prompt_family": "MSG_SELECT_POSITION",
         "acting_player": 0,
-        "position_card_code": 3405691582,
         "position_allowed_positions_mask": 13
       },
+      "position_card_code_status": "ABSENT_UNBOUND",
       "expected_candidate_count": 3,
       "ordered_candidates": [
         {
@@ -1061,6 +1061,242 @@
       "expected": "PUBLIC_PRIVATE_BINDING_SEPARATED"
     }
   ],
+  "projection_correlation_vectors": [
+    {
+      "case_id": "INDEXED_VISIBLE_CARD",
+      "family": "MSG_SELECT_BATTLECMD",
+      "source_reference": {
+        "private_resolution": "EXACTLY_ONE_CURRENT_MIRROR_ENTITY",
+        "semantic_correlation": {
+          "absolute_player": 0,
+          "zone": "MONSTER_ZONE",
+          "sequence": 1
+        }
+      },
+      "accepted_public_projection": {
+        "is_success": true,
+        "snapshot_cards": [
+          {
+            "locator": "p0:MONSTER_ZONE:1",
+            "absolute_player": 0,
+            "zone": "MONSTER_ZONE",
+            "card_code": 287454020,
+            "position": 4
+          }
+        ]
+      },
+      "public_candidate": {
+        "public_semantic_card_locator": "p0:MONSTER_ZONE:1",
+        "card_code": 287454020
+      },
+      "locator_source": "accepted_public_projection.snapshot_cards[0].locator",
+      "expected": "PASS_EXACT_SNAPSHOT_LOCATOR_AND_CARD_CODE_COPY"
+    },
+    {
+      "case_id": "KNOWN_HAND_UNIQUE_PUBLIC_ORDINAL",
+      "family": "MSG_SELECT_IDLECMD",
+      "source_reference": {
+        "private_resolution": "EXACTLY_ONE_CURRENT_MIRROR_ENTITY",
+        "semantic_correlation": {
+          "absolute_player": 0,
+          "zone": "HAND",
+          "known_public_card_code": 305419896
+        },
+        "raw_hand_sequence": "PRIVATE_AND_NOT_USED_FOR_PUBLIC_IDENTITY"
+      },
+      "accepted_public_projection": {
+        "is_success": true,
+        "snapshot_cards": [
+          {
+            "locator": "p0:HAND:public:305419896:0",
+            "absolute_player": 0,
+            "zone": "HAND",
+            "card_code": 305419896,
+            "position": null
+          }
+        ]
+      },
+      "public_candidate": {
+        "public_semantic_card_locator": "p0:HAND:public:305419896:0",
+        "card_code": 305419896
+      },
+      "locator_source": "accepted_public_projection.snapshot_cards[0].locator",
+      "expected": "PASS_EXACT_PUBLIC_ORDINAL_LOCATOR_COPY"
+    },
+    {
+      "case_id": "KNOWN_HAND_DUPLICATE_AMBIGUOUS",
+      "family": "MSG_SELECT_IDLECMD",
+      "source_reference": {
+        "private_resolution": "EXACTLY_ONE_CURRENT_MIRROR_ENTITY",
+        "semantic_correlation": {
+          "absolute_player": 0,
+          "zone": "HAND",
+          "known_public_card_code": 305419896
+        },
+        "raw_hand_sequence": "PRIVATE_AMBIGUOUS_AND_NOT_USED_FOR_PUBLIC_IDENTITY"
+      },
+      "accepted_public_projection": {
+        "is_success": true,
+        "snapshot_cards": [
+          {
+            "locator": "p0:HAND:public:305419896:0",
+            "absolute_player": 0,
+            "zone": "HAND",
+            "card_code": 305419896,
+            "position": null
+          },
+          {
+            "locator": "p0:HAND:public:305419896:1",
+            "absolute_player": 0,
+            "zone": "HAND",
+            "card_code": 305419896,
+            "position": null
+          }
+        ]
+      },
+      "matching_public_card_count": 2,
+      "expected_failure": "FAIL_CLOSED_UNPROVEN_PUBLIC_REFERENCE",
+      "forbidden_fallbacks": [
+        "p0:HAND:<raw_sequence>",
+        "MirrorEntityIdV1",
+        "CHOOSE_FIRST_PUBLIC_ORDINAL"
+      ],
+      "expected": "NO_PARTIAL_DOMAIN_AND_NO_SYNTHETIC_HAND_LOCATOR"
+    },
+    {
+      "case_id": "PUBLIC_LOCATOR_ABSENT",
+      "family": "MSG_SELECT_BATTLECMD",
+      "source_reference": {
+        "private_resolution": "EXACTLY_ONE_CURRENT_MIRROR_ENTITY",
+        "semantic_correlation": {
+          "absolute_player": 0,
+          "zone": "MONSTER_ZONE",
+          "sequence": 1
+        }
+      },
+      "accepted_public_projection": {
+        "is_success": true,
+        "snapshot_cards": []
+      },
+      "expected_failure": "FAIL_CLOSED_UNPROVEN_PUBLIC_REFERENCE",
+      "expected": "NO_PARTIAL_DOMAIN_AND_NO_SYNTHETIC_LOCATOR"
+    },
+    {
+      "case_id": "PAIRED_INTERNAL_HISTORY",
+      "family": "MSG_SELECT_BATTLECMD",
+      "world_a_private_only_history": {
+        "mirror_resolution_history": "WORLD_A",
+        "entity_allocation_order": ["source_first", "source_second"]
+      },
+      "world_b_private_only_history": {
+        "mirror_resolution_history": "WORLD_B",
+        "entity_allocation_order": ["source_second", "source_first"]
+      },
+      "accepted_public_projection": {
+        "is_success": true,
+        "snapshot_cards": [
+          {
+            "locator": "p0:MONSTER_ZONE:1",
+            "absolute_player": 0,
+            "zone": "MONSTER_ZONE",
+            "card_code": 287454020,
+            "position": 4
+          }
+        ]
+      },
+      "same_prompt_semantics": {
+        "contract_id": "ocgforge-ignis.flat-prompt-projection.v1",
+        "prompt_family": "MSG_SELECT_BATTLECMD",
+        "acting_player": 0,
+        "source_section": "ACTIVATABLE",
+        "source_ordinal": 0,
+        "choice_kind": "ACTIVATE"
+      },
+      "expected_public_context": {
+        "contract_id": "ocgforge-ignis.flat-prompt-projection.v1",
+        "prompt_family": "MSG_SELECT_BATTLECMD",
+        "acting_player": 0
+      },
+      "expected_public_descriptor": {
+        "i4_local_candidate_key": "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+        "choice_kind": "ACTIVATE",
+        "source_section": "ACTIVATABLE",
+        "source_ordinal": 0,
+        "public_semantic_card_locator": "p0:MONSTER_ZONE:1",
+        "card_code": 287454020,
+        "description_or_effect_id": "0x0102030405060708",
+        "client_mode": 0
+      },
+      "expected_equal_fields": [
+        "public_context",
+        "public_descriptor",
+        "i4_local_candidate_key",
+        "public_semantic_card_locator"
+      ],
+      "expected": "EXACT_PUBLIC_OUTPUT_EQUAL_ACROSS_INTERNAL_HISTORY"
+    },
+    {
+      "case_id": "POSITION_VALID_MASK_WITH_UNBOUND_CARD_CODE",
+      "family": "MSG_SELECT_POSITION",
+      "message_id": 19,
+      "inner_hex": "13 00 BE BA FE CA 0D",
+      "wire_decoded": {
+        "player": 0,
+        "card_code": 3405691582,
+        "allowed_positions_mask": 13
+      },
+      "accepted_public_projection": {
+        "is_success": true,
+        "snapshot_cards": [],
+        "position_card_code_proof": "NOT_UNIQUELY_BOUND"
+      },
+      "public_context": {
+        "contract_id": "ocgforge-ignis.flat-prompt-projection.v1",
+        "prompt_family": "MSG_SELECT_POSITION",
+        "acting_player": 0,
+        "position_allowed_positions_mask": 13
+      },
+      "public_context_absent_fields": ["position_card_code"],
+      "expected_candidate_count": 3,
+      "ordered_position_values": [1, 4, 8],
+      "ordered_candidates": [
+        {
+          "public_descriptor": {
+            "i4_local_candidate_key": "MSG_SELECT_POSITION:FACEUP_ATTACK",
+            "choice_kind": "FACEUP_ATTACK",
+            "position_value": 1
+          },
+          "private_response_binding": {
+            "response_i32": 1,
+            "response_body_hex": "01 00 00 00"
+          }
+        },
+        {
+          "public_descriptor": {
+            "i4_local_candidate_key": "MSG_SELECT_POSITION:FACEUP_DEFENSE",
+            "choice_kind": "FACEUP_DEFENSE",
+            "position_value": 4
+          },
+          "private_response_binding": {
+            "response_i32": 4,
+            "response_body_hex": "04 00 00 00"
+          }
+        },
+        {
+          "public_descriptor": {
+            "i4_local_candidate_key": "MSG_SELECT_POSITION:FACEDOWN_DEFENSE",
+            "choice_kind": "FACEDOWN_DEFENSE",
+            "position_value": 8
+          },
+          "private_response_binding": {
+            "response_i32": 8,
+            "response_body_hex": "08 00 00 00"
+          }
+        }
+      ],
+      "expected": "PROMPT_ACCEPTED_COMPLETE_MASK_DOMAIN_CARD_CODE_ABSENT"
+    }
+  ],
   "field_inclusion_vectors": [
     {
       "case_id": "EFFECTYN_CARD_CODE_CONDITIONAL_ABSENT",
@@ -1073,12 +1309,14 @@
       "expected": "locator and description remain present; unsafe card_code is absent; prompt remains accepted"
     },
     {
-      "case_id": "POSITION_CARD_CODE_CONDITIONAL_FAILURE",
+      "case_id": "POSITION_CARD_CODE_CONDITIONAL_ABSENT",
       "family": "MSG_SELECT_POSITION",
       "predicate": "POSITION_CARD_CODE_SAFE=false",
       "public_context_required_fields": ["contract_id", "prompt_family", "acting_player", "position_allowed_positions_mask"],
       "public_context_absent_fields": ["position_card_code"],
-      "expected_failure": "FAIL_CLOSED_UNPROVEN_CANDIDATE_DOMAIN; no position candidate is published"
+      "expected_candidate_count": 3,
+      "expected_position_values": [1, 4, 8],
+      "expected": "valid mask domain remains accepted; position_card_code is absent; no locator is emitted"
     },
     {
       "case_id": "ACTIVATION_SOURCE_SEMANTICS_REQUIRED",
@@ -1099,7 +1337,15 @@
     "i4_implemented": false,
     "i4_local_candidate_key_is_ocgforge_public_action_key": false,
     "ocgforge_public_action_key_derivation": "I6_OWNED",
-    "i6_byte_exact_compatibility": "UNPROVEN"
+    "i6_byte_exact_compatibility": "UNPROVEN",
+    "i3d_public_state_projection_is_public_locator_authority": true,
+    "mirror_public_locator_authority": false,
+    "public_semantic_locator_codec_alone_is_publication_authority": false,
+    "candidate_locators_are_exact_snapshot_copies": true,
+    "ambiguous_public_ordinal_fails_closed": true,
+    "position_domain_authority": "VALIDATED_POSITION_MASK",
+    "position_unbound_card_code_is_absent": true,
+    "position_unbound_card_code_rejects_prompt": false
   },
   "public_boundary": {
     "local_key_field": "i4_local_candidate_key",
@@ -1107,6 +1353,11 @@
     "ocgforge_public_action_key_field": "ABSENT_I6_OWNED",
     "ocgforge_public_action_key_derivation": "I6_OWNED",
     "i6_byte_exact_compatibility": "UNPROVEN",
+    "public_locator_authority": "ACCEPTED_I3D_PUBLIC_STATE_SNAPSHOT",
+    "mirror_locator_role": "PRIVATE_CORRELATION_ONLY",
+    "candidate_locator_source": "EXACT_COPY_OF_ACCEPTED_PUBLIC_SNAPSHOT_CARD",
+    "position_domain_authority": "VALIDATED_POSITION_MASK",
+    "position_unbound_card_code": "ABSENT_WITH_DOMAIN_PRESERVED",
     "public_context_fields": [
       "contract_id",
       "prompt_family",
@@ -1123,8 +1374,9 @@
       "position_allowed_positions_mask"
     ],
     "conditional_predicates": {
-      "CARD_CODE_SAFE": "source_code != 0 and the exact referenced mirror card has matching known code with accepted provenance",
-      "POSITION_CARD_CODE_SAFE": "source_code != 0 and exactly one current perspective-safe position card context has matching known code; false fails the prompt"
+      "PUBLIC_CARD_REFERENCE_PROVEN": "successful accepted PublicStateProjectionResultV1 plus private source resolution plus exactly one permitted correlation to Snapshot.Cards[]; copy that card's exact locator; no mirror/codec locator construction",
+      "CARD_CODE_SAFE": "source_code != 0 and the correlated accepted public snapshot card has a present matching card code",
+      "POSITION_CARD_CODE_SAFE": "source_code != 0 and an accepted public-state context explicitly correlates exactly one current public card without deriving a locator and its present card code matches; false means absent and does not reject the validated mask domain"
     },
     "public_descriptor_fields": [
       "i4_local_candidate_key",

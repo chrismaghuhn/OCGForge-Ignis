@@ -16,9 +16,15 @@ accepted PerspectiveStateMirrorV1
 future I4 prompt boundary
         ├─ exact modern prompt grammar
         ├─ complete source-response domain
-        ├─ perspective-safe public candidate projection
+        ├─ private source resolution through the mirror
+        ├─ public candidate projection from the accepted I3D result
         └─ current-prompt-local private response binding
 ```
+
+The mirror is a private resolution authority only. The accepted successful
+`PublicStateProjectionResultV1` from I3D is the public locator and card-code
+authority. `PublicSemanticLocatorV1` validates or compares copied locator
+syntax; it is not a second publication authority.
 
 The rules engine remains the pinned EDOPro/ocgcore authority. Ignis must not
 recompute legality, pick the first action, infer a missing option, or repair an
@@ -80,7 +86,9 @@ position; for an overlay it returns the parent location with the overlay bit,
 the parent sequence, and the overlay sequence as position. The EDOPro modern
 reader uses 32-bit counts/sequences/descriptions where `CompatRead` selects
 the modern type, and it reads modern `loc_info` as two bytes followed by two
-32-bit values.
+32-bit values. These locations remain private source-resolution facts. A
+future I4 implementation may publish only the exact locator and card code
+copied from the accepted successful I3D public-state snapshot.
 
 Therefore I4 V1 is modern-only:
 
@@ -153,9 +161,10 @@ defines an order, so the contract fixes the scalar semantic order as
 assertion that a UI layout is a wire list.
 
 The exact complete lengths are 24 bytes for EFFECTYN and 10 bytes for YESNO.
-An effect card reference is projected only through a proven public semantic
-locator or a proven perspective-private scalar; raw location bytes never
-become a candidate field.
+An effect card reference is projected only by privately resolving the source
+and uniquely correlating it to a `PublicCardStateV1` in the accepted successful
+I3D snapshot. The candidate copies that snapshot card's exact public locator;
+raw location bytes never become a candidate field.
 
 ### OPTION
 
@@ -230,11 +239,11 @@ Family-specific context is fixed as follows:
 | --- | --- | --- | --- |
 | BATTLECMD | common context | none | effect description, mode, position, transition, option, chain metadata |
 | IDLECMD | common context | none | effect description, mode, position, transition, option, chain metadata |
-| EFFECTYN | common context, proven effect-card public locator, effect description ID | effect card code under `CARD_CODE_SAFE` | position, transition, option, chain metadata |
+| EFFECTYN | common context, proven effect-card public locator copied from the accepted I3D snapshot, effect description ID | effect card code copied from that snapshot card under `CARD_CODE_SAFE` | position, transition, option, chain metadata |
 | YESNO | common context, yes/no description ID | none | all card fields, position, transition, option, chain metadata |
 | OPTION | common context | none | all card fields, description/effect, position, transition, option-shared metadata |
 | CHAIN | common context, spe count, forced, both hint timings | none | position, transition, option |
-| POSITION | common context, validated position mask | position card code under `POSITION_CARD_CODE_SAFE`; false proof fails the whole prompt | card locator, description/effect, transition, option, chain metadata |
+| POSITION | common context, validated position mask | position card code under `POSITION_CARD_CODE_SAFE`; false proof makes the field ABSENT and does not reject the mask-derived domain | card locator, description/effect, transition, option, chain metadata |
 
 Each candidate descriptor has exactly these possible members:
 
@@ -257,11 +266,12 @@ Section 3 of the normative contract contains the complete required/absent/
 conditional matrix for every candidate kind. `ABSENT` is actual absence, not
 null, zero, an empty string, or a caller-selected omission. Every conditional
 member follows its named predicate exactly. Card-bearing BATTLECMD, IDLECMD,
-and CHAIN entries require a proven public semantic locator; EFFECTYN requires
-that locator in shared context; POSITION has no wire locator and requires the
-exact safe-code predicate. OPTION requires its decoded u64 option value, so a
-different public option value remains distinguishable even when its ordinal is
-the same in another prompt.
+and CHAIN entries require a locator copied from a uniquely correlated public
+snapshot card; EFFECTYN requires that copied locator in shared context.
+POSITION has no wire locator and a false safe-code predicate only makes its
+conditional card-code field absent. OPTION requires its decoded u64 option
+value, so a different public option value remains distinguishable even when
+its ordinal is the same in another prompt.
 
 The I4 local ASCII selector is named `i4_local_candidate_key`:
 
@@ -291,9 +301,38 @@ never enters the future OCGForge identity or model input.
 The exact source-response domain is the cardinality of all repeated entries,
 flag-created transitions, position-bit expansions, scalar choices, and the
 protocol-defined chain `-1` where legal. The public candidate is built only
-after the source prompt has been completely validated and card references have
-been reduced through the established perspective mirror and
-`PublicSemanticLocatorV1`.
+after the source prompt has been completely validated. For card-bearing
+choices, the source is privately resolved through the established perspective
+mirror and then correlated to the accepted successful I3D public-state
+snapshot; the published locator and card code are copied from that snapshot.
+The mirror and `PublicSemanticLocatorV1` cannot create a second public identity.
+
+The correlation rules are exact:
+
+```text
+indexed visible card:
+    absolute player + semantic zone + semantic sequence
+    -> exactly one accepted snapshot card -> copy its locator
+
+known HAND/EXTRA_DECK card:
+    absolute player + zone + known public card code
+    -> exactly one accepted public-ordinal card -> copy its locator
+    -> any duplicate ambiguity without public semantic proof fails closed
+
+overlay card:
+    accepted public overlay components
+    -> exactly one accepted snapshot card -> copy its locator
+
+MAIN_DECK card:
+    no per-card V1 locator -> fail closed when a candidate requires one
+```
+
+Raw hand/extra sequence, physical continuity, mirror identity, collection
+order, allocation order, and relation ordinals never select a public ordinal.
+If the accepted snapshot has no matching card or more than one permitted
+correlation, the complete card-bearing prompt fails closed. For POSITION, the
+validated multi-bit mask remains the complete domain authority; an unproven
+card code is simply absent and does not reject the prompt.
 
 The following source data stays private even when it was required to decode a
 candidate:
@@ -328,6 +367,9 @@ positive payloads and includes:
 - illegal option/chain/position response values;
 - duplicate option descriptions retained as two candidates;
 - stale current-prompt selections rejected by semantic prompt ordinal/family;
+- indexed visible, unique known-hand, absent-locator, duplicate-hand ambiguity,
+  and paired internal-history projection correlations;
+- valid multi-bit POSITION masks retained when the unbound card code is absent;
 - unsupported legacy narrow layouts.
 
 The fixture records raw bytes as restricted protocol research evidence. It does

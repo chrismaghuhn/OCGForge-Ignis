@@ -21,6 +21,11 @@
     "local_key_field": "i4_local_candidate_key",
     "ocgforge_public_action_key": "I6_OWNED_ABSENT",
     "candidate_descriptor_matrix": "NORMATIVE_CONTRACT",
+    "public_locator_authority": "ACCEPTED_I3D_PUBLIC_STATE_SNAPSHOT",
+    "mirror_locator_role": "PRIVATE_CORRELATION_ONLY",
+    "public_semantic_locator_codec_alone_is_publication_authority": false,
+    "position_domain_authority": "VALIDATED_POSITION_MASK",
+    "position_unbound_card_code": "ABSENT_WITH_DOMAIN_PRESERVED",
     "implementation_status": "NOT_IMPLEMENTED"
   },
   "upstream_pins": {
