@@ -156,7 +156,8 @@ public sealed class PublicStateProjectionResultV1
 
     public PublicStateSnapshotV1? Snapshot { get; }
 
-    public ReadOnlyMemory<byte> CanonicalBytes => canonicalBytes;
+    public ReadOnlyMemory<byte> CanonicalBytes =>
+        new ReadOnlyMemory<byte>(canonicalBytes.ToArray());
 
     public string? Sha256 { get; }
 

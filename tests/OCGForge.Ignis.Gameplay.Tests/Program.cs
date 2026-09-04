@@ -126,7 +126,10 @@ var tests = new (string Name, Action Body)[]
         I3CPublicStateProjectionTests.TestSzoneLayoutMapping),
 
     ("I3C public API exposes no mirror/protocol/private identity",
-        I3CPublicStateProjectionTests.TestPublicApiBoundary)
+        I3CPublicStateProjectionTests.TestPublicApiBoundary),
+
+    ("I3C canonical byte storage is not externally mutable",
+        I3CPublicStateProjectionTests.TestCanonicalByteStorageIsolation)
 };
 
 int passed = 0;

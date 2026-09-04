@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using OCGForge.Ignis.Gameplay;
@@ -424,6 +425,33 @@ internal static class I3CPublicStateProjectionTests
                 AssertDoesNotContainForbidden(property.PropertyType.FullName, forbidden);
             }
         }
+    }
+
+    internal static void TestCanonicalByteStorageIsolation()
+    {
+        (PerspectiveStateMirrorV1 mirror, _) = CreateMirror(0);
+        PublicStateProjectionResultV1 result = Project(mirror);
+        True(result.IsSuccess, result.Error.ToString());
+        byte[] before = result.CanonicalBytes.ToArray();
+        string originalSha256 = result.Sha256!;
+
+        ReadOnlyMemory<byte> exposed = result.CanonicalBytes;
+        True(MemoryMarshal.TryGetArray(
+            exposed,
+            out ArraySegment<byte> segment));
+        NotNull(segment.Array);
+        byte[] exposedArray = segment.Array!;
+        int exposedIndex = segment.Offset;
+        exposedArray[exposedIndex] = exposedArray[exposedIndex] == (byte)'{'
+            ? (byte)'}'
+            : (byte)'{';
+
+        BytesEqual(before, result.CanonicalBytes.Span);
+        Equal(originalSha256, result.Sha256);
+        Equal(
+            originalSha256,
+            Convert.ToHexString(
+                SHA256.HashData(result.CanonicalBytes.Span)).ToLowerInvariant());
     }
 
     private static PublicStateProjectionResultV1 Project(
