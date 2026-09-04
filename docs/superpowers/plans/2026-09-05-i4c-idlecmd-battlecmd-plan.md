@@ -21,14 +21,17 @@ dependencies.
 
 ## Current task boundary
 
-The current task is documentation-only and may change exactly:
+The initial design task changed exactly the two I4C design/plan documents. A
+separately authorized contract-alignment remediation additionally changed only
+the frozen I4 evidence vector:
 
-    docs/superpowers/specs/2026-09-05-i4c-idlecmd-battlecmd-design.md
-    docs/superpowers/plans/2026-09-05-i4c-idlecmd-battlecmd-plan.md
+    fixtures/gameplay/v1/i4-flat-prompt-vectors.v1.json
 
-The current task must not change production code, tests, fixtures, frozen
-contracts, project files, workflows, generated evidence, networking, model
-input, I5, or I6. It must not create a PR or merge.
+The committed PLAN_HEAD therefore contains those two documents plus that one
+evidence vector. The future I4C implementation must not modify the fixture
+again. It must not change frozen contracts, project files, workflows,
+generated evidence, networking, model input, I5, or I6, and it must not create
+a PR or merge.
 
 The authorized implementation base is:
 
@@ -58,7 +61,7 @@ The counts are fixed:
     FUTURE_IMPLEMENTATION_TEST_FILES=2
     FUTURE_IMPLEMENTATION_FILES=5
     PLAN_HEAD_TO_FEATURE_HEAD=5
-    ORIGINAL_BASE_TO_FEATURE_HEAD=7
+    ORIGINAL_BASE_TO_FEATURE_HEAD=8
 
 The following files are intentionally not part of the I4C implementation:
 
@@ -117,21 +120,22 @@ Require:
     WORKTREE=CLEAN
 
 - [ ] Step 2: Verify that the original base to PLAN_HEAD contains exactly the
-  two design documents.
+  two design documents and the one accepted evidence vector.
 
 Run:
 
-    $expectedDocs = @(
+    $expectedPlanFiles = @(
         'docs/superpowers/specs/2026-09-05-i4c-idlecmd-battlecmd-design.md',
-        'docs/superpowers/plans/2026-09-05-i4c-idlecmd-battlecmd-plan.md'
+        'docs/superpowers/plans/2026-09-05-i4c-idlecmd-battlecmd-plan.md',
+        'fixtures/gameplay/v1/i4-flat-prompt-vectors.v1.json'
     ) | Sort-Object
     $baseChanged = @(git diff --name-only $base $planHead | Sort-Object -Unique)
-    if (@($baseChanged).Count -ne 2 -or
+    if (@($baseChanged).Count -ne 3 -or
         ($baseChanged -join [Environment]::NewLine) -cne
-        ($expectedDocs -join [Environment]::NewLine)) {
+        ($expectedPlanFiles -join [Environment]::NewLine)) {
         throw "BASE_TO_PLAN_SCOPE_MISMATCH CHANGED=$($baseChanged -join ',')"
     }
-    Write-Output 'BASE_TO_PLAN_SCOPE=2_DOCS_PASS'
+    Write-Output 'BASE_TO_PLAN_SCOPE=3_ACCEPTED_FILES_PASS'
 
 - [ ] Step 3: Audit the accepted inputs before writing implementation tests.
 
@@ -951,7 +955,7 @@ Run:
         throw 'WORKTREE_NOT_CLEAN'
     }
     Write-Output "PLAN_HEAD_TO_FEATURE_HEAD=5"
-    Write-Output "ORIGINAL_BASE_TO_FEATURE_HEAD=7"
+    Write-Output "ORIGINAL_BASE_TO_FEATURE_HEAD=8"
 
 - [ ] Step 5: Push only the authorized branch and stop.
 
@@ -976,7 +980,7 @@ The future implementation worker must report concrete command output:
     REMOTE_HEAD=exact pushed SHA
     BRANCH=chris/i4c-idlecmd-battlecmd-design-plan
 
-    FILES_CHANGED_BRANCH_WIDE=7
+    FILES_CHANGED_BRANCH_WIDE=8
     FEATURE_COMMIT_FILES_CHANGED=5
     PRODUCTION_FILES_CHANGED=3
     TEST_FILES_CHANGED=2
@@ -1032,11 +1036,11 @@ This current design/plan task itself must report:
     PARENT=authorized base or prior docs head as verified
     REMOTE_HEAD=exact pushed docs SHA
     BRANCH=chris/i4c-idlecmd-battlecmd-design-plan
-    FILES_CHANGED=2
+    FILES_CHANGED=3
     DOC_FILES_CHANGED=2
     PRODUCTION_CODE_CHANGED=NO
     TEST_CODE_CHANGED=NO
-    FIXTURES_CHANGED=NO
+    FIXTURES_CHANGED=YES
     FROZEN_CONTRACT_CHANGED=NO
     BATTLECMD_WIRE_GRAMMAR=RESOLVED
     IDLECMD_WIRE_GRAMMAR=RESOLVED
