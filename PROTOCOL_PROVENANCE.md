@@ -1,7 +1,7 @@
 # Protocol Provenance and Clean-Room Ledger
 
-Status: I3A implementation/provenance ledger
-Date inspected: 2026-09-03
+Status: I3A/I4A0 implementation/provenance ledger
+Date inspected: 2026-09-04
 
 ## Clean-room discipline
 
@@ -240,6 +240,44 @@ value-owned internal entity references during the transactional candidate
 build; an unresolved required reference fails closed. No raw loc_info,
 protocol address object, public locator bytes, locator hash, or public
 projection identity is part of the mirror semantic state.
+
+## I4A0 flat prompt contract facts
+
+I4A0 is a documentation/fixture-only freeze. The following facts were
+researched against the exact pinned commits on 2026-09-04. They are clean-room
+semantic evidence only; no upstream source implementation or serialized
+upstream packet is copied.
+
+| External repository | Exact commit | Source path / symbol | Fact learned | Date | Classification |
+| --- | --- | --- | --- | --- | --- |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `ocgapi_constants.h#MSG_SELECT_*`, `POS_*` | The seven I4 message IDs are 10, 11, 12, 13, 14, 16, and 19; position values are 0x01, 0x02, 0x04, and 0x08 | 2026-09-04 | numeric constant |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/ocgapi_constants.h#EFFECT_CLIENT_MODE_*` | Client modes are NORMAL=0, RESOLVE=1, and RESET=2 | 2026-09-04 | numeric constant |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `duel.h#duel::duel_message::write`; `duel.cpp#duel::duel_message::write` | Core appends the message ID and typed values in field order; `write(loc_info)` emits controller, location, sequence, and position | 2026-09-04 | wire layout |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `card.cpp#card::get_info_location` | A non-overlay location is current controller/location/sequence/position; an overlay location carries parent location plus overlay bit, parent sequence, and overlay sequence as position | 2026-09-04 | wire layout/identity boundary |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `playerop.cpp#field::process(SelectBattleCmd&)` | BATTLECMD writes player, u32 activatable count and 19-byte entries, u32 attackable count and 8-byte entries, then two u8 transition flags; core validates kinds 0..3 and section bounds | 2026-09-04 | wire layout/response consumer |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `playerop.cpp#field::process(SelectIdleCmd&)` | IDLECMD writes six heterogeneous sections in summon, special-summon, reposition, monster-set, spell/trap-set, activate order, then Battle/End/Shuffle u8 flags; core validates kinds 0..8 | 2026-09-04 | wire layout/response consumer |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `playerop.cpp#field::process(SelectEffectYesNo&)` | EFFECTYN writes player, u32 card code, modern loc_info, and u64 description; legal response integers are exactly 0 and 1 | 2026-09-04 | wire layout/response consumer |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `playerop.cpp#field::process(SelectYesNo&)` | YESNO writes player and u64 description; legal response integers are exactly 0 and 1 | 2026-09-04 | wire layout/response consumer |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `playerop.cpp#field::process(SelectOption&)` | OPTION writes player, a u8 option count, and count u64 descriptions in vector order; an empty vector emits MSG_HINT instead, and responses are zero-based indices | 2026-09-04 | wire layout/response consumer |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `playerop.cpp#field::process(SelectChain&)` | CHAIN writes player, u8 spe_count, u8 forced, two u32 hint timings, u32 count, and 23-byte entries; every entry index is legal and -1 is legal exactly when forced is false | 2026-09-04 | wire layout/response consumer |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `processor.cpp#spe_effect`, `PointEvent`, `QuickEffect` | `spe_count` counts optional trigger/activate-or-quick effects with hints in ordinary paths; 0x7f is passed as a trigger-selection marker and is not an entry count | 2026-09-04 | semantic field/producer |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `field.cpp#chain::chain_operation_sort`; `playerop.cpp#SelectBattleCmd`, `SelectIdleCmd`, `SelectChain` | Core sorts select-chain records before writing the relevant sections; the emitted wire order is the source order to preserve, without exposing the internal effect ID | 2026-09-04 | source ordering |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `playerop.cpp#field::process(SelectPosition&)` | Position zero or a singleton is resolved directly without a prompt; an emitted prompt contains a multi-bit subset of the low four position bits and accepts the selected bit itself | 2026-09-04 | wire layout/response consumer |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `effect.cpp#effect::get_client_mode` | Mode 1 marks field-only effects for resolve, mode 2 marks non-action effects for reset, and mode 0 is the normal action mode | 2026-09-04 | semantic field |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `duel.cpp#duel::set_response`; `playerop.cpp#returns.at<int32_t>` | Flat prompt responses are consumed as a signed 32-bit response value; invalid values cause a retry in the core, which I4 replaces with fail-closed adapter behavior | 2026-09-04 | response consumer |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/duelclient.cpp#CompatRead`, `ClientAnalyze` prompt cases | Modern mode reads u32 counts/sequences and u64 descriptions where the compatibility reader is used; legacy narrow alternatives are distinct and excluded from I4 V1 | 2026-09-04 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/core_utils.cpp#ReadLocInfo` | Modern loc_info reads u8 controller, u8 location, u32 sequence, and u32 position | 2026-09-04 | wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/duelclient.cpp#ClientAnalyze` | BATTLECMD and IDLECMD are read in their heterogeneous wire section order; SELECT_OPTION preserves received option order; CHAIN reads forced/special-count metadata and entries in wire order | 2026-09-04 | wire layout/source ordering |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/duelclient.cpp#ClientAnalyze(MSG_SELECT_POSITION)` | Position candidates are displayed/tested in 0x01, 0x02, 0x04, 0x08 order and the selected response is the bit value | 2026-09-04 | source ordering/response producer |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/duelclient.h#SetResponseI`; `gframe/event_handler.cpp#ClientField::SetResponseSelectedOption`, `CancelOrFinish` | EDOPro creates the flat response body as a four-byte int32; option uses the source index, yes/no uses 0/1, and chain cancel uses -1 | 2026-09-04 | response producer |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/duelclient.h#SendBufferToServer`; `gframe/duelclient.cpp#DuelClient::SendResponse` | CTOS_RESPONSE wraps the unchanged four-byte response body with a length of packet type plus body and sends it only after the current prompt response is selected | 2026-09-04 | response wire envelope |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/generic_duel.cpp#GenericDuel::Sending`, `GetResponse` | The server waits for the selecting player for all seven prompt families and forwards the selected response to the core; prompt payloads are not a public-boundary exemption | 2026-09-04 | routing/authority boundary |
+
+The I4A0 contract refines the old shorthand `N protocol options = N adapter
+candidates` to the cardinality of the complete proven source-response domain.
+The machine inventory records the seven layouts as frozen while retaining
+`support_status=OUT_OF_SCOPE`; no I4 implementation is accepted by these
+rows.
 
 ## Provenance boundaries
 

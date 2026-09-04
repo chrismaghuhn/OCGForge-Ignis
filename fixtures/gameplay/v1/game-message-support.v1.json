@@ -1158,6 +1158,81 @@
         "gframe/core_utils.cpp"
       ],
       "classification": "wire layout"
+    },
+    "CORE_PROMPT_WRITERS": {
+      "repository": "https://github.com/edo9300/ygopro-core",
+      "commit": "46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57",
+      "source_paths": [
+        "ocgapi_constants.h#MSG_SELECT_*",
+        "playerop.cpp#field::process(SelectBattleCmd&)",
+        "playerop.cpp#field::process(SelectIdleCmd&)",
+        "playerop.cpp#field::process(SelectEffectYesNo&)",
+        "playerop.cpp#field::process(SelectYesNo&)",
+        "playerop.cpp#field::process(SelectOption&)",
+        "playerop.cpp#field::process(SelectChain&)",
+        "playerop.cpp#field::process(SelectPosition&)"
+      ],
+      "classification": "prompt wire layout and source domain"
+    },
+    "CORE_PROMPT_ORDER": {
+      "repository": "https://github.com/edo9300/ygopro-core",
+      "commit": "46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57",
+      "source_paths": [
+        "field.cpp#chain::chain_operation_sort",
+        "playerop.cpp#SelectBattleCmd",
+        "playerop.cpp#SelectIdleCmd",
+        "playerop.cpp#SelectChain"
+      ],
+      "classification": "source ordering"
+    },
+    "CORE_PROMPT_RESPONSE_VALIDATORS": {
+      "repository": "https://github.com/edo9300/ygopro-core",
+      "commit": "46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57",
+      "source_paths": [
+        "playerop.cpp#SelectBattleCmd",
+        "playerop.cpp#SelectIdleCmd",
+        "playerop.cpp#SelectEffectYesNo",
+        "playerop.cpp#SelectYesNo",
+        "playerop.cpp#SelectOption",
+        "playerop.cpp#SelectChain",
+        "playerop.cpp#SelectPosition",
+        "duel.cpp#duel::set_response",
+        "duel.h#duel::returns"
+      ],
+      "classification": "response consumer"
+    },
+    "EDOPRO_PROMPT_READERS": {
+      "repository": "https://github.com/edo9300/edopro",
+      "commit": "30935e847165a9ef0e547fb51a43f36168fab7c7",
+      "source_paths": [
+        "gframe/duelclient.cpp#CompatRead",
+        "gframe/duelclient.cpp#ClientAnalyze",
+        "gframe/core_utils.cpp#ReadLocInfo"
+      ],
+      "classification": "prompt wire layout and boundary behavior"
+    },
+    "EDOPRO_PROMPT_RESPONSE_PRODUCERS": {
+      "repository": "https://github.com/edo9300/edopro",
+      "commit": "30935e847165a9ef0e547fb51a43f36168fab7c7",
+      "source_paths": [
+        "gframe/duelclient.h#SetResponseI",
+        "gframe/event_handler.cpp#ClientField::SetResponseSelectedOption",
+        "gframe/event_handler.cpp#ClientField::CancelOrFinish",
+        "gframe/event_handler.cpp#command response handlers",
+        "gframe/duelclient.cpp#DuelClient::SendResponse"
+      ],
+      "classification": "response wire and semantic mapping"
+    },
+    "EDOPRO_RESPONSE_ENVELOPE": {
+      "repository": "https://github.com/edo9300/edopro",
+      "commit": "30935e847165a9ef0e547fb51a43f36168fab7c7",
+      "source_paths": [
+        "gframe/network.h#CTOS_RESPONSE",
+        "gframe/duelclient.h#SendBufferToServer",
+        "gframe/generic_duel.cpp#GenericDuel::Sending",
+        "gframe/generic_duel.cpp#GenericDuel::GetResponse"
+      ],
+      "classification": "response envelope and routing"
     }
   },
   "effect_vocabulary": {
@@ -1314,6 +1389,231 @@
       "minimum_suffix_bytes": 2,
       "minimum_payload_bytes": 5,
       "minimum_total_message_bytes": 6
+    },
+    "MSG_SELECT_BATTLECMD_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le activatable_count",
+        "ActivatableBattleCommandV1[activatable_count]",
+        "u32_le attackable_count",
+        "AttackableBattleCommandV1[attackable_count]",
+        "u8 to_main_phase_2",
+        "u8 to_end_phase"
+      ],
+      "entry_catalog": {
+        "ActivatableBattleCommandV1": {
+          "fields": [
+            "u32_le card_code",
+            "u8 controller",
+            "u8 location",
+            "u32_le sequence",
+            "u64_le description",
+            "u8 client_mode"
+          ],
+          "byte_width": 19
+        },
+        "AttackableBattleCommandV1": {
+          "fields": [
+            "u32_le card_code",
+            "u8 controller",
+            "u8 location",
+            "u8 sequence",
+            "u8 direct_attackable"
+          ],
+          "byte_width": 8
+        }
+      },
+      "length_rule": "COUNTED_HETEROGENEOUS",
+      "payload_bytes_formula": "11 + (19 * activatable_count) + (8 * attackable_count)",
+      "total_message_bytes_formula": "12 + (19 * activatable_count) + (8 * attackable_count)",
+      "minimum_total_message_bytes": 12,
+      "count_field_width_bits": 32,
+      "boolean_fields": ["to_main_phase_2", "to_end_phase", "direct_attackable"],
+      "client_mode_values": {
+        "0": "EFFECT_CLIENT_MODE_NORMAL",
+        "1": "EFFECT_CLIENT_MODE_RESOLVE",
+        "2": "EFFECT_CLIENT_MODE_RESET"
+      },
+      "domain_rule": "activatable entries, attackable entries, then one candidate for each transition flag equal to 1; domain must be non-empty",
+      "source_order": "activatable wire order, attackable wire order, TO_M2, TO_EP",
+      "response_contract": "I32_LE_BATTLE_KIND_AND_SECTION_INDEX",
+      "legacy_compatibility": "REJECT"
+    },
+    "MSG_SELECT_IDLECMD_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le summon_count",
+        "SummonCommandV1[summon_count]",
+        "u32_le special_summon_count",
+        "SpecialSummonCommandV1[special_summon_count]",
+        "u32_le reposition_count",
+        "RepositionCommandV1[reposition_count]",
+        "u32_le monster_set_count",
+        "MonsterSetCommandV1[monster_set_count]",
+        "u32_le spell_trap_set_count",
+        "SpellTrapSetCommandV1[spell_trap_set_count]",
+        "u32_le activatable_count",
+        "ActivatableIdleCommandV1[activatable_count]",
+        "u8 to_battle_phase",
+        "u8 to_end_phase",
+        "u8 shuffle_hand"
+      ],
+      "entry_catalog": {
+        "SummonCommandV1": {
+          "fields": ["u32_le card_code", "u8 controller", "u8 location", "u32_le sequence"],
+          "byte_width": 10
+        },
+        "SpecialSummonCommandV1": {
+          "fields": ["u32_le card_code", "u8 controller", "u8 location", "u32_le sequence"],
+          "byte_width": 10
+        },
+        "RepositionCommandV1": {
+          "fields": ["u32_le card_code", "u8 controller", "u8 location", "u8 sequence"],
+          "byte_width": 7
+        },
+        "MonsterSetCommandV1": {
+          "fields": ["u32_le card_code", "u8 controller", "u8 location", "u32_le sequence"],
+          "byte_width": 10
+        },
+        "SpellTrapSetCommandV1": {
+          "fields": ["u32_le card_code", "u8 controller", "u8 location", "u32_le sequence"],
+          "byte_width": 10
+        },
+        "ActivatableIdleCommandV1": {
+          "fields": [
+            "u32_le card_code",
+            "u8 controller",
+            "u8 location",
+            "u32_le sequence",
+            "u64_le description",
+            "u8 client_mode"
+          ],
+          "byte_width": 19
+        }
+      },
+      "length_rule": "COUNTED_HETEROGENEOUS",
+      "payload_bytes_formula": "28 + (10 * summon_count) + (10 * special_summon_count) + (7 * reposition_count) + (10 * monster_set_count) + (10 * spell_trap_set_count) + (19 * activatable_count)",
+      "total_message_bytes_formula": "29 + (10 * summon_count) + (10 * special_summon_count) + (7 * reposition_count) + (10 * monster_set_count) + (10 * spell_trap_set_count) + (19 * activatable_count)",
+      "minimum_total_message_bytes": 29,
+      "count_field_width_bits": 32,
+      "boolean_fields": ["to_battle_phase", "to_end_phase", "shuffle_hand"],
+      "client_mode_values": {
+        "0": "EFFECT_CLIENT_MODE_NORMAL",
+        "1": "EFFECT_CLIENT_MODE_RESOLVE",
+        "2": "EFFECT_CLIENT_MODE_RESET"
+      },
+      "domain_rule": "six command sections, then one candidate for each transition flag equal to 1; domain must be non-empty",
+      "source_order": "SUMMON, SPECIAL_SUMMON, REPOSITION, MSET, SSET, ACTIVATE, TO_BP, TO_EP, SHUFFLE_HAND",
+      "response_contract": "I32_LE_IDLE_KIND_AND_SECTION_INDEX",
+      "legacy_compatibility": "REJECT"
+    },
+    "MSG_SELECT_EFFECTYN_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le card_code",
+        "ModernLocInfoV1 card_location",
+        "u64_le description"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 23,
+      "total_message_bytes": 24,
+      "nested_loc_info": "ModernLocInfoV1_10_BYTES",
+      "domain_rule": "exactly NO(0) and YES(1)",
+      "source_order": "explicit scalar adapter order NO, YES; no wire choice array exists",
+      "response_contract": "I32_LE_ZERO_OR_ONE",
+      "legacy_compatibility": "REJECT"
+    },
+    "MSG_SELECT_YESNO_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u64_le description"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 9,
+      "total_message_bytes": 10,
+      "domain_rule": "exactly NO(0) and YES(1)",
+      "source_order": "explicit scalar adapter order NO, YES; no wire choice array exists",
+      "response_contract": "I32_LE_ZERO_OR_ONE",
+      "legacy_compatibility": "REJECT"
+    },
+    "MSG_SELECT_OPTION_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u8 option_count",
+        "u64_le option_description[option_count]"
+      ],
+      "length_rule": "COUNTED_FIXED_ENTRY",
+      "payload_bytes_formula": "2 + (8 * option_count)",
+      "total_message_bytes_formula": "3 + (8 * option_count)",
+      "minimum_total_message_bytes": 3,
+      "count_field_width_bits": 8,
+      "maximum_count": 255,
+      "zero_count_behavior": "FAIL_CLOSED_ZERO_OPTION; pinned core emits MSG_HINT instead",
+      "domain_rule": "one candidate for every option in wire order; count must be greater than zero",
+      "source_order": "option_description wire order",
+      "response_contract": "I32_LE_ZERO_BASED_OPTION_INDEX",
+      "legacy_compatibility": "REJECT"
+    },
+    "MSG_SELECT_CHAIN_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u8 spe_count",
+        "u8 forced",
+        "u32_le hint_timing_for_player",
+        "u32_le hint_timing_for_other_player",
+        "u32_le chain_count",
+        "ChainChoiceV1[chain_count]"
+      ],
+      "entry_catalog": {
+        "ChainChoiceV1": {
+          "fields": [
+            "u32_le card_code",
+            "ModernLocInfoV1 card_location",
+            "u64_le description",
+            "u8 client_mode"
+          ],
+          "byte_width": 23
+        }
+      },
+      "length_rule": "COUNTED_FIXED_ENTRY",
+      "payload_bytes_formula": "15 + (23 * chain_count)",
+      "total_message_bytes_formula": "16 + (23 * chain_count)",
+      "minimum_total_message_bytes": 16,
+      "count_field_width_bits": 32,
+      "nested_loc_info": "ModernLocInfoV1_10_BYTES",
+      "boolean_fields": ["forced"],
+      "client_mode_values": {
+        "0": "EFFECT_CLIENT_MODE_NORMAL",
+        "1": "EFFECT_CLIENT_MODE_RESOLVE",
+        "2": "EFFECT_CLIENT_MODE_RESET"
+      },
+      "spe_count_semantics": "values other than 0x7f are the u8 optional-effect count context; 0x7f is the trigger-selection marker and is not an entry count; an ordinary count that aliases the marker is unproven",
+      "domain_rule": "chain entries plus NO_CHAIN exactly when forced is 0; forced 1 requires chain_count >= 1",
+      "source_order": "chain-choice wire order, then NO_CHAIN when legal",
+      "response_contract": "I32_LE_CHAIN_INDEX_OR_NEGATIVE_ONE",
+      "legacy_compatibility": "REJECT"
+    },
+    "MSG_SELECT_POSITION_V1": {
+      "payload_fields": [
+        "u8 player",
+        "u32_le card_code",
+        "u8 allowed_positions_mask"
+      ],
+      "length_rule": "FIXED",
+      "payload_bytes": 6,
+      "total_message_bytes": 7,
+      "position_bits": {
+        "0x01": "FACEUP_ATTACK",
+        "0x02": "FACEDOWN_ATTACK",
+        "0x04": "FACEUP_DEFENSE",
+        "0x08": "FACEDOWN_DEFENSE"
+      },
+      "valid_emitted_prompt_mask": "subset of 0x0f with popcount 2..4",
+      "zero_or_singleton_behavior": "FAIL_CLOSED_UNEMITTED_CORE_SHORTCUT",
+      "domain_rule": "one candidate per set bit",
+      "source_order": "0x01, 0x02, 0x04, 0x08 as pinned EDOPro reader order",
+      "response_contract": "I32_LE_SELECTED_POSITION_BIT",
+      "legacy_compatibility": "REJECT"
     },
     "MSG_SHUFFLE_DECK_V1": {
       "payload_fields": [
@@ -2004,8 +2304,8 @@
       "support_status": "OUT_OF_SCOPE",
       "semantic_category": "PROMPT",
       "planned_slice": "I4",
-      "layout_status": "UNFROZEN",
-      "wire_layout_id": "UNFROZEN",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SELECT_BATTLECMD_V1",
       "perspective_effect": "PROMPT_ONLY",
       "state_effect": "PROMPT_BOUNDARY",
       "knowledge_effect": "DEFERRED",
@@ -2013,7 +2313,13 @@
       "boundary_kind": "PROMPT_BOUNDARY",
       "pairing_rule": "NONE",
       "upstream_reference_ids": [
-        "CORE_MESSAGE_IDS"
+        "CORE_MESSAGE_IDS",
+        "CORE_PROMPT_WRITERS",
+        "CORE_PROMPT_ORDER",
+        "CORE_PROMPT_RESPONSE_VALIDATORS",
+        "EDOPRO_PROMPT_READERS",
+        "EDOPRO_PROMPT_RESPONSE_PRODUCERS",
+        "EDOPRO_RESPONSE_ENVELOPE"
       ]
     },
     {
@@ -2022,8 +2328,8 @@
       "support_status": "OUT_OF_SCOPE",
       "semantic_category": "PROMPT",
       "planned_slice": "I4",
-      "layout_status": "UNFROZEN",
-      "wire_layout_id": "UNFROZEN",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SELECT_IDLECMD_V1",
       "perspective_effect": "PROMPT_ONLY",
       "state_effect": "PROMPT_BOUNDARY",
       "knowledge_effect": "DEFERRED",
@@ -2031,7 +2337,13 @@
       "boundary_kind": "PROMPT_BOUNDARY",
       "pairing_rule": "NONE",
       "upstream_reference_ids": [
-        "CORE_MESSAGE_IDS"
+        "CORE_MESSAGE_IDS",
+        "CORE_PROMPT_WRITERS",
+        "CORE_PROMPT_ORDER",
+        "CORE_PROMPT_RESPONSE_VALIDATORS",
+        "EDOPRO_PROMPT_READERS",
+        "EDOPRO_PROMPT_RESPONSE_PRODUCERS",
+        "EDOPRO_RESPONSE_ENVELOPE"
       ]
     },
     {
@@ -2040,8 +2352,8 @@
       "support_status": "OUT_OF_SCOPE",
       "semantic_category": "PROMPT",
       "planned_slice": "I4",
-      "layout_status": "UNFROZEN",
-      "wire_layout_id": "UNFROZEN",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SELECT_EFFECTYN_V1",
       "perspective_effect": "PROMPT_ONLY",
       "state_effect": "PROMPT_BOUNDARY",
       "knowledge_effect": "DEFERRED",
@@ -2049,7 +2361,12 @@
       "boundary_kind": "PROMPT_BOUNDARY",
       "pairing_rule": "NONE",
       "upstream_reference_ids": [
-        "CORE_MESSAGE_IDS"
+        "CORE_MESSAGE_IDS",
+        "CORE_PROMPT_WRITERS",
+        "CORE_PROMPT_RESPONSE_VALIDATORS",
+        "EDOPRO_PROMPT_READERS",
+        "EDOPRO_PROMPT_RESPONSE_PRODUCERS",
+        "EDOPRO_RESPONSE_ENVELOPE"
       ]
     },
     {
@@ -2058,8 +2375,8 @@
       "support_status": "OUT_OF_SCOPE",
       "semantic_category": "PROMPT",
       "planned_slice": "I4",
-      "layout_status": "UNFROZEN",
-      "wire_layout_id": "UNFROZEN",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SELECT_YESNO_V1",
       "perspective_effect": "PROMPT_ONLY",
       "state_effect": "PROMPT_BOUNDARY",
       "knowledge_effect": "DEFERRED",
@@ -2067,7 +2384,12 @@
       "boundary_kind": "PROMPT_BOUNDARY",
       "pairing_rule": "NONE",
       "upstream_reference_ids": [
-        "CORE_MESSAGE_IDS"
+        "CORE_MESSAGE_IDS",
+        "CORE_PROMPT_WRITERS",
+        "CORE_PROMPT_RESPONSE_VALIDATORS",
+        "EDOPRO_PROMPT_READERS",
+        "EDOPRO_PROMPT_RESPONSE_PRODUCERS",
+        "EDOPRO_RESPONSE_ENVELOPE"
       ]
     },
     {
@@ -2076,8 +2398,8 @@
       "support_status": "OUT_OF_SCOPE",
       "semantic_category": "PROMPT",
       "planned_slice": "I4",
-      "layout_status": "UNFROZEN",
-      "wire_layout_id": "UNFROZEN",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SELECT_OPTION_V1",
       "perspective_effect": "PROMPT_ONLY",
       "state_effect": "PROMPT_BOUNDARY",
       "knowledge_effect": "DEFERRED",
@@ -2085,7 +2407,12 @@
       "boundary_kind": "PROMPT_BOUNDARY",
       "pairing_rule": "NONE",
       "upstream_reference_ids": [
-        "CORE_MESSAGE_IDS"
+        "CORE_MESSAGE_IDS",
+        "CORE_PROMPT_WRITERS",
+        "CORE_PROMPT_RESPONSE_VALIDATORS",
+        "EDOPRO_PROMPT_READERS",
+        "EDOPRO_PROMPT_RESPONSE_PRODUCERS",
+        "EDOPRO_RESPONSE_ENVELOPE"
       ]
     },
     {
@@ -2112,8 +2439,8 @@
       "support_status": "OUT_OF_SCOPE",
       "semantic_category": "PROMPT",
       "planned_slice": "I4",
-      "layout_status": "UNFROZEN",
-      "wire_layout_id": "UNFROZEN",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SELECT_CHAIN_V1",
       "perspective_effect": "PROMPT_ONLY",
       "state_effect": "PROMPT_BOUNDARY",
       "knowledge_effect": "DEFERRED",
@@ -2121,7 +2448,13 @@
       "boundary_kind": "PROMPT_BOUNDARY",
       "pairing_rule": "NONE",
       "upstream_reference_ids": [
-        "CORE_MESSAGE_IDS"
+        "CORE_MESSAGE_IDS",
+        "CORE_PROMPT_WRITERS",
+        "CORE_PROMPT_ORDER",
+        "CORE_PROMPT_RESPONSE_VALIDATORS",
+        "EDOPRO_PROMPT_READERS",
+        "EDOPRO_PROMPT_RESPONSE_PRODUCERS",
+        "EDOPRO_RESPONSE_ENVELOPE"
       ]
     },
     {
@@ -2148,8 +2481,8 @@
       "support_status": "OUT_OF_SCOPE",
       "semantic_category": "PROMPT",
       "planned_slice": "I4",
-      "layout_status": "UNFROZEN",
-      "wire_layout_id": "UNFROZEN",
+      "layout_status": "FROZEN",
+      "wire_layout_id": "MSG_SELECT_POSITION_V1",
       "perspective_effect": "PROMPT_ONLY",
       "state_effect": "PROMPT_BOUNDARY",
       "knowledge_effect": "DEFERRED",
@@ -2157,7 +2490,12 @@
       "boundary_kind": "PROMPT_BOUNDARY",
       "pairing_rule": "NONE",
       "upstream_reference_ids": [
-        "CORE_MESSAGE_IDS"
+        "CORE_MESSAGE_IDS",
+        "CORE_PROMPT_WRITERS",
+        "CORE_PROMPT_RESPONSE_VALIDATORS",
+        "EDOPRO_PROMPT_READERS",
+        "EDOPRO_PROMPT_RESPONSE_PRODUCERS",
+        "EDOPRO_RESPONSE_ENVELOPE"
       ]
     },
     {

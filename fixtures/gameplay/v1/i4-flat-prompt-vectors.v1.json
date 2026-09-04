@@ -1,0 +1,406 @@
+{
+  "schema_id": "ocgforge-ignis.i4_flat_prompt_vectors.v1",
+  "schema_version": 1,
+  "contract_id": "ocgforge-ignis.flat-prompt-projection.v1",
+  "fixture_status": "I4A0_CONTRACT_EVIDENCE_ONLY",
+  "implementation_status": "NOT_IMPLEMENTED",
+  "hex_encoding": "uppercase hexadecimal byte pairs separated by one space",
+  "upstream_pins": {
+    "edopro_repository": "https://github.com/edo9300/edopro",
+    "edopro_commit": "30935e847165a9ef0e547fb51a43f36168fab7c7",
+    "ocgcore_repository": "https://github.com/edo9300/ygopro-core",
+    "ocgcore_commit": "46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57"
+  },
+  "response_envelope": {
+    "packet_type": "CTOS_RESPONSE",
+    "packet_type_u8": 1,
+    "frame_length_u16_le": 5,
+    "body": "i32_le",
+    "body_byte_width": 4
+  },
+  "wire_vectors": [
+    {
+      "case_id": "BATTLECMD_MIXED_SECTIONS",
+      "message_id": 10,
+      "symbolic_name": "MSG_SELECT_BATTLECMD",
+      "inner_byte_length": 47,
+      "inner_hex": "0A 00 01 00 00 00 44 33 22 11 00 04 01 00 00 00 08 07 06 05 04 03 02 01 00 02 00 00 00 DD CC BB AA 00 04 00 01 04 03 02 01 00 04 01 00 01 00",
+      "wire_decoded": {
+        "player": 0,
+        "activatable_count": 1,
+        "activatable": [
+          {
+            "card_code": 287454020,
+            "controller": 0,
+            "location": 4,
+            "sequence": 1,
+            "description_u64_hex": "0x0102030405060708",
+            "client_mode": 0
+          }
+        ],
+        "attackable_count": 2,
+        "attackable": [
+          {
+            "card_code": 2864434397,
+            "controller": 0,
+            "location": 4,
+            "sequence": 0,
+            "direct_attackable": 1
+          },
+          {
+            "card_code": 16909060,
+            "controller": 0,
+            "location": 4,
+            "sequence": 1,
+            "direct_attackable": 0
+          }
+        ],
+        "to_main_phase_2": 1,
+        "to_end_phase": 0
+      },
+      "expected_candidate_count": 4,
+      "ordered_candidates": [
+        {
+          "source_section": "activatable",
+          "source_ordinal": 0,
+          "choice_kind": "ACTIVATE",
+          "public_action_key": "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+          "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private",
+          "response_i32": 0,
+          "response_body_hex": "00 00 00 00"
+        },
+        {
+          "source_section": "attackable",
+          "source_ordinal": 0,
+          "choice_kind": "ATTACK",
+          "public_action_key": "MSG_SELECT_BATTLECMD:ATTACK:0",
+          "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private",
+          "response_i32": 1,
+          "response_body_hex": "01 00 00 00"
+        },
+        {
+          "source_section": "attackable",
+          "source_ordinal": 1,
+          "choice_kind": "ATTACK",
+          "public_action_key": "MSG_SELECT_BATTLECMD:ATTACK:1",
+          "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private",
+          "response_i32": 65537,
+          "response_body_hex": "01 00 01 00"
+        },
+        {
+          "choice_kind": "TO_M2",
+          "public_action_key": "MSG_SELECT_BATTLECMD:TO_M2",
+          "response_i32": 2,
+          "response_body_hex": "02 00 00 00"
+        }
+      ]
+    },
+    {
+      "case_id": "IDLECMD_ALL_SECTIONS_AND_TRANSITIONS",
+      "message_id": 11,
+      "symbolic_name": "MSG_SELECT_IDLECMD",
+      "inner_byte_length": 95,
+      "inner_hex": "0B 01 01 00 00 00 04 03 02 01 01 02 00 00 00 00 01 00 00 00 08 07 06 05 01 02 01 00 00 00 01 00 00 00 0C 0B 0A 09 01 04 02 01 00 00 00 10 0F 0E 0D 01 02 03 00 00 00 01 00 00 00 14 13 12 11 01 02 04 00 00 00 01 00 00 00 18 17 16 15 01 04 05 00 00 00 28 27 26 25 24 23 22 21 02 01 01 01",
+      "wire_decoded": {
+        "player": 1,
+        "summon_count": 1,
+        "summon": [
+          { "card_code": 16909060, "controller": 1, "location": 2, "sequence": 0 }
+        ],
+        "special_summon_count": 1,
+        "special_summon": [
+          { "card_code": 84281096, "controller": 1, "location": 2, "sequence": 1 }
+        ],
+        "reposition_count": 1,
+        "reposition": [
+          { "card_code": 151653132, "controller": 1, "location": 4, "sequence": 2 }
+        ],
+        "monster_set_count": 1,
+        "monster_set": [
+          { "card_code": 219025168, "controller": 1, "location": 2, "sequence": 3 }
+        ],
+        "spell_trap_set_count": 1,
+        "spell_trap_set": [
+          { "card_code": 286397204, "controller": 1, "location": 2, "sequence": 4 }
+        ],
+        "activatable_count": 1,
+        "activatable": [
+          {
+            "card_code": 353769240,
+            "controller": 1,
+            "location": 4,
+            "sequence": 5,
+            "description_u64_hex": "0x2122232425262728",
+            "client_mode": 2
+          }
+        ],
+        "to_battle_phase": 1,
+        "to_end_phase": 1,
+        "shuffle_hand": 1
+      },
+      "expected_candidate_count": 9,
+      "ordered_candidates": [
+        { "source_section": "summon", "source_ordinal": 0, "choice_kind": "SUMMON", "public_action_key": "MSG_SELECT_IDLECMD:SUMMON:0", "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private", "response_i32": 0, "response_body_hex": "00 00 00 00" },
+        { "source_section": "special_summon", "source_ordinal": 0, "choice_kind": "SPECIAL_SUMMON", "public_action_key": "MSG_SELECT_IDLECMD:SPECIAL_SUMMON:0", "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private", "response_i32": 1, "response_body_hex": "01 00 00 00" },
+        { "source_section": "reposition", "source_ordinal": 0, "choice_kind": "REPOSITION", "public_action_key": "MSG_SELECT_IDLECMD:REPOSITION:0", "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private", "response_i32": 2, "response_body_hex": "02 00 00 00" },
+        { "source_section": "monster_set", "source_ordinal": 0, "choice_kind": "MSET", "public_action_key": "MSG_SELECT_IDLECMD:MSET:0", "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private", "response_i32": 3, "response_body_hex": "03 00 00 00" },
+        { "source_section": "spell_trap_set", "source_ordinal": 0, "choice_kind": "SSET", "public_action_key": "MSG_SELECT_IDLECMD:SSET:0", "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private", "response_i32": 4, "response_body_hex": "04 00 00 00" },
+        { "source_section": "activatable", "source_ordinal": 0, "choice_kind": "ACTIVATE", "public_action_key": "MSG_SELECT_IDLECMD:ACTIVATE:0", "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private", "response_i32": 5, "response_body_hex": "05 00 00 00" },
+        { "choice_kind": "TO_BP", "public_action_key": "MSG_SELECT_IDLECMD:TO_BP", "response_i32": 6, "response_body_hex": "06 00 00 00" },
+        { "choice_kind": "TO_EP", "public_action_key": "MSG_SELECT_IDLECMD:TO_EP", "response_i32": 7, "response_body_hex": "07 00 00 00" },
+        { "choice_kind": "SHUFFLE_HAND", "public_action_key": "MSG_SELECT_IDLECMD:SHUFFLE_HAND", "response_i32": 8, "response_body_hex": "08 00 00 00" }
+      ]
+    },
+    {
+      "case_id": "EFFECTYN_MODERN_LOC_INFO",
+      "message_id": 12,
+      "symbolic_name": "MSG_SELECT_EFFECTYN",
+      "inner_byte_length": 24,
+      "inner_hex": "0C 00 78 56 34 12 00 02 03 00 00 00 0A 00 00 00 88 77 66 55 44 33 22 11",
+      "wire_decoded": {
+        "player": 0,
+        "card_code": 305419896,
+        "card_location": { "controller": 0, "location": 2, "sequence": 3, "position": 10 },
+        "description_u64_hex": "0x1122334455667788"
+      },
+      "expected_candidate_count": 2,
+      "ordered_candidates": [
+        { "choice_kind": "NO", "public_action_key": "MSG_SELECT_EFFECTYN:NO", "response_i32": 0, "response_body_hex": "00 00 00 00" },
+        { "choice_kind": "YES", "public_action_key": "MSG_SELECT_EFFECTYN:YES", "response_i32": 1, "response_body_hex": "01 00 00 00" }
+      ],
+      "public_reference_rule": "card reference requires a proven PublicSemanticLocatorV1 or the prompt fails closed"
+    },
+    {
+      "case_id": "YESNO_DESCRIPTION_U64",
+      "message_id": 13,
+      "symbolic_name": "MSG_SELECT_YESNO",
+      "inner_byte_length": 10,
+      "inner_hex": "0D 00 08 07 06 05 04 03 02 01",
+      "wire_decoded": {
+        "player": 0,
+        "description_u64_hex": "0x0102030405060708"
+      },
+      "expected_candidate_count": 2,
+      "ordered_candidates": [
+        { "choice_kind": "NO", "public_action_key": "MSG_SELECT_YESNO:NO", "response_i32": 0, "response_body_hex": "00 00 00 00" },
+        { "choice_kind": "YES", "public_action_key": "MSG_SELECT_YESNO:YES", "response_i32": 1, "response_body_hex": "01 00 00 00" }
+      ]
+    },
+    {
+      "case_id": "OPTION_WIRE_ORDER",
+      "message_id": 14,
+      "symbolic_name": "MSG_SELECT_OPTION",
+      "inner_byte_length": 27,
+      "inner_hex": "0E 00 03 01 00 00 00 00 00 00 00 88 77 66 55 44 33 22 11 11 00 FF EE DD CC BB AA",
+      "wire_decoded": {
+        "player": 0,
+        "option_count": 3,
+        "option_description_u64_hex": ["0x0000000000000001", "0x1122334455667788", "0xAABBCCDDEEFF0011"]
+      },
+      "expected_candidate_count": 3,
+      "ordered_candidates": [
+        { "source_ordinal": 0, "choice_kind": "OPTION", "public_action_key": "MSG_SELECT_OPTION:OPTION:0", "description_u64_hex": "0x0000000000000001", "response_i32": 0, "response_body_hex": "00 00 00 00" },
+        { "source_ordinal": 1, "choice_kind": "OPTION", "public_action_key": "MSG_SELECT_OPTION:OPTION:1", "description_u64_hex": "0x1122334455667788", "response_i32": 1, "response_body_hex": "01 00 00 00" },
+        { "source_ordinal": 2, "choice_kind": "OPTION", "public_action_key": "MSG_SELECT_OPTION:OPTION:2", "description_u64_hex": "0xAABBCCDDEEFF0011", "response_i32": 2, "response_body_hex": "02 00 00 00" }
+      ]
+    },
+    {
+      "case_id": "OPTION_DUPLICATE_DESCRIPTIONS",
+      "message_id": 14,
+      "symbolic_name": "MSG_SELECT_OPTION",
+      "inner_byte_length": 19,
+      "inner_hex": "0E 00 02 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11",
+      "wire_decoded": {
+        "player": 0,
+        "option_count": 2,
+        "option_description_u64_hex": ["0x1111111111111111", "0x1111111111111111"]
+      },
+      "expected_candidate_count": 2,
+      "ordered_candidates": [
+        { "source_ordinal": 0, "choice_kind": "OPTION", "public_action_key": "MSG_SELECT_OPTION:OPTION:0", "response_i32": 0, "response_body_hex": "00 00 00 00" },
+        { "source_ordinal": 1, "choice_kind": "OPTION", "public_action_key": "MSG_SELECT_OPTION:OPTION:1", "response_i32": 1, "response_body_hex": "01 00 00 00" }
+      ],
+      "duplicate_rule": "preserve both source entries; never deduplicate equal descriptions"
+    },
+    {
+      "case_id": "CHAIN_OPTIONAL_WITH_NO_CHAIN",
+      "message_id": 16,
+      "symbolic_name": "MSG_SELECT_CHAIN",
+      "inner_byte_length": 62,
+      "inner_hex": "10 00 02 00 04 03 02 01 08 07 06 05 02 00 00 00 04 03 02 01 00 04 02 00 00 00 05 00 00 00 88 77 66 55 44 33 22 11 00 DD CC BB AA 00 10 01 00 00 00 00 00 00 00 00 FF EE DD CC BB AA 99 02",
+      "wire_decoded": {
+        "player": 0,
+        "spe_count": 2,
+        "forced": 0,
+        "hint_timing_for_player_u32_hex": "0x01020304",
+        "hint_timing_for_other_player_u32_hex": "0x05060708",
+        "chain_count": 2,
+        "chains": [
+          {
+            "card_code": 16909060,
+            "card_location": { "controller": 0, "location": 4, "sequence": 2, "position": 5 },
+            "description_u64_hex": "0x1122334455667788",
+            "client_mode": 0
+          },
+          {
+            "card_code": 2864434397,
+            "card_location": { "controller": 0, "location": 16, "sequence": 1, "position": 0 },
+            "description_u64_hex": "0x99AABBCCDDEEFF00",
+            "client_mode": 2
+          }
+        ]
+      },
+      "expected_candidate_count": 3,
+      "ordered_candidates": [
+        { "source_ordinal": 0, "choice_kind": "CHAIN_ENTRY", "public_action_key": "MSG_SELECT_CHAIN:CHAIN_ENTRY:0", "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private", "response_i32": 0, "response_body_hex": "00 00 00 00" },
+        { "source_ordinal": 1, "choice_kind": "CHAIN_ENTRY", "public_action_key": "MSG_SELECT_CHAIN:CHAIN_ENTRY:1", "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private", "response_i32": 1, "response_body_hex": "01 00 00 00" },
+        { "choice_kind": "NO_CHAIN", "public_action_key": "MSG_SELECT_CHAIN:NO_CHAIN", "response_i32": -1, "response_body_hex": "FF FF FF FF" }
+      ]
+    },
+    {
+      "case_id": "CHAIN_FORCED_TRIGGER_MARKER",
+      "message_id": 16,
+      "symbolic_name": "MSG_SELECT_CHAIN",
+      "inner_byte_length": 39,
+      "inner_hex": "10 01 7F 01 00 00 00 00 00 00 00 00 01 00 00 00 0D 0C 0B 0A 01 04 00 00 00 00 01 00 00 00 08 07 06 05 04 03 02 01 01",
+      "wire_decoded": {
+        "player": 1,
+        "spe_count": 127,
+        "spe_count_meaning": "trigger-selection marker, not a count of entries",
+        "forced": 1,
+        "hint_timing_for_player_u32_hex": "0x00000000",
+        "hint_timing_for_other_player_u32_hex": "0x00000000",
+        "chain_count": 1,
+        "chains": [
+          {
+            "card_code": 168496141,
+            "card_location": { "controller": 1, "location": 4, "sequence": 0, "position": 1 },
+            "description_u64_hex": "0x0102030405060708",
+            "client_mode": 1
+          }
+        ]
+      },
+      "expected_candidate_count": 1,
+      "ordered_candidates": [
+        { "source_ordinal": 0, "choice_kind": "CHAIN_ENTRY", "public_action_key": "MSG_SELECT_CHAIN:CHAIN_ENTRY:0", "public_card_reference": "requires proven PublicSemanticLocatorV1; raw loc_info is private", "response_i32": 0, "response_body_hex": "00 00 00 00" }
+      ]
+    },
+    {
+      "case_id": "CHAIN_OPTIONAL_EMPTY",
+      "message_id": 16,
+      "symbolic_name": "MSG_SELECT_CHAIN",
+      "inner_byte_length": 16,
+      "inner_hex": "10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "wire_decoded": {
+        "player": 0,
+        "spe_count": 0,
+        "forced": 0,
+        "hint_timing_for_player_u32_hex": "0x00000000",
+        "hint_timing_for_other_player_u32_hex": "0x00000000",
+        "chain_count": 0
+      },
+      "expected_candidate_count": 1,
+      "ordered_candidates": [
+        { "choice_kind": "NO_CHAIN", "public_action_key": "MSG_SELECT_CHAIN:NO_CHAIN", "response_i32": -1, "response_body_hex": "FF FF FF FF" }
+      ]
+    },
+    {
+      "case_id": "POSITION_THREE_BITS_IN_EDOPRO_ORDER",
+      "message_id": 19,
+      "symbolic_name": "MSG_SELECT_POSITION",
+      "inner_byte_length": 7,
+      "inner_hex": "13 00 BE BA FE CA 0D",
+      "wire_decoded": {
+        "player": 0,
+        "card_code": 3405691582,
+        "allowed_positions_mask": 13
+      },
+      "expected_candidate_count": 3,
+      "ordered_candidates": [
+        { "choice_kind": "FACEUP_ATTACK", "position_value": 1, "public_action_key": "MSG_SELECT_POSITION:FACEUP_ATTACK", "response_i32": 1, "response_body_hex": "01 00 00 00" },
+        { "choice_kind": "FACEUP_DEFENSE", "position_value": 4, "public_action_key": "MSG_SELECT_POSITION:FACEUP_DEFENSE", "response_i32": 4, "response_body_hex": "04 00 00 00" },
+        { "choice_kind": "FACEDOWN_DEFENSE", "position_value": 8, "public_action_key": "MSG_SELECT_POSITION:FACEDOWN_DEFENSE", "response_i32": 8, "response_body_hex": "08 00 00 00" }
+      ],
+      "position_order_rule": "test bits 0x01, 0x02, 0x04, 0x08 in that order"
+    }
+  ],
+  "negative_vectors": [
+    { "case_id": "BATTLE_TRUNCATED_FIXED_PREFIX", "family": "MSG_SELECT_BATTLECMD", "inner_hex": "0A 00", "expected_failure": "MALFORMED_PROMPT" },
+    { "case_id": "BATTLE_TRAILING_BYTE", "family": "MSG_SELECT_BATTLECMD", "inner_hex": "0A 00 00 00 00 00 00 00 00 00 00 00 AA", "expected_failure": "FAIL_CLOSED_TRAILING_BYTES" },
+    { "case_id": "BATTLE_COUNT_OVERFLOW_BEFORE_ALLOCATION", "family": "MSG_SELECT_BATTLECMD", "inner_hex": "0A 00 FF FF FF FF", "expected_failure": "FAIL_CLOSED_COUNT_BODY_MISMATCH_BEFORE_ALLOCATION" },
+    { "case_id": "BATTLE_ZERO_OPTION_DOMAIN", "family": "MSG_SELECT_BATTLECMD", "inner_hex": "0A 00 00 00 00 00 00 00 00 00 00 00", "expected_failure": "FAIL_CLOSED_ZERO_OPTION" },
+    { "case_id": "BATTLE_INVALID_BOOLEAN", "family": "MSG_SELECT_BATTLECMD", "inner_hex": "0A 00 00 00 00 00 00 00 00 00 02 00", "expected_failure": "FAIL_CLOSED_INVALID_BOOLEAN" },
+    { "case_id": "BATTLE_LEGACY_NARROW_LAYOUT", "family": "MSG_SELECT_BATTLECMD", "inner_hex": "0A 00 00 00 00 00 00 00 00 00 00", "expected_failure": "FAIL_CLOSED_UNSUPPORTED_LEGACY_LAYOUT" },
+    { "case_id": "IDLE_TRUNCATED_FIXED_PREFIX", "family": "MSG_SELECT_IDLECMD", "inner_hex": "0B 00", "expected_failure": "MALFORMED_PROMPT" },
+    { "case_id": "IDLE_TRAILING_BYTE", "family": "MSG_SELECT_IDLECMD", "inner_hex": "0B 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 AA", "expected_failure": "FAIL_CLOSED_TRAILING_BYTES" },
+    { "case_id": "IDLE_COUNT_OVERFLOW_BEFORE_ALLOCATION", "family": "MSG_SELECT_IDLECMD", "inner_hex": "0B 00 FF FF FF FF", "expected_failure": "FAIL_CLOSED_COUNT_BODY_MISMATCH_BEFORE_ALLOCATION" },
+    { "case_id": "IDLE_ZERO_OPTION_DOMAIN", "family": "MSG_SELECT_IDLECMD", "inner_hex": "0B 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "expected_failure": "FAIL_CLOSED_ZERO_OPTION" },
+    { "case_id": "EFFECTYN_TRUNCATED_LOC_INFO", "family": "MSG_SELECT_EFFECTYN", "inner_hex": "0C 00 78 56 34 12", "expected_failure": "MALFORMED_PROMPT" },
+    { "case_id": "EFFECTYN_TRAILING_BYTE", "family": "MSG_SELECT_EFFECTYN", "inner_hex": "0C 00 78 56 34 12 00 02 03 00 00 00 0A 00 00 00 88 77 66 55 44 33 22 11 AA", "expected_failure": "FAIL_CLOSED_TRAILING_BYTES" },
+    { "case_id": "EFFECTYN_INVALID_PARTICIPANT", "family": "MSG_SELECT_EFFECTYN", "inner_hex": "0C 02 78 56 34 12 00 02 03 00 00 00 0A 00 00 00 88 77 66 55 44 33 22 11", "expected_failure": "FAIL_CLOSED_INVALID_PARTICIPANT" },
+    { "case_id": "EFFECTYN_INVALID_LOCATOR_CONTROLLER", "family": "MSG_SELECT_EFFECTYN", "inner_hex": "0C 00 78 56 34 12 02 02 03 00 00 00 0A 00 00 00 88 77 66 55 44 33 22 11", "expected_failure": "FAIL_CLOSED_INVALID_PARTICIPANT" },
+    { "case_id": "EFFECTYN_INVALID_LOCATOR_LOCATION", "family": "MSG_SELECT_EFFECTYN", "inner_hex": "0C 00 78 56 34 12 00 00 03 00 00 00 0A 00 00 00 88 77 66 55 44 33 22 11", "expected_failure": "FAIL_CLOSED_UNPROVEN_PUBLIC_REFERENCE" },
+    { "case_id": "YESNO_TRUNCATED_DESCRIPTION", "family": "MSG_SELECT_YESNO", "inner_hex": "0D 00 08 07 06", "expected_failure": "MALFORMED_PROMPT" },
+    { "case_id": "YESNO_TRAILING_BYTE", "family": "MSG_SELECT_YESNO", "inner_hex": "0D 00 08 07 06 05 04 03 02 01 AA", "expected_failure": "FAIL_CLOSED_TRAILING_BYTES" },
+    { "case_id": "OPTION_ZERO_COUNT", "family": "MSG_SELECT_OPTION", "inner_hex": "0E 00 00", "expected_failure": "FAIL_CLOSED_ZERO_OPTION" },
+    { "case_id": "OPTION_COUNT_BODY_MISMATCH", "family": "MSG_SELECT_OPTION", "inner_hex": "0E 00 02 01 00 00 00 00 00 00 00", "expected_failure": "FAIL_CLOSED_COUNT_BODY_MISMATCH" },
+    { "case_id": "OPTION_TRAILING_BYTE", "family": "MSG_SELECT_OPTION", "inner_hex": "0E 00 01 01 00 00 00 00 00 00 00 AA", "expected_failure": "FAIL_CLOSED_TRAILING_BYTES" },
+    { "case_id": "OPTION_COUNT_U8_MAX_WITHOUT_BODY", "family": "MSG_SELECT_OPTION", "inner_hex": "0E 00 FF", "expected_failure": "FAIL_CLOSED_COUNT_BODY_MISMATCH" },
+    { "case_id": "CHAIN_TRUNCATED_METADATA", "family": "MSG_SELECT_CHAIN", "inner_hex": "10 00 02 00", "expected_failure": "MALFORMED_PROMPT" },
+    { "case_id": "CHAIN_TRAILING_BYTE", "family": "MSG_SELECT_CHAIN", "inner_hex": "10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 AA", "expected_failure": "FAIL_CLOSED_TRAILING_BYTES" },
+    { "case_id": "CHAIN_COUNT_OVERFLOW_BEFORE_ALLOCATION", "family": "MSG_SELECT_CHAIN", "inner_hex": "10 00 00 00 00 00 00 00 00 00 00 00 FF FF FF FF", "expected_failure": "FAIL_CLOSED_COUNT_BODY_MISMATCH_BEFORE_ALLOCATION" },
+    { "case_id": "CHAIN_FORCED_EMPTY", "family": "MSG_SELECT_CHAIN", "inner_hex": "10 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00", "expected_failure": "FAIL_CLOSED_ZERO_OPTION" },
+    { "case_id": "CHAIN_INVALID_FORCED_BOOLEAN", "family": "MSG_SELECT_CHAIN", "inner_hex": "10 00 00 02 00 00 00 00 00 00 00 00 00 00 00 00", "expected_failure": "FAIL_CLOSED_INVALID_BOOLEAN" },
+    { "case_id": "CHAIN_INVALID_LOCATOR_CONTROLLER", "family": "MSG_SELECT_CHAIN", "inner_hex": "10 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 02 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "expected_failure": "FAIL_CLOSED_INVALID_PARTICIPANT" },
+    { "case_id": "POSITION_INVALID_HIGH_BIT", "family": "MSG_SELECT_POSITION", "inner_hex": "13 00 BE BA FE CA 10", "expected_failure": "FAIL_CLOSED_INVALID_POSITION_MASK" },
+    { "case_id": "POSITION_ZERO_MASK", "family": "MSG_SELECT_POSITION", "inner_hex": "13 00 BE BA FE CA 00", "expected_failure": "FAIL_CLOSED_UNEMITTED_CORE_SHORTCUT" },
+    { "case_id": "POSITION_SINGLETON_MASK", "family": "MSG_SELECT_POSITION", "inner_hex": "13 00 BE BA FE CA 01", "expected_failure": "FAIL_CLOSED_UNEMITTED_CORE_SHORTCUT" },
+    { "case_id": "POSITION_TRAILING_BYTE", "family": "MSG_SELECT_POSITION", "inner_hex": "13 00 BE BA FE CA 0D AA", "expected_failure": "FAIL_CLOSED_TRAILING_BYTES" },
+    { "case_id": "POSITION_INVALID_PARTICIPANT", "family": "MSG_SELECT_POSITION", "inner_hex": "13 02 BE BA FE CA 0D", "expected_failure": "FAIL_CLOSED_INVALID_PARTICIPANT" },
+    { "case_id": "OPTION_ILLEGAL_RESPONSE_INDEX", "family": "MSG_SELECT_OPTION", "prompt_case": "OPTION_WIRE_ORDER", "response_body_hex": "03 00 00 00", "expected_failure": "FAIL_CLOSED_ILLEGAL_RESPONSE_INDEX" },
+    { "case_id": "CHAIN_ILLEGAL_RESPONSE_INDEX", "family": "MSG_SELECT_CHAIN", "prompt_case": "CHAIN_OPTIONAL_WITH_NO_CHAIN", "response_body_hex": "02 00 00 00", "expected_failure": "FAIL_CLOSED_ILLEGAL_RESPONSE_INDEX" },
+    { "case_id": "POSITION_ILLEGAL_RESPONSE_VALUE", "family": "MSG_SELECT_POSITION", "prompt_case": "POSITION_THREE_BITS_IN_EDOPRO_ORDER", "response_body_hex": "02 00 00 00", "expected_failure": "FAIL_CLOSED_ILLEGAL_RESPONSE_VALUE" },
+    { "case_id": "YESNO_UNSUPPORTED_LEGACY_WIDTH", "family": "MSG_SELECT_YESNO", "inner_hex": "0D 00 08 07 06 05", "expected_failure": "FAIL_CLOSED_UNSUPPORTED_LEGACY_LAYOUT" },
+    { "case_id": "OPTION_UNSUPPORTED_LEGACY_WIDTH", "family": "MSG_SELECT_OPTION", "inner_hex": "0E 00 01 01 00 00 00", "expected_failure": "FAIL_CLOSED_UNSUPPORTED_LEGACY_LAYOUT" }
+  ],
+  "binding_vectors": [
+    {
+      "case_id": "STALE_SAME_LOOKING_KEY",
+      "prompt_a": { "prompt_instance_ordinal": 7, "family": "MSG_SELECT_OPTION", "public_action_key": "MSG_SELECT_OPTION:OPTION:0" },
+      "prompt_b": { "prompt_instance_ordinal": 8, "family": "MSG_SELECT_OPTION", "public_action_key": "MSG_SELECT_OPTION:OPTION:0" },
+      "selected_binding": "prompt_a",
+      "expected_failure": "FAIL_CLOSED_STALE_PROMPT_BINDING"
+    },
+    {
+      "case_id": "CURRENT_FAMILY_MISMATCH",
+      "current_prompt": { "prompt_instance_ordinal": 9, "family": "MSG_SELECT_YESNO" },
+      "selected_binding": { "prompt_instance_ordinal": 9, "family": "MSG_SELECT_EFFECTYN", "public_action_key": "MSG_SELECT_EFFECTYN:YES" },
+      "expected_failure": "FAIL_CLOSED_STALE_PROMPT_BINDING"
+    },
+    {
+      "case_id": "DUPLICATE_SOURCE_KEYS_REMAIN_DISTINCT",
+      "family": "MSG_SELECT_OPTION",
+      "source_ordinals": [0, 1],
+      "public_action_keys": ["MSG_SELECT_OPTION:OPTION:0", "MSG_SELECT_OPTION:OPTION:1"],
+      "equal_public_description": true,
+      "expected": "TWO_CANDIDATES_TWO_PRIVATE_BINDINGS"
+    },
+    {
+      "case_id": "PRIVATE_BINDING_NOT_PUBLIC",
+      "public_candidate_fields": ["prompt_family", "public_action_key", "choice_kind", "source_ordinal"],
+      "private_binding_fields": ["prompt_instance_ordinal", "response_i32", "response_body_bytes"],
+      "public_candidate_must_not_contain": ["response_i32", "response_body_bytes", "raw_protocol_offset"],
+      "expected": "PUBLIC_PRIVATE_BINDING_SEPARATED"
+    }
+  ],
+  "fixture_invariants": {
+    "every_positive_has_complete_domain": true,
+    "every_positive_response_is_four_byte_i32_le": true,
+    "malformed_input_publishes_no_partial_domain": true,
+    "source_duplicates_preserved": true,
+    "raw_response_bytes_are_restricted_fixture_evidence_only": true,
+    "raw_loc_info_is_restricted_fixture_evidence_only": true,
+    "future_model_input_authorized": false,
+    "i4_implemented": false
+  }
+}
