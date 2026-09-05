@@ -282,6 +282,19 @@ public sealed class FlatPromptSessionV1
             return ApplyMaskTransition(maskDraft, maskError);
         }
 
+        if (state is FlatPromptCounterContinuationStateV1 counterState &&
+            candidate is FlatPromptCounterAmountPublicCandidateV1 counterCandidate &&
+            counterState.Family == currentBinding.Family &&
+            FlatPromptProjectionV1.TryAdvanceCounterContinuation(
+                counterState,
+                counterCandidate.SourceOrdinal,
+                counterCandidate.Amount,
+                out FlatPromptProjectionDraftV1? counterDraft,
+                out FlatPromptErrorCodeV1 counterError))
+        {
+            return ApplyCounterTransition(counterDraft, counterError);
+        }
+
         if (state is FlatPromptCardContinuationStateV1 cardFinishState &&
             candidate is FlatPromptFinishPublicCandidateV1 finish &&
             finish.ChoiceKind == FlatPromptChoiceKindV1.Finish &&
@@ -415,6 +428,40 @@ public sealed class FlatPromptSessionV1
             if (!FlatPromptProjectionV1.TryEncodeMaskResponse(
                     nextState.Family,
                     nextState.SelectedMask,
+                    out byte[] responseBody,
+                    out FlatPromptErrorCodeV1 responseError))
+            {
+                currentBinding = null;
+                return FlatPromptContinuationStepResultV1.Failure(
+                    responseError);
+            }
+
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Terminal(responseBody);
+        }
+
+        return CommitIntermediateContinuation(nextDraft);
+    }
+
+    private FlatPromptContinuationStepResultV1 ApplyCounterTransition(
+        FlatPromptProjectionDraftV1? nextDraft,
+        FlatPromptErrorCodeV1 error)
+    {
+        if (nextDraft is null || currentBinding is null)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Failure(
+                error == FlatPromptErrorCodeV1.None
+                    ? FlatPromptErrorCodeV1.InvalidContinuationAction
+                    : error);
+        }
+
+        if (nextDraft.ContinuationState is
+                FlatPromptCounterContinuationStateV1 nextState &&
+            nextState.IsTerminal)
+        {
+            if (!FlatPromptProjectionV1.TryEncodeCounterResponse(
+                    nextState.AssignedAmounts,
                     out byte[] responseBody,
                     out FlatPromptErrorCodeV1 responseError))
             {
@@ -574,7 +621,8 @@ public sealed class FlatPromptSessionV1
             FlatPromptFamilyValueV1.MsgSelectPlace or
             FlatPromptFamilyValueV1.MsgSelectDisfield or
             FlatPromptFamilyValueV1.MsgAnnounceRace or
-            FlatPromptFamilyValueV1.MsgAnnounceAttrib)
+            FlatPromptFamilyValueV1.MsgAnnounceAttrib or
+            FlatPromptFamilyValueV1.MsgSelectCounter)
         {
             error = FlatPromptErrorCodeV1.InvalidContinuationAction;
             return false;
@@ -808,6 +856,11 @@ public sealed class FlatPromptSessionV1
                 FlatPromptMaskBitPublicCandidateV1 right) =>
                 left.BitIndex == right.BitIndex &&
                 left.BitValue == right.BitValue,
+            (FlatPromptCounterAmountPublicCandidateV1 left,
+                FlatPromptCounterAmountPublicCandidateV1 right) =>
+                left.SourceSection == right.SourceSection &&
+                left.SourceOrdinal == right.SourceOrdinal &&
+                left.Amount == right.Amount,
             _ => false
         };
     }

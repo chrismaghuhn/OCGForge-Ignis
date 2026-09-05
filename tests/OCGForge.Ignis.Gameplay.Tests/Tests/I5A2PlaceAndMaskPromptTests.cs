@@ -686,7 +686,7 @@ internal static class I5A2PlaceAndMaskPromptTests
 
     private static void AssertLaterFamilyBoundaries()
     {
-        foreach (byte id in new byte[] { 22, 21, 25 })
+        foreach (byte id in new byte[] { 21, 25 })
         {
             AssertFailure(
                 new[] { id },
