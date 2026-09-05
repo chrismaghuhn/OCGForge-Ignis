@@ -559,25 +559,44 @@ The modern message is:
         u16_le   available_amount
 
 Length is `10 + 9*n`. The source vector is the ordered wire vector after the
-core's source ordering. A zero required total, no source, or a one-card source
-is resolved by the core without this prompt. For an emitted prompt, each
-available amount is positive and q is no greater than the total capacity.
+core's source ordering. The core producer builds this vector only from the
+acting and other player's `list_mzone` and `list_szone` field-card lists.
+Consequently, every emitted source has exactly `LOCATION_MZONE` (`0x04`) or
+`LOCATION_SZONE` (`0x08`), a controller of `0` or `1`, and the corresponding
+field sequence range (`0..6` for MZONE and `0..7` for SZONE). Deck, Hand,
+Extra Deck, Graveyard, Banished, overlay, and every other location are
+producer-impossible for this family and fail closed. A zero required total,
+no source, or a one-card source is resolved by the core without this prompt.
+For an emitted prompt, each raw `available_amount` is positive and q is no
+greater than the raw total capacity.
 
-The public context exposes counter type, q, and safe source descriptors. The
-capacity is a public semantic amount; the raw card code is not. Field source
-entries are correlated through the accepted I3D snapshot. This layout has no
-overlay index, so overlays fail closed. A source reference that cannot be
-proven uniquely fails the whole prompt.
+The private source-address tuple `(controller, location, sequence)` is unique
+within one emitted prompt because the producer visits each occupied field slot
+once. Duplicate-looking card codes or capacities remain legal when their
+private field-address tuples differ; repeating one tuple is producer-
+impossible and fails closed. Field source entries are correlated through the
+accepted I3D snapshot. This layout has no overlay index, so overlays fail
+closed. A source reference that cannot be proven uniquely fails the whole
+prompt.
+
+The wire `available_amount` is an unsigned storage value, but the pinned core
+reads each terminal response slot as signed `int16_t`. Therefore the adapter's
+safe assignable capacity is the derived value
+`min(available_amount, INT16_MAX)`, where `INT16_MAX = 32767`. The public
+source descriptor and all continuation feasibility checks use this safe
+capacity. If q is greater than the sum of the safe capacities, no safe
+terminal response is representable and the prompt fails closed, even when the
+raw unsigned capacities would otherwise be sufficient.
 
 The continuation processes source occurrences in wire order. For the next
 source ordinal, `ASSIGN_AMOUNT:i:a` is present for each `a` from zero through
-that occurrence's capacity that leaves an exact completion for the remaining
-occurrences. Zero is a real response value and must not be omitted. There is
-no greedy allocation and no separate cancel or finish action. After all n
-assignments the terminal body is n `u16_le` nonnegative amounts in source
-order, with exact sum q. Negative `i16` values and values above capacity fail
-closed even though the core's low-level reader is signed and does not reject
-every negative value itself.
+that occurrence's safe assignable capacity that leaves an exact completion for
+the remaining occurrences. Zero is a real response value and must not be
+omitted. There is no greedy allocation and no separate cancel or finish
+action. After all n assignments the terminal body is n `u16_le` amounts in
+source order, with exact sum q. Any amount above the safe capacity, any
+negative signed private amount, and every terminal response word in
+`0x8000..0xffff` fail closed before private binding is accepted.
 
 ## 12. MSG_SORT_CARD (25) and MSG_SORT_CHAIN (21)
 
