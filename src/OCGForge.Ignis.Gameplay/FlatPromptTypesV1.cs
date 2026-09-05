@@ -44,6 +44,12 @@ internal static class FlatPromptFamilyValueV1
 
     internal const FlatPromptFamilyV1 MsgSelectCounter =
         (FlatPromptFamilyV1)22;
+
+    internal const FlatPromptFamilyV1 MsgSortCard =
+        (FlatPromptFamilyV1)25;
+
+    internal const FlatPromptFamilyV1 MsgSortChain =
+        (FlatPromptFamilyV1)21;
 }
 
 internal static class FlatPromptContractIdV1
@@ -104,7 +110,15 @@ public enum FlatPromptSourceSectionV1 : byte
     Selectable = 12,
     Unselectable = 13,
     NumberOptions = 14,
-    CounterSources = 15
+    CounterSources = 15,
+    SortCardSources = 16,
+    SortChainSources = 17
+}
+
+public enum FlatPromptSortKindV1 : byte
+{
+    SortCard = 25,
+    SortChain = 21
 }
 
 public enum FlatPromptFieldZoneV1 : byte
@@ -293,6 +307,220 @@ public sealed record FlatPromptIdlePublicContextV1
         : base(FlatPromptFamilyV1.MsgSelectIdleCmd, actingPlayer)
     {
     }
+}
+
+public abstract record FlatPromptSortSourcePublicDescriptorBaseV1
+{
+    protected FlatPromptSortSourcePublicDescriptorBaseV1(int sourceOrdinal)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(sourceOrdinal);
+        SourceOrdinal = sourceOrdinal;
+    }
+
+    public int SourceOrdinal { get; }
+}
+
+public sealed record FlatPromptSortSourceAnonymousPublicDescriptorV1
+    : FlatPromptSortSourcePublicDescriptorBaseV1
+{
+    internal FlatPromptSortSourceAnonymousPublicDescriptorV1(int sourceOrdinal)
+        : base(sourceOrdinal)
+    {
+    }
+}
+
+public sealed record FlatPromptSortSourcePromptCodePublicDescriptorV1
+    : FlatPromptSortSourcePublicDescriptorBaseV1
+{
+    internal FlatPromptSortSourcePromptCodePublicDescriptorV1(
+        int sourceOrdinal,
+        uint promptLocalCardCode)
+        : base(sourceOrdinal)
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(promptLocalCardCode);
+
+        PromptLocalCardCode = promptLocalCardCode;
+    }
+
+    public uint PromptLocalCardCode { get; }
+}
+
+public sealed record FlatPromptSortSourceLocatorPublicDescriptorV1
+    : FlatPromptSortSourcePublicDescriptorBaseV1
+{
+    internal FlatPromptSortSourceLocatorPublicDescriptorV1(
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(sourceOrdinal)
+    {
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+    }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+}
+
+public sealed record FlatPromptSortSourceLocatorPromptCodePublicDescriptorV1
+    : FlatPromptSortSourcePublicDescriptorBaseV1
+{
+    internal FlatPromptSortSourceLocatorPromptCodePublicDescriptorV1(
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        uint promptLocalCardCode)
+        : base(sourceOrdinal)
+    {
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+        ArgumentOutOfRangeException.ThrowIfZero(promptLocalCardCode);
+
+        PromptLocalCardCode = promptLocalCardCode;
+    }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+
+    public uint PromptLocalCardCode { get; }
+}
+
+public sealed record FlatPromptSortSelectionPublicContextV1
+    : FlatPromptPublicContextV1
+{
+    private readonly FlatPromptSortSourcePublicDescriptorBaseV1[] sources;
+    private readonly ReadOnlyCollection<FlatPromptSortSourcePublicDescriptorBaseV1>
+        sourcesView;
+
+    internal FlatPromptSortSelectionPublicContextV1(
+        byte actingPlayer,
+        FlatPromptSortKindV1 sortKind,
+        IEnumerable<FlatPromptSortSourcePublicDescriptorBaseV1> sources)
+        : base(
+            ToFamily(sortKind),
+            actingPlayer,
+            FlatPromptContractIdV1.Combinatorial)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        this.sources = sources.ToArray();
+        if (this.sources.Length == 0 || this.sources.Length > 128 ||
+            this.sources.Select((source, index) =>
+                source is not null && source.SourceOrdinal == index)
+                .Any(valid => !valid))
+        {
+            throw new ArgumentException(
+                "Sort source descriptors must be complete and ordered.",
+                nameof(sources));
+        }
+
+        sourcesView = Array.AsReadOnly(this.sources);
+        SortKind = sortKind;
+        SourceCount = this.sources.Length;
+    }
+
+    public FlatPromptSortKindV1 SortKind { get; }
+
+    public int SourceCount { get; }
+
+    public IReadOnlyList<FlatPromptSortSourcePublicDescriptorBaseV1> Sources =>
+        sourcesView;
+
+    private static FlatPromptFamilyV1 ToFamily(FlatPromptSortKindV1 sortKind) =>
+        sortKind switch
+        {
+            FlatPromptSortKindV1.SortCard => FlatPromptFamilyValueV1.MsgSortCard,
+            FlatPromptSortKindV1.SortChain => FlatPromptFamilyValueV1.MsgSortChain,
+            _ => throw new ArgumentOutOfRangeException(nameof(sortKind))
+        };
+}
+
+public abstract record FlatPromptSortPublicCandidateBaseV1
+    : FlatPublicCandidateDescriptorV1
+{
+    protected FlatPromptSortPublicCandidateBaseV1(
+        string i4LocalCandidateKey,
+        FlatPromptFamilyV1 family,
+        int sourceOrdinal)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.Pick)
+    {
+        SourceSection = family == FlatPromptFamilyValueV1.MsgSortCard
+            ? FlatPromptSourceSectionV1.SortCardSources
+            : family == FlatPromptFamilyValueV1.MsgSortChain
+                ? FlatPromptSourceSectionV1.SortChainSources
+                : throw new ArgumentOutOfRangeException(nameof(family));
+        ArgumentOutOfRangeException.ThrowIfNegative(sourceOrdinal);
+        SourceOrdinal = sourceOrdinal;
+    }
+
+    public FlatPromptSourceSectionV1 SourceSection { get; }
+
+    public int SourceOrdinal { get; }
+}
+
+public sealed record FlatPromptSortAnonymousPublicCandidateV1
+    : FlatPromptSortPublicCandidateBaseV1
+{
+    internal FlatPromptSortAnonymousPublicCandidateV1(
+        string i4LocalCandidateKey,
+        FlatPromptFamilyV1 family,
+        int sourceOrdinal)
+        : base(i4LocalCandidateKey, family, sourceOrdinal)
+    {
+    }
+}
+
+public sealed record FlatPromptSortPromptCodePublicCandidateV1
+    : FlatPromptSortPublicCandidateBaseV1
+{
+    internal FlatPromptSortPromptCodePublicCandidateV1(
+        string i4LocalCandidateKey,
+        FlatPromptFamilyV1 family,
+        int sourceOrdinal,
+        uint promptLocalCardCode)
+        : base(i4LocalCandidateKey, family, sourceOrdinal)
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(promptLocalCardCode);
+
+        PromptLocalCardCode = promptLocalCardCode;
+    }
+
+    public uint PromptLocalCardCode { get; }
+}
+
+public sealed record FlatPromptSortLocatorPublicCandidateV1
+    : FlatPromptSortPublicCandidateBaseV1
+{
+    internal FlatPromptSortLocatorPublicCandidateV1(
+        string i4LocalCandidateKey,
+        FlatPromptFamilyV1 family,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(i4LocalCandidateKey, family, sourceOrdinal)
+    {
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+    }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+}
+
+public sealed record FlatPromptSortLocatorPromptCodePublicCandidateV1
+    : FlatPromptSortPublicCandidateBaseV1
+{
+    internal FlatPromptSortLocatorPromptCodePublicCandidateV1(
+        string i4LocalCandidateKey,
+        FlatPromptFamilyV1 family,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        uint promptLocalCardCode)
+        : base(i4LocalCandidateKey, family, sourceOrdinal)
+    {
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+        ArgumentOutOfRangeException.ThrowIfZero(promptLocalCardCode);
+
+        PromptLocalCardCode = promptLocalCardCode;
+    }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+
+    public uint PromptLocalCardCode { get; }
 }
 
 public sealed record FlatPromptCardSelectionPublicContextV1
@@ -1495,6 +1723,44 @@ internal sealed record FlatPromptSelectCounterWireDraftV1
         entriesView;
 }
 
+internal readonly record struct FlatPromptSortWireEntryV1(
+    uint SourceCardCode,
+    byte Controller,
+    byte Location,
+    uint Sequence);
+
+internal sealed record FlatPromptSortWireDraftV1
+    : FlatPromptWireDraftV1
+{
+    private readonly FlatPromptSortWireEntryV1[] entries;
+    private readonly ReadOnlyCollection<FlatPromptSortWireEntryV1>
+        entriesView;
+
+    internal FlatPromptSortWireDraftV1(
+        FlatPromptFamilyV1 family,
+        byte actingPlayer,
+        FlatPromptSortWireEntryV1[] entries)
+        : base(family)
+    {
+        if (family is not
+            (FlatPromptFamilyValueV1.MsgSortCard or
+             FlatPromptFamilyValueV1.MsgSortChain))
+        {
+            throw new ArgumentOutOfRangeException(nameof(family));
+        }
+
+        ArgumentNullException.ThrowIfNull(entries);
+        this.entries = entries.ToArray();
+        entriesView = Array.AsReadOnly(this.entries);
+        ActingPlayer = actingPlayer;
+    }
+
+    internal byte ActingPlayer { get; }
+
+    internal IReadOnlyList<FlatPromptSortWireEntryV1> Entries =>
+        entriesView;
+}
+
 internal abstract class FlatPromptContinuationStateV1
 {
     protected FlatPromptContinuationStateV1(
@@ -2099,6 +2365,135 @@ internal sealed class FlatPromptCounterContinuationStateV1
 
         return true;
     }
+}
+
+internal sealed class FlatPromptSortContinuationStateV1
+    : FlatPromptContinuationStateV1
+{
+    private readonly FlatPromptSortPublicCandidateBaseV1[] sourceCandidates;
+    private readonly ReadOnlyCollection<FlatPromptSortPublicCandidateBaseV1>
+        sourceCandidatesView;
+    private readonly int[] placedSourceOrdinals;
+    private readonly ReadOnlyCollection<int> placedSourceOrdinalsView;
+
+    internal FlatPromptSortContinuationStateV1(
+        FlatPromptFamilyV1 family,
+        byte actingPlayer,
+        IEnumerable<FlatPromptSortPublicCandidateBaseV1> sourceCandidates,
+        IEnumerable<int> placedSourceOrdinals,
+        int step)
+        : base(family, actingPlayer, step)
+    {
+        if (family is not
+            (FlatPromptFamilyValueV1.MsgSortCard or
+             FlatPromptFamilyValueV1.MsgSortChain))
+        {
+            throw new ArgumentOutOfRangeException(nameof(family));
+        }
+
+        ArgumentNullException.ThrowIfNull(sourceCandidates);
+        ArgumentNullException.ThrowIfNull(placedSourceOrdinals);
+        this.sourceCandidates = sourceCandidates.ToArray();
+        this.placedSourceOrdinals = placedSourceOrdinals.ToArray();
+        if (this.sourceCandidates.Length is < 1 or > 128 ||
+            this.sourceCandidates.Select((candidate, index) =>
+                candidate is not null &&
+                IsConcreteSortType(candidate) &&
+                candidate.SourceOrdinal == index &&
+                candidate.ChoiceKind == FlatPromptChoiceKindV1.Pick &&
+                candidate.SourceSection == ExpectedSourceSection(family))
+                .Any(valid => !valid) ||
+            this.placedSourceOrdinals.Length > this.sourceCandidates.Length ||
+            this.placedSourceOrdinals.Any(ordinal =>
+                ordinal < 0 || ordinal >= this.sourceCandidates.Length) ||
+            this.placedSourceOrdinals.Distinct().Count() !=
+                this.placedSourceOrdinals.Length ||
+            step != this.placedSourceOrdinals.Length)
+        {
+            throw new ArgumentException(
+                "Sort continuation state vectors must be complete and unique.");
+        }
+
+        sourceCandidatesView = Array.AsReadOnly(this.sourceCandidates);
+        placedSourceOrdinalsView = Array.AsReadOnly(
+            this.placedSourceOrdinals);
+    }
+
+    internal IReadOnlyList<FlatPromptSortPublicCandidateBaseV1>
+        SourceCandidates => sourceCandidatesView;
+
+    internal IReadOnlyList<int> PlacedSourceOrdinals =>
+        placedSourceOrdinalsView;
+
+    internal int CurrentDestinationPosition =>
+        placedSourceOrdinals.Length;
+
+    internal bool IsTerminal =>
+        placedSourceOrdinals.Length == sourceCandidates.Length;
+
+    internal bool IsPlaceLegal(int sourceOrdinal) =>
+        !IsTerminal &&
+        sourceOrdinal >= 0 &&
+        sourceOrdinal < sourceCandidates.Length &&
+        !placedSourceOrdinals.Contains(sourceOrdinal);
+
+    internal FlatPromptSortContinuationStateV1 WithPlaced(
+        int sourceOrdinal) =>
+        new(
+            Family,
+            ActingPlayer,
+            sourceCandidates,
+            placedSourceOrdinals.Append(sourceOrdinal),
+            checked(Step + 1));
+
+    internal bool TryEncodeTerminalResponse(
+        out byte[] responseBody,
+        out FlatPromptErrorCodeV1 error)
+    {
+        responseBody = Array.Empty<byte>();
+        error = FlatPromptErrorCodeV1.None;
+        if (!IsTerminal)
+        {
+            error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+            return false;
+        }
+
+        responseBody = new byte[sourceCandidates.Length];
+        bool[] sources = new bool[sourceCandidates.Length];
+        for (int destination = 0;
+             destination < placedSourceOrdinals.Length;
+             destination++)
+        {
+            int sourceOrdinal = placedSourceOrdinals[destination];
+            if (sourceOrdinal < 0 ||
+                sourceOrdinal >= responseBody.Length ||
+                sources[sourceOrdinal])
+            {
+                responseBody = Array.Empty<byte>();
+                error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                return false;
+            }
+
+            responseBody[sourceOrdinal] = checked((byte)destination);
+            sources[sourceOrdinal] = true;
+        }
+
+        return true;
+    }
+
+    private static bool IsConcreteSortType(
+        FlatPromptSortPublicCandidateBaseV1 candidate) =>
+        candidate.GetType() == typeof(FlatPromptSortAnonymousPublicCandidateV1) ||
+        candidate.GetType() == typeof(FlatPromptSortPromptCodePublicCandidateV1) ||
+        candidate.GetType() == typeof(FlatPromptSortLocatorPublicCandidateV1) ||
+        candidate.GetType() ==
+            typeof(FlatPromptSortLocatorPromptCodePublicCandidateV1);
+
+    private static FlatPromptSourceSectionV1 ExpectedSourceSection(
+        FlatPromptFamilyV1 family) =>
+        family == FlatPromptFamilyValueV1.MsgSortCard
+            ? FlatPromptSourceSectionV1.SortCardSources
+            : FlatPromptSourceSectionV1.SortChainSources;
 }
 
 internal sealed class FlatPromptContinuationStepResultV1
@@ -3111,6 +3506,42 @@ internal sealed class CurrentFlatPromptBindingV1
         return true;
     }
 
+    private static bool SortCandidatesEqual(
+        FlatPromptSortPublicCandidateBaseV1 first,
+        FlatPromptSortPublicCandidateBaseV1 second)
+    {
+        if (first.GetType() != second.GetType() ||
+            !string.Equals(
+                first.I4LocalCandidateKey,
+                second.I4LocalCandidateKey,
+                StringComparison.Ordinal) ||
+            first.ChoiceKind != second.ChoiceKind ||
+            first.SourceSection != second.SourceSection ||
+            first.SourceOrdinal != second.SourceOrdinal)
+        {
+            return false;
+        }
+
+        return (first, second) switch
+        {
+            (FlatPromptSortAnonymousPublicCandidateV1,
+                FlatPromptSortAnonymousPublicCandidateV1) => true,
+            (FlatPromptSortPromptCodePublicCandidateV1 left,
+                FlatPromptSortPromptCodePublicCandidateV1 right) =>
+                left.PromptLocalCardCode == right.PromptLocalCardCode,
+            (FlatPromptSortLocatorPublicCandidateV1 left,
+                FlatPromptSortLocatorPublicCandidateV1 right) =>
+                left.PublicSemanticCardLocator ==
+                    right.PublicSemanticCardLocator,
+            (FlatPromptSortLocatorPromptCodePublicCandidateV1 left,
+                FlatPromptSortLocatorPromptCodePublicCandidateV1 right) =>
+                left.PublicSemanticCardLocator ==
+                    right.PublicSemanticCardLocator &&
+                left.PromptLocalCardCode == right.PromptLocalCardCode,
+            _ => false
+        };
+    }
+
     private static bool IsContinuationStateCompatible(
         FlatPromptFamilyV1 family,
         FlatPublicCandidateDescriptorV1[] candidates,
@@ -3173,6 +3604,49 @@ internal sealed class CurrentFlatPromptBindingV1
                         FlatPromptSourceSectionV1.CounterSources &&
                     amount.SourceOrdinal == counter.CurrentSourceOrdinal &&
                     counter.IsAssignmentLegal(amount.Amount));
+
+            case FlatPromptSortContinuationStateV1 sort:
+                if (sort.Family != family ||
+                    family is not
+                        (FlatPromptFamilyValueV1.MsgSortCard or
+                         FlatPromptFamilyValueV1.MsgSortChain) ||
+                    sort.IsTerminal)
+                {
+                    return false;
+                }
+
+                FlatPromptSortPublicCandidateBaseV1[] sortCandidates =
+                    candidates
+                        .OfType<FlatPromptSortPublicCandidateBaseV1>()
+                        .ToArray();
+                int[] expectedOrdinals = Enumerable.Range(
+                        0,
+                        sort.SourceCandidates.Count)
+                    .Where(sort.IsPlaceLegal)
+                    .ToArray();
+                if (candidates.Count(candidate =>
+                        candidate is FlatPromptCancelPublicCandidateV1) == 1 &&
+                    candidates.All(candidate =>
+                        candidate is FlatPromptSortPublicCandidateBaseV1 or
+                            FlatPromptCancelPublicCandidateV1) &&
+                    sortCandidates.Length == expectedOrdinals.Length &&
+                    sortCandidates.Select(candidate => candidate.SourceOrdinal)
+                        .SequenceEqual(expectedOrdinals))
+                {
+                    for (int index = 0; index < sortCandidates.Length; index++)
+                    {
+                        if (!SortCandidatesEqual(
+                                sortCandidates[index],
+                                sort.SourceCandidates[expectedOrdinals[index]]))
+                        {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                }
+
+                return false;
 
             default:
                 return false;
@@ -3411,6 +3885,14 @@ internal sealed class CurrentFlatPromptBindingV1
                     out expectedKey,
                     out expectedResponse);
 
+            case FlatPromptFamilyValueV1.MsgSortCard:
+            case FlatPromptFamilyValueV1.MsgSortChain:
+                return TryGetSortBinding(
+                    candidate,
+                    family,
+                    out expectedKey,
+                    out expectedResponse);
+
             default:
                 return false;
         }
@@ -3438,6 +3920,45 @@ internal sealed class CurrentFlatPromptBindingV1
 
         expectedResponse = 0;
         return true;
+    }
+
+    private static bool TryGetSortBinding(
+        FlatPublicCandidateDescriptorV1 candidate,
+        FlatPromptFamilyV1 family,
+        out string expectedKey,
+        out int expectedResponse)
+    {
+        expectedKey = string.Empty;
+        expectedResponse = default;
+        if (candidate is FlatPromptSortPublicCandidateBaseV1 sort &&
+            IsConcreteSortCandidateType(candidate) &&
+            candidate.ChoiceKind == FlatPromptChoiceKindV1.Pick &&
+            sort.SourceSection == (family == FlatPromptFamilyValueV1.MsgSortCard
+                ? FlatPromptSourceSectionV1.SortCardSources
+                : FlatPromptSourceSectionV1.SortChainSources) &&
+            FlatPromptKeyV1.TryCreateSortPlace(
+                family,
+                sort.SourceOrdinal,
+                out expectedKey))
+        {
+            expectedResponse = 0;
+            return true;
+        }
+
+        if (candidate is FlatPromptCancelPublicCandidateV1 cancel &&
+            cancel.ChoiceKind == FlatPromptChoiceKindV1.Cancel)
+        {
+            expectedKey = family == FlatPromptFamilyValueV1.MsgSortCard
+                ? FlatPromptKeyV1.SortCardCancel
+                : FlatPromptKeyV1.SortChainCancel;
+            expectedResponse = -1;
+            return string.Equals(
+                candidate.I4LocalCandidateKey,
+                expectedKey,
+                StringComparison.Ordinal);
+        }
+
+        return false;
     }
 
     private static bool TryGetPlaceBinding(
@@ -3690,6 +4211,14 @@ internal sealed class CurrentFlatPromptBindingV1
         FlatPublicCandidateDescriptorV1 candidate,
         params Type[] allowedTypes) =>
         allowedTypes.Contains(candidate.GetType());
+
+    private static bool IsConcreteSortCandidateType(
+        FlatPublicCandidateDescriptorV1 candidate) =>
+        candidate.GetType() == typeof(FlatPromptSortAnonymousPublicCandidateV1) ||
+        candidate.GetType() == typeof(FlatPromptSortPromptCodePublicCandidateV1) ||
+        candidate.GetType() == typeof(FlatPromptSortLocatorPublicCandidateV1) ||
+        candidate.GetType() ==
+            typeof(FlatPromptSortLocatorPromptCodePublicCandidateV1);
 
     private static bool TryGetBattleBinding(
         FlatPublicCandidateDescriptorV1 candidate,
@@ -4095,6 +4624,12 @@ internal static class FlatPromptKeyV1
         "MSG_ANNOUNCE_ATTRIB:PICK:";
     internal const string SelectCounterAssignAmountPrefix =
         "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:";
+    internal const string SortCardPlacePrefix =
+        "MSG_SORT_CARD:PLACE:";
+    internal const string SortChainPlacePrefix =
+        "MSG_SORT_CHAIN:PLACE:";
+    internal const string SortCardCancel = "MSG_SORT_CARD:CANCEL";
+    internal const string SortChainCancel = "MSG_SORT_CHAIN:CANCEL";
     internal static bool TryCreateOption(
         int sourceOrdinal,
         out string key)
@@ -4286,6 +4821,21 @@ internal static class FlatPromptKeyV1
         key = SelectCounterAssignAmountPrefix + sourceDigits + ":" +
             amountDigits;
         return true;
+    }
+
+    internal static bool TryCreateSortPlace(
+        FlatPromptFamilyV1 family,
+        int sourceOrdinal,
+        out string key)
+    {
+        key = string.Empty;
+        string prefix = family == FlatPromptFamilyValueV1.MsgSortCard
+            ? SortCardPlacePrefix
+            : family == FlatPromptFamilyValueV1.MsgSortChain
+                ? SortChainPlacePrefix
+                : string.Empty;
+        return prefix.Length != 0 &&
+            TryCreateOrdinalKey(prefix, sourceOrdinal, out key);
     }
 
     internal static bool TryEncodeIndexedResponse(

@@ -295,6 +295,28 @@ public sealed class FlatPromptSessionV1
             return ApplyCounterTransition(counterDraft, counterError);
         }
 
+        if (state is FlatPromptSortContinuationStateV1 sortState &&
+            candidate is FlatPromptCancelPublicCandidateV1 sortCancel &&
+            sortState.Family == currentBinding.Family &&
+            sortCancel.ChoiceKind == FlatPromptChoiceKindV1.Cancel)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Terminal(
+                CreateInt32Response(-1));
+        }
+
+        if (state is FlatPromptSortContinuationStateV1 sortPickState &&
+            candidate is FlatPromptSortPublicCandidateBaseV1 sortCandidate &&
+            sortPickState.Family == currentBinding.Family &&
+            FlatPromptProjectionV1.TryAdvanceSortContinuation(
+                sortPickState,
+                sortCandidate.SourceOrdinal,
+                out FlatPromptProjectionDraftV1? sortDraft,
+                out FlatPromptErrorCodeV1 sortError))
+        {
+            return ApplySortTransition(sortDraft, sortError);
+        }
+
         if (state is FlatPromptCardContinuationStateV1 cardFinishState &&
             candidate is FlatPromptFinishPublicCandidateV1 finish &&
             finish.ChoiceKind == FlatPromptChoiceKindV1.Finish &&
@@ -477,6 +499,39 @@ public sealed class FlatPromptSessionV1
         return CommitIntermediateContinuation(nextDraft);
     }
 
+    private FlatPromptContinuationStepResultV1 ApplySortTransition(
+        FlatPromptProjectionDraftV1? nextDraft,
+        FlatPromptErrorCodeV1 error)
+    {
+        if (nextDraft is null || currentBinding is null)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Failure(
+                error == FlatPromptErrorCodeV1.None
+                    ? FlatPromptErrorCodeV1.InvalidContinuationAction
+                    : error);
+        }
+
+        if (nextDraft.ContinuationState is
+                FlatPromptSortContinuationStateV1 nextState &&
+            nextState.IsTerminal)
+        {
+            if (!nextState.TryEncodeTerminalResponse(
+                    out byte[] responseBody,
+                    out FlatPromptErrorCodeV1 responseError))
+            {
+                currentBinding = null;
+                return FlatPromptContinuationStepResultV1.Failure(
+                    responseError);
+            }
+
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Terminal(responseBody);
+        }
+
+        return CommitIntermediateContinuation(nextDraft);
+    }
+
     private FlatPromptContinuationStepResultV1
         CommitIntermediateContinuation(FlatPromptProjectionDraftV1 nextDraft)
     {
@@ -622,7 +677,9 @@ public sealed class FlatPromptSessionV1
             FlatPromptFamilyValueV1.MsgSelectDisfield or
             FlatPromptFamilyValueV1.MsgAnnounceRace or
             FlatPromptFamilyValueV1.MsgAnnounceAttrib or
-            FlatPromptFamilyValueV1.MsgSelectCounter)
+            FlatPromptFamilyValueV1.MsgSelectCounter or
+            FlatPromptFamilyValueV1.MsgSortCard or
+            FlatPromptFamilyValueV1.MsgSortChain)
         {
             error = FlatPromptErrorCodeV1.InvalidContinuationAction;
             return false;
@@ -861,6 +918,24 @@ public sealed class FlatPromptSessionV1
                 left.SourceSection == right.SourceSection &&
                 left.SourceOrdinal == right.SourceOrdinal &&
                 left.Amount == right.Amount,
+            (FlatPromptSortAnonymousPublicCandidateV1 left,
+                FlatPromptSortAnonymousPublicCandidateV1 right) =>
+                SortCandidateEqual(left, right),
+            (FlatPromptSortPromptCodePublicCandidateV1 left,
+                FlatPromptSortPromptCodePublicCandidateV1 right) =>
+                SortCandidateEqual(left, right) &&
+                left.PromptLocalCardCode == right.PromptLocalCardCode,
+            (FlatPromptSortLocatorPublicCandidateV1 left,
+                FlatPromptSortLocatorPublicCandidateV1 right) =>
+                SortCandidateEqual(left, right) &&
+                left.PublicSemanticCardLocator ==
+                    right.PublicSemanticCardLocator,
+            (FlatPromptSortLocatorPromptCodePublicCandidateV1 left,
+                FlatPromptSortLocatorPromptCodePublicCandidateV1 right) =>
+                SortCandidateEqual(left, right) &&
+                left.PublicSemanticCardLocator ==
+                    right.PublicSemanticCardLocator &&
+                left.PromptLocalCardCode == right.PromptLocalCardCode,
             _ => false
         };
     }
@@ -880,6 +955,12 @@ public sealed class FlatPromptSessionV1
     private static bool SelectUnselectEqual(
         FlatPromptSelectUnselectCardCandidateBaseV1 first,
         FlatPromptSelectUnselectCardCandidateBaseV1 second) =>
+        first.SourceSection == second.SourceSection &&
+        first.SourceOrdinal == second.SourceOrdinal;
+
+    private static bool SortCandidateEqual(
+        FlatPromptSortPublicCandidateBaseV1 first,
+        FlatPromptSortPublicCandidateBaseV1 second) =>
         first.SourceSection == second.SourceSection &&
         first.SourceOrdinal == second.SourceOrdinal;
 
