@@ -44,6 +44,19 @@ I4D owns cross-family acceptance, not another decoder. It proves that the
 already accepted seven family implementations compose through one current
 prompt lifecycle without changing their family-specific semantics.
 
+The existing runtime has two distinct acceptance surfaces that must both be
+closed over the same seven-family set:
+
+    TryProject(...)
+        I4A one-argument surface for YESNO, OPTION, POSITION
+
+    TryParseWireDraft(...) followed by authority projection
+        I4B/I4C per-call surface for EFFECTYN, CHAIN, BATTLECMD, IDLECMD
+
+I4_NO_EXTRA_FAMILY is proven only when every byte ID outside
+{10, 11, 12, 13, 14, 16, 19} returns UnsupportedPromptLayout with null public
+output through both surfaces. A single dispatch-table check is insufficient.
+
 The live audit found:
 
     BLOCKERS=0
@@ -409,6 +422,8 @@ The later implementation review must report the following machine-readable
 style fields:
 
     I4_SEVEN_FAMILIES_PRESENT=PASS
+    I4_SIMPLE_DISPATCH_NO_EXTRA_FAMILY=PASS
+    I4_AUTHORITY_DISPATCH_NO_EXTRA_FAMILY=PASS
     I4_NO_EXTRA_FAMILY=PASS
     I4_CROSS_FAMILY_BINDING_ISOLATION=PASS
     I4_CROSS_FAMILY_STALE_HANDLE_REJECTION=PASS

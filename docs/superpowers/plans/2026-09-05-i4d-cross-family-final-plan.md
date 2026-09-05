@@ -220,8 +220,18 @@ Assert that FlatPromptFamilyV1 contains exactly the seven numeric values:
     10, 11, 12, 13, 14, 16, 19
 
 Accept one valid prompt for each of the seven values. Then iterate all byte
-IDs from 0 through 255 that are not in this set, call the existing per-call
-session overload with valid authority objects, and assert:
+IDs from 0 through 255 that are not in this set. For every unsupported ID,
+execute both acceptance surfaces independently:
+
+    fresh FlatPromptSessionV1
+    TryAcceptPrompt(new byte[] { id })
+        → the I4A one-argument TryProject surface
+
+    fresh FlatPromptSessionV1
+    TryAcceptPrompt(new byte[] { id }, validMirror, validAcceptedProjection)
+        → the I4B/I4C TryParseWireDraft authority surface
+
+Require the following result from each call:
 
     IsSuccess=false
     Error=UnsupportedPromptLayout
@@ -230,7 +240,8 @@ session overload with valid authority objects, and assert:
 
 The test must distinguish an unsupported message ID from malformed input for
 a supported family. No eighth enum value, parser dispatch case, or candidate
-family may be introduced.
+family may be introduced. The two assertions are both required for
+I4_NO_EXTRA_FAMILY=PASS.
 
 - [ ] Step 2: Implement TestCrossFamilyBindingLifecycle.
 
@@ -605,6 +616,8 @@ The future worker must report exact values from executed commands:
     FUTURE_GAMEPLAY_EXPECTED=108/108
 
     I4_SEVEN_FAMILIES_PRESENT=PASS
+    I4_SIMPLE_DISPATCH_NO_EXTRA_FAMILY=PASS
+    I4_AUTHORITY_DISPATCH_NO_EXTRA_FAMILY=PASS
     I4_NO_EXTRA_FAMILY=PASS
     I4_CROSS_FAMILY_BINDING_ISOLATION=PASS
     I4_CROSS_FAMILY_STALE_HANDLE_REJECTION=PASS
@@ -639,8 +652,10 @@ The future worker must report exact values from executed commands:
     ERRORS=0
     DIFF_CHECK=PASS
 
-    I4D_DESIGN_FINAL_PASS=NOT_CLAIMED_BY_WORKER
-    I4D_IMPLEMENTATION_AUTHORIZED=NO
+    I4D_DESIGN_FINAL_PASS=YES_BY_INDEPENDENT_REVIEW
+    I4D_IMPLEMENTATION_AUTHORIZED=YES
+    I4D_IMPLEMENTATION_SELF_AUTHORIZED=NO
+    I4D_FEATURE_FINAL_PASS=NO
     I4_FINAL=NO
     I5_AUTHORIZED=NO
     I5_STARTED=NO
