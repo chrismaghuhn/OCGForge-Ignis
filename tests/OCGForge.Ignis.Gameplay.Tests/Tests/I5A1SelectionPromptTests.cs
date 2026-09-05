@@ -1295,6 +1295,35 @@ internal static class I5A1SelectionPromptTests
                 Array.Empty<(uint, ModernLocInfoV1)>()),
             FlatPromptErrorCodeV1.UnprovenCandidateDomain);
 
+        AssertFailure(
+            new FlatPromptSessionV1(),
+            SelectUnselectMessage(
+                0,
+                false,
+                false,
+                1,
+                1,
+                new[]
+                {
+                    (0x11111111u, new ModernLocInfoV1(0, 0, 0, 0))
+                },
+                Array.Empty<(uint, ModernLocInfoV1)>()),
+            FlatPromptErrorCodeV1.InvalidLocation);
+        AssertFailure(
+            new FlatPromptSessionV1(),
+            SelectUnselectMessage(
+                1,
+                false,
+                false,
+                1,
+                1,
+                new[]
+                {
+                    (0x11111111u, new ModernLocInfoV1(1, 0, 0, 0))
+                },
+                Array.Empty<(uint, ModernLocInfoV1)>()),
+            FlatPromptErrorCodeV1.InvalidLocation);
+
         byte[] invalidFlag = SelectUnselectMinimal.ToArray();
         invalidFlag[2] = 2;
         AssertFailure(

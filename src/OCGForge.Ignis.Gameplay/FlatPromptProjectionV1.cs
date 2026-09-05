@@ -315,6 +315,7 @@ internal static class FlatPromptProjectionV1
                     bytes,
                     ref offset,
                     actingPlayer,
+                    true,
                     out entries[ordinal],
                     out error))
             {
@@ -575,6 +576,7 @@ internal static class FlatPromptProjectionV1
                 bytes,
                 ref offset,
                 actingPlayer,
+                false,
                 selectableEntries,
                 out error))
         {
@@ -586,6 +588,7 @@ internal static class FlatPromptProjectionV1
                 bytes,
                 ref offset,
                 actingPlayer,
+                false,
                 unselectableEntries,
                 out error))
         {
@@ -668,6 +671,7 @@ internal static class FlatPromptProjectionV1
         ReadOnlySpan<byte> bytes,
         ref int offset,
         byte actingPlayer,
+        bool allowCodeOnlyPlaceholder,
         out FlatPromptSelectCardWireEntryV1 entry,
         out FlatPromptErrorCodeV1 error)
     {
@@ -679,7 +683,8 @@ internal static class FlatPromptProjectionV1
             offset + sizeof(uint),
             GameplayWirePrimitivesV1.ModernLocInfoByteLength);
         ModernLocInfoV1 location;
-        if (IsSelectCardCodeOnlyLocation(locationBytes, actingPlayer))
+        if (allowCodeOnlyPlaceholder &&
+            IsSelectCardCodeOnlyLocation(locationBytes, actingPlayer))
         {
             location = new ModernLocInfoV1(0, 0, 0, 0);
         }
@@ -712,6 +717,7 @@ internal static class FlatPromptProjectionV1
         ReadOnlySpan<byte> bytes,
         ref int offset,
         byte actingPlayer,
+        bool allowCodeOnlyPlaceholder,
         FlatPromptSelectCardWireEntryV1[] entries,
         out FlatPromptErrorCodeV1 error)
     {
@@ -722,6 +728,7 @@ internal static class FlatPromptProjectionV1
                     bytes,
                     ref offset,
                     actingPlayer,
+                    allowCodeOnlyPlaceholder,
                     out entries[ordinal],
                     out error))
             {
