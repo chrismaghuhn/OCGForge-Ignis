@@ -55,47 +55,73 @@ internal static class I4CIdleBattlePromptTests
             new CardSpec(
                 0x11223344,
                 new ModernLocInfoV1(0, 0x04, 1, 0x05)));
-        FlatPromptProjectionResultV1 result = AcceptBattle(
-            authority,
-            BattleMixedVector);
+        FlatPromptSessionV1 session = new();
+        FlatPromptProjectionResultV1 result = session.TryAcceptPrompt(
+            BattleMixedVector,
+            authority.Mirror,
+            authority.Projection);
 
         AssertSuccess(result, FlatPromptFamilyV1.MsgSelectBattleCmd);
-        Equal(4, result.Candidates!.Count);
+        Equal(
+            "ocgforge-ignis.flat-prompt-projection.v1",
+            result.Context!.ContractId);
+        Equal((byte)0, result.Context.ActingPlayer);
+        IReadOnlyList<FlatPublicCandidateDescriptorV1> candidates =
+            result.Candidates!;
+        Equal(4, candidates.Count);
         FlatBattleActivatablePublicCandidateBaseV1 activate =
-            result.Candidates[0] as FlatBattleActivatablePublicCandidateBaseV1 ??
+            candidates[0] as FlatBattleActivatablePublicCandidateBaseV1 ??
             throw new InvalidOperationException("expected BATTLE activate");
+        Equal("MSG_SELECT_BATTLECMD:ACTIVATE:0", activate.I4LocalCandidateKey);
         Equal(FlatPromptChoiceKindV1.Activate, activate.ChoiceKind);
         Equal(FlatPromptSourceSectionV1.Activatable, activate.SourceSection);
         Equal(0, activate.SourceOrdinal);
         Equal("p0:MONSTER_ZONE:1", activate.PublicSemanticCardLocator.Value);
+        Equal(
+            0x11223344u,
+            ((FlatBattleActivatableCardCodePublicCandidateV1)activate)
+                .CardCode);
         Equal(0x0102030405060708ul, activate.DescriptionOrEffectId);
         Equal((byte)0, activate.ClientMode);
         True(activate is FlatBattleActivatableCardCodePublicCandidateV1);
 
         FlatBattleAttackPublicCandidateBaseV1 firstAttack =
-            result.Candidates[1] as FlatBattleAttackPublicCandidateBaseV1 ??
+            candidates[1] as FlatBattleAttackPublicCandidateBaseV1 ??
             throw new InvalidOperationException("expected BATTLE attack");
+        Equal("MSG_SELECT_BATTLECMD:ATTACK:0", firstAttack.I4LocalCandidateKey);
         Equal(FlatPromptChoiceKindV1.Attack, firstAttack.ChoiceKind);
         Equal(FlatPromptSourceSectionV1.Attackable, firstAttack.SourceSection);
         Equal(0, firstAttack.SourceOrdinal);
         Equal("p0:MONSTER_ZONE:0", firstAttack.PublicSemanticCardLocator.Value);
+        Equal(
+            0xAABBCCDDu,
+            ((FlatBattleAttackCardCodePublicCandidateV1)firstAttack).CardCode);
         True(firstAttack.DirectAttackable);
         True(firstAttack is FlatBattleAttackCardCodePublicCandidateV1);
 
         FlatBattleAttackPublicCandidateBaseV1 secondAttack =
-            result.Candidates[2] as FlatBattleAttackPublicCandidateBaseV1 ??
+            candidates[2] as FlatBattleAttackPublicCandidateBaseV1 ??
             throw new InvalidOperationException("expected BATTLE attack");
+        Equal("MSG_SELECT_BATTLECMD:ATTACK:1", secondAttack.I4LocalCandidateKey);
+        Equal(FlatPromptChoiceKindV1.Attack, secondAttack.ChoiceKind);
+        Equal(FlatPromptSourceSectionV1.Attackable, secondAttack.SourceSection);
         Equal(1, secondAttack.SourceOrdinal);
         Equal("p0:MONSTER_ZONE:1", secondAttack.PublicSemanticCardLocator.Value);
         False(secondAttack.DirectAttackable);
-        False(secondAttack is FlatBattleAttackCardCodePublicCandidateV1);
+        True(secondAttack.GetType() == typeof(FlatBattleAttackPublicCandidateV1));
 
         FlatBattleToMainPhase2PublicCandidateV1 toM2 =
-            result.Candidates[3] as FlatBattleToMainPhase2PublicCandidateV1 ??
+            candidates[3] as FlatBattleToMainPhase2PublicCandidateV1 ??
             throw new InvalidOperationException("expected TO_M2");
+        Equal("MSG_SELECT_BATTLECMD:TO_M2", toM2.I4LocalCandidateKey);
+        Equal(FlatPromptChoiceKindV1.ToM2, toM2.ChoiceKind);
         Equal("MAIN_PHASE_2", toM2.TransitionToken);
-        False(result.Candidates.Any(
+        False(candidates.Any(
             candidate => candidate is FlatBattleToEndPhasePublicCandidateV1));
+        AssertResponse(session, "MSG_SELECT_BATTLECMD:ACTIVATE:0", 0);
+        AssertResponse(session, "MSG_SELECT_BATTLECMD:ATTACK:0", 1);
+        AssertResponse(session, "MSG_SELECT_BATTLECMD:ATTACK:1", 65537);
+        AssertResponse(session, "MSG_SELECT_BATTLECMD:TO_M2", 2);
     }
 
     internal static void TestBattleMixedSectionsAndCompleteOrder()
@@ -377,6 +403,73 @@ internal static class I4CIdleBattlePromptTests
         Equal(
             FlatPromptErrorCodeV1.UnprovenPublicReference,
             correlationError);
+
+        MirrorSnapshotV1 currentMirror = authority.Mirror.Snapshot;
+        MirrorCardSnapshotV1 mirrorCard = currentMirror.Cards.Single();
+        MirrorSnapshotV1 ambiguousMirror = new(
+            currentMirror.Perspective,
+            currentMirror.Participants,
+            new[] { mirrorCard, mirrorCard },
+            currentMirror.TurnCount,
+            currentMirror.TurnPlayer,
+            currentMirror.Phase,
+            currentMirror.Terminal,
+            currentMirror.PendingChain,
+            currentMirror.Chains,
+            currentMirror.TargetRelations,
+            currentMirror.ChainTargetRelations,
+            currentMirror.EquipmentRelations,
+            currentMirror.OverlayRelations);
+        False(FlatPromptCardCorrelationV1.TryCorrelate(
+            ambiguousMirror,
+            authority.Projection.Snapshot,
+            0x11223344,
+            new ModernLocInfoV1(0, 0x04, 0, 0),
+            out FlatPromptCardCorrelationResultV1? mirrorCorrelation,
+            out FlatPromptErrorCodeV1 mirrorError));
+        Null(mirrorCorrelation);
+        Equal(FlatPromptErrorCodeV1.UnprovenPublicReference, mirrorError);
+
+        FlatPromptSessionV1 ambiguousSession = new();
+        byte[] validMessage = BattleMessage(
+            0,
+            new[]
+            {
+                new BattleActivationSpec(
+                    0x11223344,
+                    new ModernLocInfoV1(0, 0x04, 0, 0),
+                    1,
+                    0)
+            },
+            Array.Empty<BattleAttackSpec>(),
+            0,
+            0);
+        AssertSuccess(
+            ambiguousSession.TryAcceptPrompt(
+                validMessage,
+                authority.Mirror,
+                authority.Projection),
+            FlatPromptFamilyV1.MsgSelectBattleCmd);
+        True(ambiguousSession.TryCaptureSelection(
+            "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+            out FlatPromptSelectionHandleV1? oldHandle,
+            out _));
+        PublicStateProjectionResultV1 ambiguousProjection =
+            PublicStateProjectionResultV1.Success(
+                ambiguousSnapshot,
+                authority.Projection.CanonicalBytes.ToArray(),
+                authority.Projection.Sha256!);
+        AssertFailure(
+            ambiguousSession,
+            authority.Mirror,
+            ambiguousProjection,
+            validMessage,
+            FlatPromptErrorCodeV1.UnprovenPublicReference);
+        False(ambiguousSession.TryResolveSelection(
+            oldHandle,
+            out _,
+            out FlatPromptErrorCodeV1 staleError));
+        Equal(FlatPromptErrorCodeV1.StalePromptBinding, staleError);
     }
 
     internal static void TestBattleMalformedWireAndEnumValidation()
@@ -535,32 +628,260 @@ internal static class I4CIdleBattlePromptTests
             out FlatPromptResponseResolutionV1 ownedResponse,
             out _));
         Equal(0, ownedResponse.ResponseI32);
+
+        AssertFailureInvalidatesBinding(
+            authority,
+            FlatPromptFamilyV1.MsgSelectBattleCmd,
+            message,
+            message,
+            authority.Mirror,
+            null,
+            "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+            FlatPromptErrorCodeV1.UnprovenPublicReference);
+
+        AssertFailureInvalidatesBinding(
+            authority,
+            FlatPromptFamilyV1.MsgSelectBattleCmd,
+            message,
+            message,
+            authority.Mirror,
+            PublicStateProjectionResultV1.Failure(
+                PublicStateProjectionErrorV1.InvalidSnapshot),
+            "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+            FlatPromptErrorCodeV1.UnprovenPublicReference);
+
+        string wrongSha = authority.Projection.Sha256! + "0";
+        PublicStateProjectionResultV1 wrongShaProjection =
+            PublicStateProjectionResultV1.Success(
+                authority.Projection.Snapshot!,
+                authority.Projection.CanonicalBytes.ToArray(),
+                wrongSha);
+        AssertFailureInvalidatesBinding(
+            authority,
+            FlatPromptFamilyV1.MsgSelectBattleCmd,
+            message,
+            message,
+            authority.Mirror,
+            wrongShaProjection,
+            "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+            FlatPromptErrorCodeV1.AuthorityMismatch);
+
+        PublicStateSnapshotV1 changedFlagsSnapshot = WithDuelFlags(
+            authority.Projection.Snapshot!,
+            authority.Projection.Snapshot!.DuelFlags ^ 1ul);
+        PublicStateProjectionResultV1 changedFlagsProjection =
+            PublicStateProjectionResultV1.Success(
+                changedFlagsSnapshot,
+                authority.Projection.CanonicalBytes.ToArray(),
+                authority.Projection.Sha256!);
+        AssertFailureInvalidatesBinding(
+            authority,
+            FlatPromptFamilyV1.MsgSelectBattleCmd,
+            message,
+            message,
+            authority.Mirror,
+            changedFlagsProjection,
+            "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+            FlatPromptErrorCodeV1.AuthorityMismatch);
+
+        AssertFailureInvalidatesBinding(
+            authority,
+            FlatPromptFamilyV1.MsgSelectBattleCmd,
+            message,
+            message,
+            null,
+            authority.Projection,
+            "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+            FlatPromptErrorCodeV1.UnprovenPublicReference);
+
+        byte[] overlayMessage = BattleMessage(
+            0,
+            new[]
+            {
+                new BattleActivationSpec(
+                    0,
+                    new ModernLocInfoV1(0, 0x84, 0, 0),
+                    7,
+                    0)
+            },
+            Array.Empty<BattleAttackSpec>(),
+            0,
+            0);
+        AssertFailureInvalidatesBinding(
+            authority,
+            FlatPromptFamilyV1.MsgSelectBattleCmd,
+            message,
+            overlayMessage,
+            authority.Mirror,
+            authority.Projection,
+            "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+            FlatPromptErrorCodeV1.UnprovenPublicReference);
+
+        Authority mainDeckAuthority = CreateAuthority(
+            0,
+            0,
+            new CardSpec(
+                0x11223344,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05)),
+            new CardSpec(
+                0x55667788,
+                new ModernLocInfoV1(0, 0x01, 0, 0x01)));
+        byte[] mainDeckMessage = BattleMessage(
+            0,
+            new[]
+            {
+                new BattleActivationSpec(
+                    0x55667788,
+                    new ModernLocInfoV1(0, 0x01, 0, 0),
+                    7,
+                    0)
+            },
+            Array.Empty<BattleAttackSpec>(),
+            0,
+            0);
+        AssertFailureInvalidatesBinding(
+            mainDeckAuthority,
+            FlatPromptFamilyV1.MsgSelectBattleCmd,
+            message,
+            mainDeckMessage,
+            mainDeckAuthority.Mirror,
+            mainDeckAuthority.Projection,
+            "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+            FlatPromptErrorCodeV1.UnprovenPublicReference);
     }
 
     internal static void TestIdleExactWireAndContext()
     {
         Authority authority = CreateIdleVectorAuthority();
-        FlatPromptProjectionResultV1 result = AcceptIdle(
-            authority,
+        FlatPromptSessionV1 session = new();
+        FlatPromptProjectionResultV1 result = session.TryAcceptPrompt(
             IdleAllSectionsVector,
-            out _);
+            authority.Mirror,
+            authority.Projection);
 
         AssertSuccess(result, FlatPromptFamilyV1.MsgSelectIdleCmd);
-        Equal((byte)1, result.Context!.ActingPlayer);
-        Equal(9, result.Candidates!.Count);
-        True(result.Candidates[0]
-            is FlatIdleSummonCardCodePublicCandidateV1);
-        True(result.Candidates[1]
-            is FlatIdleSpecialSummonCardCodePublicCandidateV1);
-        True(result.Candidates[2]
-            is FlatIdleRepositionCardCodePublicCandidateV1);
-        True(result.Candidates[3]
-            is FlatIdleMsetCardCodePublicCandidateV1);
-        True(result.Candidates[4]
-            is FlatIdleSsetCardCodePublicCandidateV1);
-        True(result.Candidates[5]
-            is FlatIdleActivatableCardCodePublicCandidateV1);
-        False(result.Candidates.Any(
+        Equal(
+            "ocgforge-ignis.flat-prompt-projection.v1",
+            result.Context!.ContractId);
+        Equal((byte)1, result.Context.ActingPlayer);
+        IReadOnlyList<FlatPublicCandidateDescriptorV1> candidates =
+            result.Candidates!;
+        Equal(9, candidates.Count);
+
+        FlatIdleSummonPublicCandidateBaseV1 summon =
+            candidates[0] as FlatIdleSummonPublicCandidateBaseV1 ??
+            throw new InvalidOperationException("expected IDLE SUMMON");
+        Equal("MSG_SELECT_IDLECMD:SUMMON:0", summon.I4LocalCandidateKey);
+        Equal(FlatPromptChoiceKindV1.Summon, summon.ChoiceKind);
+        Equal(FlatPromptSourceSectionV1.Summon, summon.SourceSection);
+        Equal(0, summon.SourceOrdinal);
+        Equal("p1:HAND:public:16909060:0", summon.PublicSemanticCardLocator.Value);
+        Equal(
+            0x01020304u,
+            ((FlatIdleSummonCardCodePublicCandidateV1)summon).CardCode);
+
+        FlatIdleSpecialSummonPublicCandidateBaseV1 specialSummon =
+            candidates[1] as FlatIdleSpecialSummonPublicCandidateBaseV1 ??
+            throw new InvalidOperationException("expected IDLE SPECIAL_SUMMON");
+        Equal(
+            "MSG_SELECT_IDLECMD:SPECIAL_SUMMON:0",
+            specialSummon.I4LocalCandidateKey);
+        Equal(FlatPromptChoiceKindV1.SpecialSummon, specialSummon.ChoiceKind);
+        Equal(
+            FlatPromptSourceSectionV1.SpecialSummon,
+            specialSummon.SourceSection);
+        Equal(0, specialSummon.SourceOrdinal);
+        Equal(
+            "p1:HAND:public:84281096:0",
+            specialSummon.PublicSemanticCardLocator.Value);
+        Equal(
+            0x05060708u,
+            ((FlatIdleSpecialSummonCardCodePublicCandidateV1)specialSummon)
+                .CardCode);
+
+        FlatIdleRepositionPublicCandidateBaseV1 reposition =
+            candidates[2] as FlatIdleRepositionPublicCandidateBaseV1 ??
+            throw new InvalidOperationException("expected IDLE REPOSITION");
+        Equal("MSG_SELECT_IDLECMD:REPOSITION:0", reposition.I4LocalCandidateKey);
+        Equal(FlatPromptChoiceKindV1.Reposition, reposition.ChoiceKind);
+        Equal(FlatPromptSourceSectionV1.Reposition, reposition.SourceSection);
+        Equal(0, reposition.SourceOrdinal);
+        Equal(
+            "p1:MONSTER_ZONE:2",
+            reposition.PublicSemanticCardLocator.Value);
+        Equal(
+            0x090A0B0Cu,
+            ((FlatIdleRepositionCardCodePublicCandidateV1)reposition)
+                .CardCode);
+
+        FlatIdleMsetPublicCandidateBaseV1 mset =
+            candidates[3] as FlatIdleMsetPublicCandidateBaseV1 ??
+            throw new InvalidOperationException("expected IDLE MSET");
+        Equal("MSG_SELECT_IDLECMD:MSET:0", mset.I4LocalCandidateKey);
+        Equal(FlatPromptChoiceKindV1.Mset, mset.ChoiceKind);
+        Equal(FlatPromptSourceSectionV1.Mset, mset.SourceSection);
+        Equal(0, mset.SourceOrdinal);
+        Equal("p1:HAND:public:219025168:0", mset.PublicSemanticCardLocator.Value);
+        Equal(
+            0x0D0E0F10u,
+            ((FlatIdleMsetCardCodePublicCandidateV1)mset).CardCode);
+
+        FlatIdleSsetPublicCandidateBaseV1 sset =
+            candidates[4] as FlatIdleSsetPublicCandidateBaseV1 ??
+            throw new InvalidOperationException("expected IDLE SSET");
+        Equal("MSG_SELECT_IDLECMD:SSET:0", sset.I4LocalCandidateKey);
+        Equal(FlatPromptChoiceKindV1.Sset, sset.ChoiceKind);
+        Equal(FlatPromptSourceSectionV1.Sset, sset.SourceSection);
+        Equal(0, sset.SourceOrdinal);
+        Equal("p1:HAND:public:286397204:0", sset.PublicSemanticCardLocator.Value);
+        Equal(
+            0x11121314u,
+            ((FlatIdleSsetCardCodePublicCandidateV1)sset).CardCode);
+
+        FlatIdleActivatablePublicCandidateBaseV1 activate =
+            candidates[5] as FlatIdleActivatablePublicCandidateBaseV1 ??
+            throw new InvalidOperationException("expected IDLE ACTIVATE");
+        Equal("MSG_SELECT_IDLECMD:ACTIVATE:0", activate.I4LocalCandidateKey);
+        Equal(FlatPromptChoiceKindV1.Activate, activate.ChoiceKind);
+        Equal(FlatPromptSourceSectionV1.Activate, activate.SourceSection);
+        Equal(0, activate.SourceOrdinal);
+        Equal("p1:MONSTER_ZONE:5", activate.PublicSemanticCardLocator.Value);
+        Equal(
+            0x15161718u,
+            ((FlatIdleActivatableCardCodePublicCandidateV1)activate).CardCode);
+        Equal(0x2122232425262728ul, activate.DescriptionOrEffectId);
+        Equal((byte)2, activate.ClientMode);
+
+        FlatIdleToBattlePhasePublicCandidateV1 toBattle =
+            candidates[6] as FlatIdleToBattlePhasePublicCandidateV1 ??
+            throw new InvalidOperationException("expected IDLE TO_BP");
+        Equal("MSG_SELECT_IDLECMD:TO_BP", toBattle.I4LocalCandidateKey);
+        Equal(FlatPromptChoiceKindV1.ToBp, toBattle.ChoiceKind);
+        Equal("BATTLE_PHASE", toBattle.TransitionToken);
+
+        FlatIdleToEndPhasePublicCandidateV1 toEnd =
+            candidates[7] as FlatIdleToEndPhasePublicCandidateV1 ??
+            throw new InvalidOperationException("expected IDLE TO_EP");
+        Equal("MSG_SELECT_IDLECMD:TO_EP", toEnd.I4LocalCandidateKey);
+        Equal(FlatPromptChoiceKindV1.ToEp, toEnd.ChoiceKind);
+        Equal("END_PHASE", toEnd.TransitionToken);
+
+        FlatIdleShuffleHandPublicCandidateV1 shuffle =
+            candidates[8] as FlatIdleShuffleHandPublicCandidateV1 ??
+            throw new InvalidOperationException("expected IDLE SHUFFLE_HAND");
+        Equal("MSG_SELECT_IDLECMD:SHUFFLE_HAND", shuffle.I4LocalCandidateKey);
+        Equal(FlatPromptChoiceKindV1.ShuffleHand, shuffle.ChoiceKind);
+        Equal("SHUFFLE_HAND", shuffle.TransitionToken);
+        AssertResponse(session, "MSG_SELECT_IDLECMD:SUMMON:0", 0);
+        AssertResponse(session, "MSG_SELECT_IDLECMD:SPECIAL_SUMMON:0", 1);
+        AssertResponse(session, "MSG_SELECT_IDLECMD:REPOSITION:0", 2);
+        AssertResponse(session, "MSG_SELECT_IDLECMD:MSET:0", 3);
+        AssertResponse(session, "MSG_SELECT_IDLECMD:SSET:0", 4);
+        AssertResponse(session, "MSG_SELECT_IDLECMD:ACTIVATE:0", 5);
+        AssertResponse(session, "MSG_SELECT_IDLECMD:TO_BP", 6);
+        AssertResponse(session, "MSG_SELECT_IDLECMD:TO_EP", 7);
+        AssertResponse(session, "MSG_SELECT_IDLECMD:SHUFFLE_HAND", 8);
+        False(candidates.Any(
             candidate => candidate.GetType().GetProperty(
                 "DirectAttackable",
                 BindingFlags.Instance | BindingFlags.Public) is not null));
@@ -855,6 +1176,35 @@ internal static class I4CIdleBattlePromptTests
         AssertFailureResult(
             ambiguous,
             FlatPromptErrorCodeV1.UnprovenPublicReference);
+
+        Authority duplicateExtra = CreateAuthority(
+            0,
+            0,
+            new CardSpec(0x12345678, new ModernLocInfoV1(0, 0x04, 0, 0x05)),
+            new CardSpec(0x55667788, new ModernLocInfoV1(0, 0x40, 0, 0x08)),
+            new CardSpec(0x55667788, new ModernLocInfoV1(0, 0x40, 1, 0x08)));
+        FlatPromptProjectionResultV1 duplicateExtraResult = AcceptIdle(
+            duplicateExtra,
+            IdleMessage(
+                0,
+                Array.Empty<IdleSimpleSpec>(),
+                Array.Empty<IdleSimpleSpec>(),
+                Array.Empty<IdleSimpleSpec>(),
+                Array.Empty<IdleSimpleSpec>(),
+                new[]
+                {
+                    new IdleSimpleSpec(
+                        0x55667788,
+                        new ModernLocInfoV1(0, 0x40, 0, 0))
+                },
+                Array.Empty<IdleActivationSpec>(),
+                0,
+                0,
+                0),
+            out _);
+        AssertFailureResult(
+            duplicateExtraResult,
+            FlatPromptErrorCodeV1.UnprovenPublicReference);
     }
 
     internal static void TestIdleMalformedWireAndEnumValidation()
@@ -976,6 +1326,34 @@ internal static class I4CIdleBattlePromptTests
             out _,
             out FlatPromptErrorCodeV1 staleError));
         Equal(FlatPromptErrorCodeV1.StalePromptBinding, staleError);
+
+        byte[] overlayMessage = IdleMessage(
+            1,
+            Array.Empty<IdleSimpleSpec>(),
+            Array.Empty<IdleSimpleSpec>(),
+            Array.Empty<IdleSimpleSpec>(),
+            Array.Empty<IdleSimpleSpec>(),
+            Array.Empty<IdleSimpleSpec>(),
+            new[]
+            {
+                new IdleActivationSpec(
+                    0,
+                    new ModernLocInfoV1(1, 0x84, 0, 0),
+                    7,
+                    0)
+            },
+            0,
+            0,
+            0);
+        AssertFailureInvalidatesBinding(
+            authority,
+            FlatPromptFamilyV1.MsgSelectIdleCmd,
+            IdleAllSectionsVector,
+            overlayMessage,
+            authority.Mirror,
+            authority.Projection,
+            "MSG_SELECT_IDLECMD:ACTIVATE:0",
+            FlatPromptErrorCodeV1.UnprovenPublicReference);
     }
 
     internal static void TestI4CPublicPrivateBoundary()
@@ -1301,6 +1679,57 @@ internal static class I4CIdleBattlePromptTests
         Equal(expected, response.ResponseI32);
     }
 
+    private static void AssertFailureInvalidatesBinding(
+        Authority authority,
+        FlatPromptFamilyV1 family,
+        byte[] validMessage,
+        byte[] failedMessage,
+        PerspectiveStateMirrorV1? mirror,
+        PublicStateProjectionResultV1? projection,
+        string selectionKey,
+        FlatPromptErrorCodeV1 expectedError)
+    {
+        FlatPromptSessionV1 session = new();
+        AssertSuccess(
+            session.TryAcceptPrompt(
+                validMessage,
+                authority.Mirror,
+                authority.Projection),
+            family);
+        True(session.TryCaptureSelection(
+            selectionKey,
+            out FlatPromptSelectionHandleV1? oldHandle,
+            out FlatPromptErrorCodeV1 captureError),
+            captureError.ToString());
+        NotNull(oldHandle);
+
+        AssertFailure(
+            session,
+            mirror,
+            projection,
+            failedMessage,
+            expectedError);
+        False(session.TryResolveSelection(
+            oldHandle,
+            out _,
+            out FlatPromptErrorCodeV1 staleError));
+        Equal(FlatPromptErrorCodeV1.StalePromptBinding, staleError);
+
+        AssertSuccess(
+            session.TryAcceptPrompt(
+                validMessage,
+                authority.Mirror,
+                authority.Projection),
+            family);
+        True(session.TryCaptureSelection(
+            selectionKey,
+            out FlatPromptSelectionHandleV1? newHandle,
+            out captureError),
+            captureError.ToString());
+        NotNull(newHandle);
+        Equal(oldHandle!.PromptInstanceOrdinal + 1, newHandle!.PromptInstanceOrdinal);
+    }
+
     private static PublicStateSnapshotV1 WithCards(
         PublicStateSnapshotV1 source,
         IEnumerable<PublicCardStateV1> cards) =>
@@ -1313,6 +1742,19 @@ internal static class I4CIdleBattlePromptTests
             source.Terminal,
             source.Participants,
             cards);
+
+    private static PublicStateSnapshotV1 WithDuelFlags(
+        PublicStateSnapshotV1 source,
+        ulong duelFlags) =>
+        new(
+            source.PerspectivePlayer,
+            duelFlags,
+            source.TurnCount,
+            source.TurnPlayer,
+            source.Phase,
+            source.Terminal,
+            source.Participants,
+            source.Cards);
 
     private static byte[] Append(byte[] source, byte value) =>
         source.Concat(new[] { value }).ToArray();

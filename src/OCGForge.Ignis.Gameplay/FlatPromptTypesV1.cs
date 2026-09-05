@@ -1462,6 +1462,7 @@ internal sealed class CurrentFlatPromptBindingV1
                 typeof(FlatBattleActivatablePublicCandidateV1),
                 typeof(FlatBattleActivatableCardCodePublicCandidateV1)) ||
                 !HasNonZeroCardCodeIfPresent(candidate) ||
+                activatable.ChoiceKind != FlatPromptChoiceKindV1.Activate ||
                 activatable.SourceSection !=
                     FlatPromptSourceSectionV1.Activatable ||
                 !FlatPromptKeyV1.TryCreateBattleActivatable(
@@ -1484,6 +1485,7 @@ internal sealed class CurrentFlatPromptBindingV1
                 typeof(FlatBattleAttackPublicCandidateV1),
                 typeof(FlatBattleAttackCardCodePublicCandidateV1)) ||
                 !HasNonZeroCardCodeIfPresent(candidate) ||
+                attack.ChoiceKind != FlatPromptChoiceKindV1.Attack ||
                 attack.SourceSection != FlatPromptSourceSectionV1.Attackable ||
                 !FlatPromptKeyV1.TryCreateBattleAttack(
                     attack.SourceOrdinal,
@@ -1502,6 +1504,7 @@ internal sealed class CurrentFlatPromptBindingV1
         {
             if (candidate.GetType() !=
                     typeof(FlatBattleToMainPhase2PublicCandidateV1) ||
+                toM2.ChoiceKind != FlatPromptChoiceKindV1.ToM2 ||
                 !string.Equals(
                     toM2.I4LocalCandidateKey,
                     FlatPromptKeyV1.BattleToM2,
@@ -1520,6 +1523,7 @@ internal sealed class CurrentFlatPromptBindingV1
         {
             if (candidate.GetType() !=
                     typeof(FlatBattleToEndPhasePublicCandidateV1) ||
+                toEnd.ChoiceKind != FlatPromptChoiceKindV1.ToEp ||
                 toEnd.I4LocalCandidateKey != FlatPromptKeyV1.BattleToEp ||
                 toEnd.TransitionToken != "END_PHASE")
             {
@@ -1623,6 +1627,7 @@ internal sealed class CurrentFlatPromptBindingV1
                     typeof(FlatIdleActivatablePublicCandidateV1),
                     typeof(FlatIdleActivatableCardCodePublicCandidateV1)) ||
                 !HasNonZeroCardCodeIfPresent(candidate) ||
+                activatable.ChoiceKind != FlatPromptChoiceKindV1.Activate ||
                 activatable.SourceSection != FlatPromptSourceSectionV1.Activate ||
                 !FlatPromptKeyV1.TryCreateIdleActivatable(
                     activatable.SourceOrdinal,
@@ -1641,6 +1646,7 @@ internal sealed class CurrentFlatPromptBindingV1
         {
             if (candidate.GetType() !=
                     typeof(FlatIdleToBattlePhasePublicCandidateV1) ||
+                toBattle.ChoiceKind != FlatPromptChoiceKindV1.ToBp ||
                 toBattle.I4LocalCandidateKey != FlatPromptKeyV1.IdleToBp ||
                 toBattle.TransitionToken != "BATTLE_PHASE")
             {
@@ -1656,6 +1662,7 @@ internal sealed class CurrentFlatPromptBindingV1
         {
             if (candidate.GetType() !=
                     typeof(FlatIdleToEndPhasePublicCandidateV1) ||
+                toEnd.ChoiceKind != FlatPromptChoiceKindV1.ToEp ||
                 toEnd.I4LocalCandidateKey != FlatPromptKeyV1.IdleToEp ||
                 toEnd.TransitionToken != "END_PHASE")
             {
@@ -1671,6 +1678,7 @@ internal sealed class CurrentFlatPromptBindingV1
         {
             if (candidate.GetType() !=
                     typeof(FlatIdleShuffleHandPublicCandidateV1) ||
+                shuffle.ChoiceKind != FlatPromptChoiceKindV1.ShuffleHand ||
                 shuffle.I4LocalCandidateKey != FlatPromptKeyV1.IdleShuffleHand ||
                 shuffle.TransitionToken != "SHUFFLE_HAND")
             {
