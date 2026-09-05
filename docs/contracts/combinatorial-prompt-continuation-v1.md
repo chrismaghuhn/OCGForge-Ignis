@@ -615,8 +615,14 @@ Length is `6 + 13*n`. `MSG_SORT_CHAIN` is produced by the `SortChain` process,
 which delegates to the same `SortCard` response process. `MSG_SORT_CARD`
 sorts the source vector as supplied by the producer. There is no overlay index
 in this layout; an overlay source is rejected. A source count of zero is a
-no-prompt path, and the response validator's signed-byte permutation makes a
-count above 255 unproven and fail closed.
+producer-side no-prompt path. V1 admits only `1 <= n <= 128`; `n = 128` is the
+maximum safely representable complete permutation. Although the wire
+`source_count` field is `u32`, the pinned core's response validator reads each
+destination value as signed `int8_t`. A complete permutation with `n >= 129`
+requires destination value `128`, whose `0x80` representation is read as
+`-128` and rejected. Therefore every emitted prompt with `n > 128` is
+unproven and fails closed before a public candidate domain is exposed. The
+adapter must not truncate the source vector or publish a partial permutation.
 
 The source occurrence order is the wire order and is never reordered by the
 adapter. A public `PLACE:i` candidate means “put source occurrence i at the
