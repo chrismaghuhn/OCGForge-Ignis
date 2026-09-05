@@ -1,0 +1,474 @@
+{
+  "schema_id": "ocgforge-ignis.i5_combinatorial_prompt_vectors.v1",
+  "schema_version": 1,
+  "contract_id": "ocgforge-ignis.combinatorial-prompt-continuation.v1",
+  "fixture_status": "I5A0_EVIDENCE_11_FAMILY_FREEZE_ACCEPTED",
+  "implementation_status": "NOT_IMPLEMENTED",
+  "supported_family_count": 11,
+  "select_sum_support": "FAIL_CLOSED_UNSUPPORTED_V1",
+  "hex_encoding": "uppercase hexadecimal byte pairs separated by one space",
+  "upstream_pins": {
+    "edopro_repository": "https://github.com/edo9300/edopro",
+    "edopro_commit": "30935e847165a9ef0e547fb51a43f36168fab7c7",
+    "ocgcore_repository": "https://github.com/edo9300/ygopro-core",
+    "ocgcore_commit": "46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57",
+    "windbot_repository": "https://github.com/ProjectIgnis/windbot",
+    "windbot_commit": "bffe6b62679c8b2fafea8f59740e03a132517da4"
+  },
+  "response_scope": {
+    "inner_message_only": true,
+    "outer_ctos_response_envelope": "NOT_INCLUDED",
+    "terminal_body_is_private": true,
+    "intermediate_response": "ABSENT"
+  },
+  "card_code_scope": {
+    "persistent_locator_authority": "ACCEPTED_I3D_PUBLIC_STATE_SNAPSHOT",
+    "prompt_local_disclosure_authority": "EXACT_CURRENT_PROMPT_TO_ACTING_PERSPECTIVE",
+    "prompt_local_card_code_expires_at": "PROMPT_BOUNDARY",
+    "raw_prompt_code_is_persistent_identity": false
+  },
+  "canonical_order": {
+    "vector_array": "explicit array order",
+    "source_occurrences": "wire order",
+    "duplicate_policy": "preserve every occurrence",
+    "decimal_key_policy": "ASCII invariant decimal; no sign; no leading zero except 0",
+    "unordered_set_paths": "monotonic original source indexes",
+    "ordered_paths": "preserve every meaningful permutation",
+    "counter_paths": "fixed source traversal"
+  },
+  "wire_vectors": [
+    {
+      "case_id": "SELECT_CARD_MINIMAL_CODE_ONLY",
+      "message_id": 15,
+      "symbolic_name": "MSG_SELECT_CARD",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 29,
+      "inner_hex": "0F 00 00 01 00 00 00 01 00 00 00 01 00 00 00 44 33 22 11 00 00 00 00 00 00 00 00 00 00",
+      "wire_decoded": {
+        "acting_player": 0,
+        "cancelable": false,
+        "minimum_count": 1,
+        "maximum_count": 1,
+        "occurrence_count": 1,
+        "entries": [
+          {
+            "card_code_u32": 287454020,
+            "controller": 0,
+            "location": 0,
+            "sequence": 0,
+            "position": 0,
+            "prompt_local_card_code": 287454020,
+            "candidate_card_code_scope": "PROMPT_LOCAL",
+            "public_reference": "ABSENT"
+          }
+        ]
+      },
+      "continuation": {
+        "initial_domain": ["MSG_SELECT_CARD:PICK:0"],
+        "terminal_path": ["MSG_SELECT_CARD:PICK:0", "MSG_SELECT_CARD:FINISH"],
+        "selected_source_ordinals": [0]
+      },
+      "terminal_response_body_hex": "03 00 00 00 01"
+    },
+    {
+      "case_id": "SELECT_CARD_MAIN_DECK_PROMPT_LOCAL_CODE",
+      "message_id": 15,
+      "symbolic_name": "MSG_SELECT_CARD",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 29,
+      "inner_hex": "0F 00 00 01 00 00 00 01 00 00 00 01 00 00 00 EF BE AD DE 00 01 05 00 00 00 00 00 00 00",
+      "wire_decoded": {
+        "acting_player": 0,
+        "cancelable": false,
+        "minimum_count": 1,
+        "maximum_count": 1,
+        "occurrence_count": 1,
+        "entries": [
+          {
+            "card_code_u32": 3735928559,
+            "controller": 0,
+            "location": 1,
+            "sequence": 5,
+            "position": 0,
+            "prompt_local_card_code": 3735928559,
+            "candidate_card_code_scope": "PROMPT_LOCAL",
+            "persistent_locator": "ABSENT_MAIN_DECK"
+          }
+        ]
+      },
+      "continuation": {
+        "initial_domain": ["MSG_SELECT_CARD:PICK:0"],
+        "terminal_path": ["MSG_SELECT_CARD:PICK:0", "MSG_SELECT_CARD:FINISH"]
+      },
+      "terminal_response_body_hex": "03 00 00 00 01"
+    },
+    {
+      "case_id": "SELECT_CARD_DUPLICATE_OCCURRENCES_AND_CANCEL",
+      "message_id": 15,
+      "symbolic_name": "MSG_SELECT_CARD",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 43,
+      "inner_hex": "0F 00 01 01 00 00 00 01 00 00 00 02 00 00 00 78 56 34 12 00 00 00 00 00 00 00 00 00 00 78 56 34 12 00 00 00 00 00 00 00 00 00 00",
+      "wire_decoded": {
+        "acting_player": 0,
+        "cancelable": true,
+        "minimum_count": 1,
+        "maximum_count": 1,
+        "occurrence_count": 2,
+        "entries": [
+          {"card_code_u32": 305419896, "controller": 0, "location": 0, "sequence": 0, "position": 0},
+          {"card_code_u32": 305419896, "controller": 0, "location": 0, "sequence": 0, "position": 0}
+        ]
+      },
+      "continuation": {
+        "initial_domain": ["MSG_SELECT_CARD:PICK:0", "MSG_SELECT_CARD:PICK:1", "MSG_SELECT_CARD:CANCEL"],
+        "terminal_path": ["MSG_SELECT_CARD:PICK:1", "MSG_SELECT_CARD:FINISH"],
+        "selected_source_ordinals": [1],
+        "cancel_response_body_hex": "FF FF FF FF"
+      },
+      "terminal_response_body_hex": "03 00 00 00 02"
+    },
+    {
+      "case_id": "SELECT_CARD_TRAILING_BYTE",
+      "message_id": 15,
+      "symbolic_name": "MSG_SELECT_CARD",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 30,
+      "inner_hex": "0F 00 00 01 00 00 00 01 00 00 00 01 00 00 00 44 33 22 11 00 00 00 00 00 00 00 00 00 00 00",
+      "expected_error": "MalformedPrompt",
+      "expected_public_domain": "ABSENT"
+    },
+    {
+      "case_id": "SELECT_TRIBUTE_WEIGHTED",
+      "message_id": 20,
+      "symbolic_name": "MSG_SELECT_TRIBUTE",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 37,
+      "inner_hex": "14 00 00 01 00 00 00 02 00 00 00 02 00 00 00 11 11 11 11 00 04 00 00 00 00 01 22 22 22 22 00 04 01 00 00 00 02",
+      "wire_decoded": {
+        "acting_player": 0,
+        "cancelable": false,
+        "minimum_required_tribute_value": 1,
+        "maximum_selected_card_count": 2,
+        "occurrence_count": 2,
+        "entries": [
+          {"card_code_u32": 286331153, "controller": 0, "location": 4, "sequence": 0, "release_value": 1},
+          {"card_code_u32": 572662306, "controller": 0, "location": 4, "sequence": 1, "release_value": 2}
+        ]
+      },
+      "continuation": {
+        "initial_domain": ["MSG_SELECT_TRIBUTE:PICK:0", "MSG_SELECT_TRIBUTE:PICK:1"],
+        "finish_after_pick": ["MSG_SELECT_TRIBUTE:FINISH"],
+        "weights_are_private": true
+      },
+      "terminal_response_body_hex": "03 00 00 00 03"
+    },
+    {
+      "case_id": "SELECT_SUM_EQUAL_SINGLE",
+      "message_id": 23,
+      "symbolic_name": "MSG_SELECT_SUM",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
+      "inner_byte_length": 41,
+      "inner_hex": "17 00 00 03 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 33 33 33 33 00 00 00 00 00 00 00 00 00 00 03 00 03 00",
+      "wire_decoded": {
+        "acting_player": 0,
+        "mode": 0,
+        "target_sum": 3,
+        "minimum_optional_count": 1,
+        "maximum_optional_count": 1,
+        "mandatory_count": 0,
+        "optional_count": 1,
+        "optional_sum_param_hex": ["0x00030003"]
+      },
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT"
+    },
+    {
+      "case_id": "SELECT_SUM_EQUAL_DUPLICATE_VALUES",
+      "message_id": 23,
+      "symbolic_name": "MSG_SELECT_SUM",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
+      "inner_byte_length": 59,
+      "inner_hex": "17 00 00 04 00 00 00 02 00 00 00 02 00 00 00 00 00 00 00 02 00 00 00 44 44 44 44 00 00 00 00 00 00 00 00 00 00 02 00 02 00 44 44 44 44 00 00 00 00 00 00 00 00 00 00 02 00 02 00",
+      "wire_decoded": {
+        "acting_player": 0,
+        "mode": 0,
+        "target_sum": 4,
+        "minimum_optional_count": 2,
+        "maximum_optional_count": 2,
+        "mandatory_count": 0,
+        "optional_count": 2,
+        "optional_sum_param_hex": ["0x00020002", "0x00020002"]
+      },
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT"
+    },
+    {
+      "case_id": "SELECT_SUM_MANDATORY_AND_OPTIONAL",
+      "message_id": 23,
+      "symbolic_name": "MSG_SELECT_SUM",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
+      "inner_byte_length": 77,
+      "inner_hex": "17 00 00 04 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 01 00 02 00 00 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 03 00 03 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 05 00 05 00",
+      "wire_decoded": {
+        "acting_player": 0,
+        "mode": 0,
+        "target_sum": 4,
+        "minimum_optional_count": 1,
+        "maximum_optional_count": 1,
+        "mandatory_count": 1,
+        "optional_count": 2,
+        "mandatory_sum_param_hex": ["0x00010001"],
+        "optional_sum_param_hex": ["0x00030003", "0x00050005"]
+      },
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT"
+    },
+    {
+      "case_id": "SELECT_SUM_GREATER_INTERVAL",
+      "message_id": 23,
+      "symbolic_name": "MSG_SELECT_SUM",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
+      "inner_byte_length": 59,
+      "inner_hex": "17 00 01 05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 00 00 00 55 55 55 55 00 00 00 00 00 00 00 00 00 00 02 00 00 00 66 66 66 66 00 00 00 00 00 00 00 00 00 00 03 00 00 00",
+      "wire_decoded": {
+        "acting_player": 0,
+        "mode": 1,
+        "target_sum": 5,
+        "minimum_optional_count": 0,
+        "maximum_optional_count": 0,
+        "mandatory_count": 0,
+        "optional_count": 2,
+        "optional_sum_param_hex": ["0x00000002", "0x00000003"]
+      },
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT"
+    },
+    {
+      "case_id": "SELECT_SUM_LARGE_BOUNDED_EVIDENCE",
+      "message_id": 23,
+      "symbolic_name": "MSG_SELECT_SUM",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
+      "inner_byte_length": 131,
+      "inner_hex": "17 00 00 0A 00 00 00 02 00 00 00 04 00 00 00 00 00 00 00 06 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 01 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 02 00 02 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 03 00 03 00 04 00 00 00 00 00 00 00 00 00 00 00 00 00 04 00 04 00 05 00 00 00 00 00 00 00 00 00 00 00 00 00 05 00 05 00 06 00 00 00 00 00 00 00 00 00 00 00 00 00 06 00 06 00",
+      "wire_decoded": {
+        "acting_player": 0,
+        "mode": 0,
+        "target_sum": 10,
+        "minimum_optional_count": 2,
+        "maximum_optional_count": 4,
+        "mandatory_count": 0,
+        "optional_count": 6,
+        "optional_sum_param_hex": ["0x00010001", "0x00020002", "0x00030003", "0x00040004", "0x00050005", "0x00060006"]
+      },
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT",
+      "bounded_oracle_case": "many solutions and upper/lower count boundaries"
+    },
+    {
+      "case_id": "SELECT_SUM_ZERO_OPTIONAL_UNEMITTED",
+      "message_id": 23,
+      "symbolic_name": "MSG_SELECT_SUM",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
+      "inner_byte_length": 23,
+      "inner_hex": "17 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00",
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT"
+    },
+    {
+      "case_id": "SELECT_SUM_PACKED_SIGN_WITNESS",
+      "message_id": 23,
+      "symbolic_name": "MSG_SELECT_SUM",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
+      "inner_byte_length": 41,
+      "inner_hex": "17 00 00 01 80 00 00 01 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 77 77 77 77 00 00 00 00 00 00 00 00 00 00 02 00 01 80",
+      "wire_decoded": {
+        "acting_player": 0,
+        "mode": 0,
+        "target_sum": 32769,
+        "minimum_optional_count": 1,
+        "maximum_optional_count": 1,
+        "mandatory_count": 0,
+        "optional_count": 1,
+        "optional_sum_param_hex": ["0x80010002"],
+        "feasibility_high_word_unsigned": 32769,
+        "final_validator_high_word_signed_behavior": "implementation-dependent for the pinned C++ expression"
+      },
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT"
+    },
+    {
+      "case_id": "SELECT_SUM_NO_LEGAL_COMPLETION",
+      "message_id": 23,
+      "symbolic_name": "MSG_SELECT_SUM",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
+      "inner_byte_length": 41,
+      "inner_hex": "17 00 00 05 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 88 88 88 88 00 00 00 00 00 00 00 00 00 00 02 00 00 00",
+      "wire_decoded": {
+        "acting_player": 0,
+        "mode": 0,
+        "target_sum": 5,
+        "minimum_optional_count": 1,
+        "maximum_optional_count": 1,
+        "mandatory_count": 0,
+        "optional_count": 1,
+        "optional_sum_param_hex": ["0x00000002"]
+      },
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT"
+    },
+    {
+      "case_id": "SELECT_PLACE_MINIMAL",
+      "message_id": 18,
+      "symbolic_name": "MSG_SELECT_PLACE",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 7,
+      "inner_hex": "12 00 01 FE FF FF FF",
+      "wire_decoded": {"acting_player": 0, "required_place_count": 1, "field_flag": "0xFFFFFFFE", "eligible_places": ["p0:MONSTER_ZONE:0"]},
+      "continuation": {"initial_domain": ["MSG_SELECT_PLACE:PICK:0:MONSTER_ZONE:0"], "terminal_after_pick": true},
+      "terminal_response_body_hex": "00 04 00"
+    },
+    {
+      "case_id": "SELECT_PLACE_MULTI_RELATIVE_GROUPS",
+      "message_id": 18,
+      "symbolic_name": "MSG_SELECT_PLACE",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 7,
+      "inner_hex": "12 00 02 FE FF FF FB",
+      "wire_decoded": {"acting_player": 0, "required_place_count": 2, "field_flag": "0xFBFFFFFE", "eligible_places": ["p0:MONSTER_ZONE:0", "p1:SPELL_TRAP_ZONE:2"]},
+      "continuation": {"initial_domain": ["MSG_SELECT_PLACE:PICK:0:MONSTER_ZONE:0", "MSG_SELECT_PLACE:PICK:1:SPELL_TRAP_ZONE:2"], "canonical_response_order": "acting-player-relative field groups"},
+      "terminal_response_body_hex": "00 04 00 01 08 02"
+    },
+    {
+      "case_id": "SELECT_DISFIELD_MINIMAL",
+      "message_id": 24,
+      "symbolic_name": "MSG_SELECT_DISFIELD",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 7,
+      "inner_hex": "18 01 01 FE FF FF FF",
+      "wire_decoded": {"acting_player": 1, "required_place_count": 1, "field_flag": "0xFFFFFFFE", "disable_field": true, "eligible_places": ["p1:MONSTER_ZONE:0"]},
+      "terminal_response_body_hex": "01 04 00"
+    },
+    {
+      "case_id": "SELECT_COUNTER_EXACT_ALLOCATION",
+      "message_id": 22,
+      "symbolic_name": "MSG_SELECT_COUNTER",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 28,
+      "inner_hex": "16 00 10 00 03 00 02 00 00 00 11 11 11 11 00 04 00 02 00 22 22 22 22 00 04 01 03 00",
+      "wire_decoded": {"acting_player": 0, "counter_type": 16, "required_total": 3, "occurrence_count": 2, "available_amounts": [2, 3]},
+      "continuation": {"initial_domain": ["MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:0", "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:1", "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:2"], "terminal_path": ["MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:1", "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:1:2"], "zero_assignment_is_representable": true},
+      "terminal_response_body_hex": "01 00 02 00"
+    },
+    {
+      "case_id": "SORT_CARD_PERMUTATION",
+      "message_id": 25,
+      "symbolic_name": "MSG_SORT_CARD",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 32,
+      "inner_hex": "19 00 02 00 00 00 01 00 00 00 00 01 00 00 00 00 00 00 00 02 00 00 00 00 01 00 00 00 01 00 00 00",
+      "wire_decoded": {"acting_player": 0, "source_count": 2, "entries": [{"card_code_u32": 1, "controller": 0, "location": 1, "sequence": 0}, {"card_code_u32": 2, "controller": 0, "location": 1, "sequence": 1}]},
+      "continuation": {"initial_domain": ["MSG_SORT_CARD:PLACE:0", "MSG_SORT_CARD:PLACE:1", "MSG_SORT_CARD:CANCEL"], "destination_order_path": [1, 0], "source_indexed_response": [1, 0]},
+      "terminal_response_body_hex": "01 00",
+      "cancel_response_body_hex": "FF FF FF FF"
+    },
+    {
+      "case_id": "SORT_CHAIN_DUPLICATE_LOOKING_OCCURRENCES",
+      "message_id": 21,
+      "symbolic_name": "MSG_SORT_CHAIN",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 45,
+      "inner_hex": "15 01 03 00 00 00 0A 00 00 00 01 04 00 00 00 00 00 00 00 0B 00 00 00 01 04 00 00 00 01 00 00 00 0C 00 00 00 01 04 00 00 00 02 00 00 00",
+      "wire_decoded": {"acting_player": 1, "source_count": 3, "source_ordinals": [0, 1, 2]},
+      "continuation": {"initial_domain": ["MSG_SORT_CHAIN:PLACE:0", "MSG_SORT_CHAIN:PLACE:1", "MSG_SORT_CHAIN:PLACE:2", "MSG_SORT_CHAIN:CANCEL"], "destination_order_path": [2, 0, 1], "source_indexed_response": [1, 2, 0]},
+      "terminal_response_body_hex": "01 02 00"
+    },
+    {
+      "case_id": "ANNOUNCE_RACE_MULTI_BIT",
+      "message_id": 140,
+      "symbolic_name": "MSG_ANNOUNCE_RACE",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 11,
+      "inner_hex": "8C 00 02 05 00 00 00 00 00 00 00",
+      "wire_decoded": {"acting_player": 0, "required_bit_count": 2, "available_mask": "0x0000000000000005", "available_bit_indices": [0, 2]},
+      "continuation": {"initial_domain": ["MSG_ANNOUNCE_RACE:PICK:0", "MSG_ANNOUNCE_RACE:PICK:2"], "terminal_mask": "0x0000000000000005"},
+      "terminal_response_body_hex": "05 00 00 00 00 00 00 00"
+    },
+    {
+      "case_id": "ANNOUNCE_ATTRIB_MULTI_BIT",
+      "message_id": 141,
+      "symbolic_name": "MSG_ANNOUNCE_ATTRIB",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 7,
+      "inner_hex": "8D 01 02 05 00 00 00",
+      "wire_decoded": {"acting_player": 1, "required_bit_count": 2, "available_mask": "0x00000005", "available_bit_indices": [0, 2]},
+      "terminal_response_body_hex": "05 00 00 00"
+    },
+    {
+      "case_id": "ANNOUNCE_NUMBER_DUPLICATE_VALUES",
+      "message_id": 143,
+      "symbolic_name": "MSG_ANNOUNCE_NUMBER",
+      "classification": "FLAT_TERMINAL_DOMAIN_SAFE",
+      "inner_byte_length": 27,
+      "inner_hex": "8F 00 03 07 00 00 00 00 00 00 00 07 00 00 00 00 00 00 00 2A 00 00 00 00 00 00 00",
+      "wire_decoded": {"acting_player": 0, "option_count": 3, "values": [7, 7, 42]},
+      "ordered_candidates": ["MSG_ANNOUNCE_NUMBER:OPTION:0", "MSG_ANNOUNCE_NUMBER:OPTION:1", "MSG_ANNOUNCE_NUMBER:OPTION:2"],
+      "terminal_response_body_hex": "02 00 00 00"
+    },
+    {
+      "case_id": "SELECT_UNSELECT_MIXED_TERMINAL",
+      "message_id": 26,
+      "symbolic_name": "MSG_SELECT_UNSELECT_CARD",
+      "classification": "FLAT_TERMINAL_DOMAIN_SAFE",
+      "inner_byte_length": 48,
+      "inner_hex": "1A 00 01 01 01 00 00 00 02 00 00 00 01 00 00 00 01 00 00 00 00 04 00 00 00 00 00 00 00 00 01 00 00 00 01 00 00 00 00 04 01 00 00 00 00 00 00 00",
+      "wire_decoded": {"acting_player": 0, "finishable": true, "cancelable": true, "minimum_count": 1, "maximum_count": 2, "selectable_count": 1, "unselectable_count": 1},
+      "ordered_candidates": ["MSG_SELECT_UNSELECT_CARD:SELECT:0", "MSG_SELECT_UNSELECT_CARD:UNSELECT:0", "MSG_SELECT_UNSELECT_CARD:FINISH_OR_CANCEL"],
+      "response_bodies": {"select": "01 00 00 00 00 00 00 00", "unselect": "01 00 00 00 01 00 00 00", "finish_or_cancel": "FF FF FF FF"}
+    },
+    {
+      "case_id": "SELECT_PLACE_TRAILING_BYTE",
+      "message_id": 18,
+      "symbolic_name": "MSG_SELECT_PLACE",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 8,
+      "inner_hex": "12 00 01 FE FF FF FF 00",
+      "expected_error": "MalformedPrompt",
+      "expected_public_domain": "ABSENT"
+    }
+  ],
+  "continuation_witnesses": [
+    {
+      "case_id": "ILLEGAL_FINISH_BEFORE_MINIMUM",
+      "family": "MSG_SELECT_CARD",
+      "source_vector": "SELECT_CARD_DUPLICATE_OCCURRENCES_AND_CANCEL",
+      "current_selected_source_ordinals": [],
+      "action_key": "MSG_SELECT_CARD:FINISH",
+      "expected_error": "InvalidContinuationAction",
+      "expected_mutation": "NONE"
+    },
+    {
+      "case_id": "STALE_STEP_AFTER_SUCCESS",
+      "family": "MSG_SELECT_COUNTER",
+      "source_vector": "SELECT_COUNTER_EXACT_ALLOCATION",
+      "accepted_action_key": "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:1",
+      "reused_old_action_key": "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:2",
+      "expected_error": "StaleContinuationStep"
+    },
+    {
+      "case_id": "CROSS_FAMILY_KEY_REINTERPRETATION",
+      "family_a": "MSG_SORT_CARD",
+      "family_b": "MSG_ANNOUNCE_NUMBER",
+      "key_from_family_a": "MSG_SORT_CARD:PLACE:0",
+      "expected_error": "InvalidContinuationInstance"
+    }
+  ]
+}
