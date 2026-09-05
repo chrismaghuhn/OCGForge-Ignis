@@ -626,7 +626,7 @@ The modern message is:
 
 Length is exactly eleven bytes. The core validates the response as a subset
 of the available mask with exactly k set bits. The admitted `RACE_ALL` values
-are bits 0..32 and bit 62 (`RACE_YOKAI`). The writer clamps k to the available
+are bits 0..31 and bit 62 (`RACE_YOKAI`). The writer clamps k to the available
 popcount; zero k or an empty mask is a no-prompt path and is rejected for an
 emitted I5 prompt.
 
