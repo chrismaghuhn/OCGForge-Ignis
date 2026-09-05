@@ -384,3 +384,35 @@ signed high alternatives. `SELECT_SUM` must remain `UNRESOLVED` until a later
 contract decision either narrows the admitted source domain with proof or
 freezes the exact behavior of the affected values. No production, test,
 fixture, or frozen-contract file was changed by this audit.
+
+## I5A0 SELECT_SUM exact-semantics research 02 (read-only, 2026-09-05)
+
+This follow-up specifically tested whether the pinned producer set supplies an
+admissible value domain that would make `SELECT_SUM` wire-exact. It does not.
+The following concrete source-derived witnesses are retained without choosing
+an implementation policy:
+
+| Repository | Exact commit | Source path / symbol | Fact learned | Date | Classification |
+| --- | --- | --- | --- | --- | --- |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `libgroup.cpp#LUA_FUNCTION(SelectWithSumEqual)`, `SelectWithSumGreater`; `interpreter.cpp#interpreter::get_operation_value` | Lua operation results are read as unrestricted `lua_Integer` values and assigned to `uint32_t card::sum_param`; the source-side guard rejects only an exactly zero packed value. No producer symbol proves that either packed half is below the signed high-half boundary or that the low half is nonzero. | 2026-09-05 | PRIMARY producer-domain boundary |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `libgroup.cpp#LUA_FUNCTION(SelectWithSumEqual)`; `processor_unit.h#SelectSum`; `playerop.cpp#field::process(Processors::SelectSum&)` | An internal accumulator such as `0x00010001` can be accepted as a `uint32_t`, stored in the `int32_t` processor, and later validated against the original value, while the prompt writer transmits only `acc & 0xffff` (`0x0001`). A wire-only client cannot reconstruct the discarded upper bits. | 2026-09-05 | PRIMARY information-loss boundary |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `field.cpp#field::check_with_sum_limit_m`; `playerop.cpp#select_sum_check1` | For packed alternatives `sum_param=0x80010002`, feasibility reads a positive masked high value `0x8001`, but final exact validation first converts the packed value through signed `int32_t` and right-shifts it. The pinned source does not define a common admissible interpretation for this value. | 2026-09-05 | PRIMARY signed/unsigned divergence |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `playerop.cpp#parse_response_cards`; `playerop.cpp#field::process(Processors::SelectSum&)`; `card.h#card::sum_param` | A bounded prompt with target 5, optional `sum_param` values `0x00050000` and `0x00000005`, and optional count exactly 2 can pass the masked feasibility predicate. After response parsing, `parse_response_cards` sorts the selected `card*` values before `select_sum_check1`; pointer order `[0x00050000,0x00000005]` can pass because the first low value is 0, while the reverse order can fail because the first value 5 is not strictly below the remaining target. | 2026-09-05 | PRIMARY pointer-order determinism hazard |
+| ygopro-core | 46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57 | `playerop.cpp#parse_response_cards`; `playerop.cpp#field::process(Processors::SelectSum&)` | The pointer sort is performed on private object addresses, not source occurrence indexes or semantic values. Allocation/address order is not a permitted I5 identity or determinism input, so the pathologic accepted domain cannot be made deterministic by reproducing the sort. | 2026-09-05 | PRIMARY determinism boundary |
+
+Research conclusion:
+
+```text
+SELECT_SUM_WIRE_FIELDS=RESOLVED
+SELECT_SUM_UNRESTRICTED_ADMISSIBLE_DOMAIN=NOT_PROVEN
+SELECT_SUM_EXACT_LEGALITY=UNRESOLVED
+SELECT_SUM_EXACT_ORACLE=UNRESOLVED
+RESEARCH_OUTCOME=B_CONTRACT_NOT_WIRE_RECONSTRUCTABLE
+SELECT_SUM_UNSUPPORTED_SCOPE_DECISION=NOT_AUTHORIZED
+```
+
+This conclusion is a research finding, not a decision to remove the family
+from I5. A separate authorized contract decision must choose whether to prove
+a source-backed restricted domain or explicitly certify `SELECT_SUM` as
+V1 fail-closed unsupported. No production, test, fixture, or contract code was
+changed by this research-only finding.
