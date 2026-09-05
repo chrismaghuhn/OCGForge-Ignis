@@ -239,28 +239,56 @@ public sealed class FlatPromptSessionV1
                 FlatPromptErrorCodeV1.InvalidContinuationAction);
         }
 
-        FlatPromptCardContinuationStateV1 state =
+        FlatPromptContinuationStateV1 state =
             currentBinding.ContinuationState;
-        if (candidate is FlatPromptCardSelectionCandidateBaseV1 cardCandidate &&
-            state.Family == FlatPromptFamilyValueV1.MsgSelectCard &&
+        if (state is FlatPromptCardContinuationStateV1 cardState &&
+            candidate is FlatPromptCardSelectionCandidateBaseV1 cardCandidate &&
+            cardState.Family == FlatPromptFamilyValueV1.MsgSelectCard &&
             cardCandidate.ChoiceKind == FlatPromptChoiceKindV1.Pick)
         {
-            return ApplyCardPick(state, cardCandidate.SourceOrdinal);
+            return ApplyCardPick(cardState, cardCandidate.SourceOrdinal);
         }
 
-        if (candidate is FlatPromptTributeSelectionCandidateBaseV1 tributeCandidate &&
-            state.Family == FlatPromptFamilyValueV1.MsgSelectTribute &&
+        if (state is FlatPromptCardContinuationStateV1 tributeState &&
+            candidate is FlatPromptTributeSelectionCandidateBaseV1
+                tributeCandidate &&
+            tributeState.Family == FlatPromptFamilyValueV1.MsgSelectTribute &&
             tributeCandidate.ChoiceKind == FlatPromptChoiceKindV1.Pick)
         {
-            return ApplyCardPick(state, tributeCandidate.SourceOrdinal);
+            return ApplyCardPick(tributeState, tributeCandidate.SourceOrdinal);
         }
 
-        if (candidate is FlatPromptFinishPublicCandidateV1 finish &&
+        if (state is FlatPromptPlaceContinuationStateV1 placeState &&
+            candidate is FlatPromptFieldPlacePublicCandidateV1 placeCandidate &&
+            placeState.Family == currentBinding.Family &&
+            FlatPromptProjectionV1.TryAdvancePlaceContinuation(
+                placeState,
+                placeCandidate.I4LocalCandidateKey,
+                out FlatPromptProjectionDraftV1? placeDraft,
+                out FlatPromptErrorCodeV1 placeError))
+        {
+            return ApplyPlaceTransition(placeDraft, placeError);
+        }
+
+        if (state is FlatPromptMaskContinuationStateV1 maskState &&
+            candidate is FlatPromptMaskBitPublicCandidateV1 maskCandidate &&
+            maskState.Family == currentBinding.Family &&
+            FlatPromptProjectionV1.TryAdvanceMaskContinuation(
+                maskState,
+                maskCandidate.BitIndex,
+                out FlatPromptProjectionDraftV1? maskDraft,
+                out FlatPromptErrorCodeV1 maskError))
+        {
+            return ApplyMaskTransition(maskDraft, maskError);
+        }
+
+        if (state is FlatPromptCardContinuationStateV1 cardFinishState &&
+            candidate is FlatPromptFinishPublicCandidateV1 finish &&
             finish.ChoiceKind == FlatPromptChoiceKindV1.Finish &&
-            state.CanFinish)
+            cardFinishState.CanFinish)
         {
             if (!FlatPromptProjectionV1.TryEncodeCardIndexResponse(
-                    state.SelectedOrdinals,
+                    cardFinishState.SelectedOrdinals,
                     out byte[] responseBody,
                     out FlatPromptErrorCodeV1 error))
             {
@@ -272,9 +300,10 @@ public sealed class FlatPromptSessionV1
             return FlatPromptContinuationStepResultV1.Terminal(responseBody);
         }
 
-        if (candidate is FlatPromptCancelPublicCandidateV1 cancel &&
+        if (state is FlatPromptCardContinuationStateV1 cardCancelState &&
+            candidate is FlatPromptCancelPublicCandidateV1 cancel &&
             cancel.ChoiceKind == FlatPromptChoiceKindV1.Cancel &&
-            state.Cancelable)
+            cardCancelState.Cancelable)
         {
             currentBinding = null;
             return FlatPromptContinuationStepResultV1.Terminal(
@@ -310,6 +339,114 @@ public sealed class FlatPromptSessionV1
         int[] responses = nextDraft.CopyResponses();
         if (!CurrentFlatPromptBindingV1.TryCreate(
                 binding.PromptInstanceOrdinal,
+                nextDraft.Context.PromptFamily,
+                candidates,
+                localKeys,
+                responses,
+                out CurrentFlatPromptBindingV1? nextBinding,
+                out FlatPromptErrorCodeV1 bindingError,
+                nextDraft.CopyResponseBodies(),
+                nextDraft.ContinuationState) ||
+            nextBinding is null)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Failure(bindingError);
+        }
+
+        FlatPromptProjectionResultV1 projection =
+            FlatPromptProjectionResultV1.Success(
+                nextDraft.Context,
+                candidates);
+        currentBinding = nextBinding;
+        return FlatPromptContinuationStepResultV1.Intermediate(projection);
+    }
+
+    private FlatPromptContinuationStepResultV1 ApplyPlaceTransition(
+        FlatPromptProjectionDraftV1? nextDraft,
+        FlatPromptErrorCodeV1 error)
+    {
+        if (nextDraft is null || currentBinding is null)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Failure(
+                error == FlatPromptErrorCodeV1.None
+                    ? FlatPromptErrorCodeV1.InvalidContinuationAction
+                    : error);
+        }
+
+        if (nextDraft.ContinuationState is
+                FlatPromptPlaceContinuationStateV1 nextState &&
+            nextState.IsTerminal)
+        {
+            if (!FlatPromptProjectionV1.TryEncodePlaceResponse(
+                    nextState.CopySelectedPlaces(),
+                    out byte[] responseBody,
+                    out FlatPromptErrorCodeV1 responseError))
+            {
+                currentBinding = null;
+                return FlatPromptContinuationStepResultV1.Failure(
+                    responseError);
+            }
+
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Terminal(responseBody);
+        }
+
+        return CommitIntermediateContinuation(nextDraft);
+    }
+
+    private FlatPromptContinuationStepResultV1 ApplyMaskTransition(
+        FlatPromptProjectionDraftV1? nextDraft,
+        FlatPromptErrorCodeV1 error)
+    {
+        if (nextDraft is null || currentBinding is null)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Failure(
+                error == FlatPromptErrorCodeV1.None
+                    ? FlatPromptErrorCodeV1.InvalidContinuationAction
+                    : error);
+        }
+
+        if (nextDraft.ContinuationState is
+                FlatPromptMaskContinuationStateV1 nextState &&
+            nextState.IsTerminal)
+        {
+            if (!FlatPromptProjectionV1.TryEncodeMaskResponse(
+                    nextState.Family,
+                    nextState.SelectedMask,
+                    out byte[] responseBody,
+                    out FlatPromptErrorCodeV1 responseError))
+            {
+                currentBinding = null;
+                return FlatPromptContinuationStepResultV1.Failure(
+                    responseError);
+            }
+
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Terminal(responseBody);
+        }
+
+        return CommitIntermediateContinuation(nextDraft);
+    }
+
+    private FlatPromptContinuationStepResultV1
+        CommitIntermediateContinuation(FlatPromptProjectionDraftV1 nextDraft)
+    {
+        if (currentBinding is null ||
+            nextDraft.ContinuationState is null)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Failure(
+                FlatPromptErrorCodeV1.InvalidContinuationAction);
+        }
+
+        FlatPublicCandidateDescriptorV1[] candidates =
+            nextDraft.CopyCandidates();
+        string[] localKeys = nextDraft.CopyLocalKeys();
+        int[] responses = nextDraft.CopyResponses();
+        if (!CurrentFlatPromptBindingV1.TryCreate(
+                currentBinding.PromptInstanceOrdinal,
                 nextDraft.Context.PromptFamily,
                 candidates,
                 localKeys,
@@ -433,7 +570,11 @@ public sealed class FlatPromptSessionV1
         if (currentBinding.Family is
             FlatPromptFamilyValueV1.MsgSelectCard or
             FlatPromptFamilyValueV1.MsgSelectTribute or
-            FlatPromptFamilyValueV1.MsgSelectUnselectCard)
+            FlatPromptFamilyValueV1.MsgSelectUnselectCard or
+            FlatPromptFamilyValueV1.MsgSelectPlace or
+            FlatPromptFamilyValueV1.MsgSelectDisfield or
+            FlatPromptFamilyValueV1.MsgAnnounceRace or
+            FlatPromptFamilyValueV1.MsgAnnounceAttrib)
         {
             error = FlatPromptErrorCodeV1.InvalidContinuationAction;
             return false;
@@ -658,6 +799,15 @@ public sealed class FlatPromptSessionV1
                 left.SourceSection == right.SourceSection &&
                 left.SourceOrdinal == right.SourceOrdinal &&
                 left.NumberValue == right.NumberValue,
+            (FlatPromptFieldPlacePublicCandidateV1 left,
+                FlatPromptFieldPlacePublicCandidateV1 right) =>
+                left.AbsolutePlayer == right.AbsolutePlayer &&
+                left.Zone == right.Zone &&
+                left.Sequence == right.Sequence,
+            (FlatPromptMaskBitPublicCandidateV1 left,
+                FlatPromptMaskBitPublicCandidateV1 right) =>
+                left.BitIndex == right.BitIndex &&
+                left.BitValue == right.BitValue,
             _ => false
         };
     }

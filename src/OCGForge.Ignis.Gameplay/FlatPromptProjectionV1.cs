@@ -30,6 +30,9 @@ internal static class FlatPromptProjectionV1
     private const int AnnounceNumberHeaderLength = 3;
     private const int AnnounceNumberOptionLength = 8;
     private const uint MaximumTributeCardCount = 5;
+    private const int PlaceMessageLength = 7;
+    private const int RaceMessageLength = 11;
+    private const int AttributeMessageLength = 7;
 
     private static readonly int[] YesNoResponses = { 0, 1 };
     private static readonly int[] EffectYnResponses = { 0, 1 };
@@ -118,6 +121,21 @@ internal static class FlatPromptProjectionV1
             15 => TryParseSelectCardWireDraft(bytes, out draft, out error),
             20 => TryParseSelectTributeWireDraft(bytes, out draft, out error),
             26 => TryParseSelectUnselectWireDraft(bytes, out draft, out error),
+            18 => TryParsePlaceWireDraft(
+                bytes,
+                false,
+                out draft,
+                out error),
+            24 => TryParsePlaceWireDraft(
+                bytes,
+                true,
+                out draft,
+                out error),
+            140 => TryParseRaceWireDraft(bytes, out draft, out error),
+            141 => TryParseAttributeWireDraft(
+                bytes,
+                out draft,
+                out error),
             143 => TryParseAnnounceNumberWireDraft(bytes, out draft, out error),
             23 => FailWireDraft(
                 FlatPromptErrorCodeV1.UnsupportedPromptFamily,
@@ -144,7 +162,11 @@ internal static class FlatPromptProjectionV1
                 (FlatPromptFamilyValueV1.MsgSelectCard or
                  FlatPromptFamilyValueV1.MsgSelectTribute or
                  FlatPromptFamilyValueV1.MsgSelectUnselectCard or
-                 FlatPromptFamilyValueV1.MsgAnnounceNumber))
+                 FlatPromptFamilyValueV1.MsgAnnounceNumber or
+                 FlatPromptFamilyValueV1.MsgSelectPlace or
+                 FlatPromptFamilyValueV1.MsgSelectDisfield or
+                 FlatPromptFamilyValueV1.MsgAnnounceRace or
+                 FlatPromptFamilyValueV1.MsgAnnounceAttrib))
         {
             error = FlatPromptErrorCodeV1.UnprovenPublicReference;
             return false;
@@ -199,6 +221,21 @@ internal static class FlatPromptProjectionV1
             FlatPromptAnnounceNumberWireDraftV1 announceNumber =>
                 TryBuildAnnounceNumberProjection(
                     announceNumber,
+                    out projected,
+                    out error),
+            FlatPromptPlaceWireDraftV1 place =>
+                TryBuildPlaceProjection(
+                    place,
+                    out projected,
+                    out error),
+            FlatPromptRaceWireDraftV1 race =>
+                TryBuildRaceProjection(
+                    race,
+                    out projected,
+                    out error),
+            FlatPromptAttributeWireDraftV1 attribute =>
+                TryBuildAttributeProjection(
+                    attribute,
                     out projected,
                     out error),
             _ => FailProjection(
@@ -664,6 +701,126 @@ internal static class FlatPromptProjectionV1
         draft = new FlatPromptAnnounceNumberWireDraftV1(
             actingPlayer,
             values);
+        return true;
+    }
+
+    private static bool TryParsePlaceWireDraft(
+        ReadOnlySpan<byte> bytes,
+        bool isDisfield,
+        out FlatPromptWireDraftV1? draft,
+        out FlatPromptErrorCodeV1 error)
+    {
+        draft = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (bytes.Length != PlaceMessageLength)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        byte actingPlayer = bytes[1];
+        if (actingPlayer > 1)
+        {
+            error = FlatPromptErrorCodeV1.InvalidParticipant;
+            return false;
+        }
+
+        byte requiredPlaceCount = bytes[2];
+        uint fieldFlag = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(3, sizeof(uint)));
+        int eligibleCount = CountEligibleFieldSlots(fieldFlag);
+        if (requiredPlaceCount == 0 ||
+            requiredPlaceCount > eligibleCount)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        draft = new FlatPromptPlaceWireDraftV1(
+            isDisfield
+                ? FlatPromptFamilyValueV1.MsgSelectDisfield
+                : FlatPromptFamilyValueV1.MsgSelectPlace,
+            actingPlayer,
+            requiredPlaceCount,
+            fieldFlag);
+        return true;
+    }
+
+    private static bool TryParseRaceWireDraft(
+        ReadOnlySpan<byte> bytes,
+        out FlatPromptWireDraftV1? draft,
+        out FlatPromptErrorCodeV1 error)
+    {
+        draft = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (bytes.Length != RaceMessageLength)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        byte actingPlayer = bytes[1];
+        if (actingPlayer > 1)
+        {
+            error = FlatPromptErrorCodeV1.InvalidParticipant;
+            return false;
+        }
+
+        byte requiredBitCount = bytes[2];
+        ulong availableMask = BinaryPrimitives.ReadUInt64LittleEndian(
+            bytes.Slice(3, sizeof(ulong)));
+        if (requiredBitCount == 0 ||
+            availableMask == 0 ||
+            (availableMask & ~FlatPromptMaskValueV1.RaceAllowedMask) != 0 ||
+            BitOperations.PopCount(availableMask) < requiredBitCount)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        draft = new FlatPromptRaceWireDraftV1(
+            actingPlayer,
+            requiredBitCount,
+            availableMask);
+        return true;
+    }
+
+    private static bool TryParseAttributeWireDraft(
+        ReadOnlySpan<byte> bytes,
+        out FlatPromptWireDraftV1? draft,
+        out FlatPromptErrorCodeV1 error)
+    {
+        draft = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (bytes.Length != AttributeMessageLength)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        byte actingPlayer = bytes[1];
+        if (actingPlayer > 1)
+        {
+            error = FlatPromptErrorCodeV1.InvalidParticipant;
+            return false;
+        }
+
+        byte requiredBitCount = bytes[2];
+        uint availableMask = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(3, sizeof(uint)));
+        if (requiredBitCount == 0 ||
+            availableMask == 0 ||
+            (availableMask & ~FlatPromptMaskValueV1.AttributeAllowedMask) != 0 ||
+            BitOperations.PopCount(availableMask) < requiredBitCount)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        draft = new FlatPromptAttributeWireDraftV1(
+            actingPlayer,
+            requiredBitCount,
+            availableMask);
         return true;
     }
 
@@ -1758,6 +1915,239 @@ internal static class FlatPromptProjectionV1
         return true;
     }
 
+    private static bool TryBuildPlaceProjection(
+        FlatPromptPlaceWireDraftV1 wire,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (!TryBuildEligiblePlaceEntries(
+                wire.Family,
+                wire.ActingPlayer,
+                wire.FieldFlag,
+                out FlatPromptPlaceContinuationEntryV1[]? entries,
+                out error) ||
+            entries is null)
+        {
+            return false;
+        }
+
+        FlatPromptPlaceContinuationStateV1 state;
+        try
+        {
+            state = new FlatPromptPlaceContinuationStateV1(
+                wire.Family,
+                wire.ActingPlayer,
+                wire.RequiredPlaceCount,
+                entries,
+                Array.Empty<int>(),
+                0);
+        }
+        catch (ArgumentException)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        return TryBuildPlaceContinuationProjection(
+            state,
+            out projected,
+            out error);
+    }
+
+    private static bool TryBuildRaceProjection(
+        FlatPromptRaceWireDraftV1 wire,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        return TryBuildMaskProjection(
+            wire.Family,
+            wire.ActingPlayer,
+            wire.RequiredBitCount,
+            wire.AvailableMask,
+            out projected,
+            out error);
+    }
+
+    private static bool TryBuildAttributeProjection(
+        FlatPromptAttributeWireDraftV1 wire,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        return TryBuildMaskProjection(
+            wire.Family,
+            wire.ActingPlayer,
+            wire.RequiredBitCount,
+            wire.AvailableMask,
+            out projected,
+            out error);
+    }
+
+    private static bool TryBuildMaskProjection(
+        FlatPromptFamilyV1 family,
+        byte actingPlayer,
+        byte requiredBitCount,
+        ulong availableMask,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        List<int> availableBitIndices = new();
+        for (int bitIndex = 0; bitIndex <= 63; bitIndex++)
+        {
+            if ((availableMask & (1UL << bitIndex)) != 0)
+            {
+                availableBitIndices.Add(bitIndex);
+            }
+        }
+
+        FlatPromptMaskContinuationStateV1 state;
+        try
+        {
+            state = new FlatPromptMaskContinuationStateV1(
+                family,
+                actingPlayer,
+                requiredBitCount,
+                availableMask,
+                availableBitIndices,
+                Array.Empty<int>(),
+                0);
+        }
+        catch (ArgumentException)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        return TryBuildMaskContinuationProjection(
+            state,
+            out projected,
+            out error);
+    }
+
+    private static bool TryBuildEligiblePlaceEntries(
+        FlatPromptFamilyV1 family,
+        byte actingPlayer,
+        uint fieldFlag,
+        out FlatPromptPlaceContinuationEntryV1[]? entries,
+        out FlatPromptErrorCodeV1 error)
+    {
+        entries = null;
+        error = FlatPromptErrorCodeV1.None;
+        List<FlatPromptPlaceContinuationEntryV1> result = new();
+        byte otherPlayer = checked((byte)(1 - actingPlayer));
+        if (!AddPlaceGroup(
+            family,
+            actingPlayer,
+            FlatPromptFieldZoneV1.MonsterZone,
+            0,
+            7,
+            fieldFlag,
+            result,
+            out error) ||
+            !AddPlaceGroup(
+            family,
+            actingPlayer,
+            FlatPromptFieldZoneV1.SpellTrapZone,
+            8,
+            8,
+            fieldFlag,
+            result,
+            out error) ||
+            !AddPlaceGroup(
+            family,
+            otherPlayer,
+            FlatPromptFieldZoneV1.MonsterZone,
+            16,
+            7,
+            fieldFlag,
+            result,
+            out error) ||
+            !AddPlaceGroup(
+            family,
+            otherPlayer,
+            FlatPromptFieldZoneV1.SpellTrapZone,
+            24,
+            8,
+            fieldFlag,
+            result,
+            out error))
+        {
+            return false;
+        }
+        if (result.Count == 0)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        entries = result.ToArray();
+        return true;
+    }
+
+    private static bool AddPlaceGroup(
+        FlatPromptFamilyV1 family,
+        byte absolutePlayer,
+        FlatPromptFieldZoneV1 zone,
+        int bitOffset,
+        int count,
+        uint fieldFlag,
+        List<FlatPromptPlaceContinuationEntryV1> entries,
+        out FlatPromptErrorCodeV1 error)
+    {
+        error = FlatPromptErrorCodeV1.None;
+        for (int sequence = 0; sequence < count; sequence++)
+        {
+            int canonicalIndex = bitOffset + sequence;
+            if ((fieldFlag & (1u << canonicalIndex)) != 0)
+            {
+                continue;
+            }
+
+            if (!FlatPromptKeyV1.TryCreateFieldPlace(
+                    family,
+                    absolutePlayer,
+                    zone,
+                    checked((byte)sequence),
+                    out string key))
+            {
+                error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                return false;
+            }
+
+            entries.Add(new FlatPromptPlaceContinuationEntryV1(
+                new FlatPromptFieldPlacePublicCandidateV1(
+                    key,
+                    absolutePlayer,
+                    zone,
+                    checked((byte)sequence)),
+                canonicalIndex));
+        }
+
+        return true;
+    }
+
+    private static int CountEligibleFieldSlots(uint fieldFlag)
+    {
+        int count = 0;
+        for (int canonicalIndex = 0; canonicalIndex <= 31; canonicalIndex++)
+        {
+            if (canonicalIndex is 7 or 23)
+            {
+                continue;
+            }
+
+            if ((fieldFlag & (1u << canonicalIndex)) == 0)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     private static bool TryAppendSelectUnselectCards(
         IReadOnlyList<FlatPromptSelectCardWireEntryV1> entries,
         FlatPromptChoiceKindV1 choiceKind,
@@ -2093,6 +2483,275 @@ internal static class FlatPromptProjectionV1
             responses,
             state);
         return true;
+    }
+
+    private static bool TryBuildPlaceContinuationProjection(
+        FlatPromptPlaceContinuationStateV1 state,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        List<FlatPublicCandidateDescriptorV1> candidates = new();
+        List<string> keys = new();
+        List<int> responses = new();
+        for (int sourceOrdinal = 0;
+             sourceOrdinal < state.SourcePlaces.Count;
+             sourceOrdinal++)
+        {
+            if (!state.IsPickLegal(sourceOrdinal))
+            {
+                continue;
+            }
+
+            FlatPromptFieldPlacePublicCandidateV1 candidate =
+                state.SourcePlaces[sourceOrdinal].Candidate;
+            if (!FlatPromptKeyV1.TryCreateFieldPlace(
+                    state.Family,
+                    candidate.AbsolutePlayer,
+                    candidate.Zone,
+                    candidate.Sequence,
+                    out string expectedKey) ||
+                !string.Equals(
+                    candidate.I4LocalCandidateKey,
+                    expectedKey,
+                    StringComparison.Ordinal))
+            {
+                error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                return false;
+            }
+
+            candidates.Add(candidate);
+            keys.Add(candidate.I4LocalCandidateKey);
+            responses.Add(0);
+        }
+
+        if (candidates.Count == 0 && !state.IsTerminal)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        FlatPromptFieldPlaceV1[] eligiblePlaces = state.SourcePlaces
+            .Select(entry =>
+            {
+                FlatPromptFieldPlacePublicCandidateV1 candidate =
+                    entry.Candidate;
+                return new FlatPromptFieldPlaceV1(
+                    candidate.AbsolutePlayer,
+                    candidate.Zone,
+                    candidate.Sequence);
+            })
+            .ToArray();
+        FlatPromptPublicContextV1 context =
+            state.Family == FlatPromptFamilyValueV1.MsgSelectPlace
+                ? new FlatPromptPlaceSelectionPublicContextV1(
+                    state.ActingPlayer,
+                    state.RequiredPlaceCount,
+                    eligiblePlaces)
+                : new FlatPromptDisfieldSelectionPublicContextV1(
+                    state.ActingPlayer,
+                    state.RequiredPlaceCount,
+                    eligiblePlaces);
+        projected = new FlatPromptProjectionDraftV1(
+            context,
+            candidates,
+            keys,
+            responses,
+            state);
+        return true;
+    }
+
+    private static bool TryBuildMaskContinuationProjection(
+        FlatPromptMaskContinuationStateV1 state,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        List<FlatPublicCandidateDescriptorV1> candidates = new();
+        List<string> keys = new();
+        List<int> responses = new();
+        foreach (int bitIndex in state.AvailableBitIndices)
+        {
+            if (!state.IsPickLegal(bitIndex))
+            {
+                continue;
+            }
+
+            if (!FlatPromptKeyV1.TryCreateMaskBit(
+                    state.Family,
+                    bitIndex,
+                    out string key))
+            {
+                error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                return false;
+            }
+
+            candidates.Add(new FlatPromptMaskBitPublicCandidateV1(
+                key,
+                bitIndex,
+                1UL << bitIndex));
+            keys.Add(key);
+            responses.Add(0);
+        }
+
+        if (candidates.Count == 0 && !state.IsTerminal)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        FlatPromptPublicContextV1 context =
+            state.Family == FlatPromptFamilyValueV1.MsgAnnounceRace
+                ? new FlatPromptRaceSelectionPublicContextV1(
+                    state.ActingPlayer,
+                    state.RequiredBitCount,
+                    state.AvailableMask)
+                : new FlatPromptAttributeSelectionPublicContextV1(
+                    state.ActingPlayer,
+                    state.RequiredBitCount,
+                    checked((uint)state.AvailableMask));
+        projected = new FlatPromptProjectionDraftV1(
+            context,
+            candidates,
+            keys,
+            responses,
+            state);
+        return true;
+    }
+
+    internal static bool TryAdvancePlaceContinuation(
+        FlatPromptPlaceContinuationStateV1 state,
+        string candidateKey,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (!state.TryGetSourceOrdinal(candidateKey, out int sourceOrdinal) ||
+            !state.IsPickLegal(sourceOrdinal))
+        {
+            error = FlatPromptErrorCodeV1.InvalidContinuationAction;
+            return false;
+        }
+
+        try
+        {
+            return TryBuildPlaceContinuationProjection(
+                state.WithSelected(sourceOrdinal),
+                out projected,
+                out error);
+        }
+        catch (OverflowException)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+    }
+
+    internal static bool TryAdvanceMaskContinuation(
+        FlatPromptMaskContinuationStateV1 state,
+        int bitIndex,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (!state.IsPickLegal(bitIndex))
+        {
+            error = FlatPromptErrorCodeV1.InvalidContinuationAction;
+            return false;
+        }
+
+        try
+        {
+            return TryBuildMaskContinuationProjection(
+                state.WithSelected(bitIndex),
+                out projected,
+                out error);
+        }
+        catch (OverflowException)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+    }
+
+    internal static bool TryEncodePlaceResponse(
+        IReadOnlyList<FlatPromptFieldPlaceV1> selectedPlaces,
+        out byte[] responseBody,
+        out FlatPromptErrorCodeV1 error)
+    {
+        responseBody = Array.Empty<byte>();
+        error = FlatPromptErrorCodeV1.None;
+        ArgumentNullException.ThrowIfNull(selectedPlaces);
+        try
+        {
+            responseBody = new byte[checked(selectedPlaces.Count * 3)];
+        }
+        catch (OverflowException)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        for (int index = 0; index < selectedPlaces.Count; index++)
+        {
+            FlatPromptFieldPlaceV1 place = selectedPlaces[index];
+            if (place.AbsolutePlayer > 1 ||
+                place.Zone is not
+                    (FlatPromptFieldZoneV1.MonsterZone or
+                     FlatPromptFieldZoneV1.SpellTrapZone) ||
+                place.Sequence >
+                    (place.Zone == FlatPromptFieldZoneV1.MonsterZone ? 6 : 7))
+            {
+                responseBody = Array.Empty<byte>();
+                error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                return false;
+            }
+
+            int offset = index * 3;
+            responseBody[offset] = place.AbsolutePlayer;
+            responseBody[offset + 1] = place.Zone ==
+                FlatPromptFieldZoneV1.MonsterZone ? (byte)0x04 : (byte)0x08;
+            responseBody[offset + 2] = place.Sequence;
+        }
+
+        return true;
+    }
+
+    internal static bool TryEncodeMaskResponse(
+        FlatPromptFamilyV1 family,
+        ulong selectedMask,
+        out byte[] responseBody,
+        out FlatPromptErrorCodeV1 error)
+    {
+        responseBody = Array.Empty<byte>();
+        error = FlatPromptErrorCodeV1.None;
+        if (family == FlatPromptFamilyValueV1.MsgAnnounceRace &&
+            (selectedMask & ~FlatPromptMaskValueV1.RaceAllowedMask) == 0)
+        {
+            responseBody = new byte[sizeof(ulong)];
+            BinaryPrimitives.WriteUInt64LittleEndian(
+                responseBody,
+                selectedMask);
+            return true;
+        }
+
+        if (family == FlatPromptFamilyValueV1.MsgAnnounceAttrib &&
+            selectedMask <= uint.MaxValue &&
+            (selectedMask & ~((ulong)FlatPromptMaskValueV1.AttributeAllowedMask)) == 0)
+        {
+            responseBody = new byte[sizeof(uint)];
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                responseBody,
+                (uint)selectedMask);
+            return true;
+        }
+
+        error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+        return false;
     }
 
     internal static bool TryAdvanceCardContinuation(

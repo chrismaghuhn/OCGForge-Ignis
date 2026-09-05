@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Numerics;
 
 namespace OCGForge.Ignis.Gameplay;
 
@@ -28,6 +29,18 @@ internal static class FlatPromptFamilyValueV1
 
     internal const FlatPromptFamilyV1 MsgAnnounceNumber =
         (FlatPromptFamilyV1)143;
+
+    internal const FlatPromptFamilyV1 MsgSelectPlace =
+        (FlatPromptFamilyV1)18;
+
+    internal const FlatPromptFamilyV1 MsgSelectDisfield =
+        (FlatPromptFamilyV1)24;
+
+    internal const FlatPromptFamilyV1 MsgAnnounceRace =
+        (FlatPromptFamilyV1)140;
+
+    internal const FlatPromptFamilyV1 MsgAnnounceAttrib =
+        (FlatPromptFamilyV1)141;
 }
 
 internal static class FlatPromptContractIdV1
@@ -87,6 +100,26 @@ public enum FlatPromptSourceSectionV1 : byte
     Selectable = 12,
     Unselectable = 13,
     NumberOptions = 14
+}
+
+public enum FlatPromptFieldZoneV1 : byte
+{
+    MonsterZone = 0,
+    SpellTrapZone = 1
+}
+
+internal static class FlatPromptMaskValueV1
+{
+    internal const ulong RaceAllowedMask =
+        ((1UL << 32) - 1) | (1UL << 62);
+
+    internal const uint AttributeAllowedMask = 0x7F;
+
+    internal static bool IsRaceBit(int bitIndex) =>
+        bitIndex is >= 0 and <= 31 or 62;
+
+    internal static bool IsAttributeBit(int bitIndex) =>
+        bitIndex is >= 0 and <= 6;
 }
 
 public enum FlatPromptErrorCodeV1 : byte
@@ -359,6 +392,161 @@ public sealed record FlatPromptAnnounceNumberPublicContextV1
     }
 
     public int OptionCount { get; }
+}
+
+public sealed record FlatPromptFieldPlaceV1
+{
+    internal FlatPromptFieldPlaceV1(
+        byte absolutePlayer,
+        FlatPromptFieldZoneV1 zone,
+        byte sequence)
+    {
+        if (absolutePlayer > 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(absolutePlayer));
+        }
+
+        if (zone is not
+            (FlatPromptFieldZoneV1.MonsterZone or
+             FlatPromptFieldZoneV1.SpellTrapZone))
+        {
+            throw new ArgumentOutOfRangeException(nameof(zone));
+        }
+
+        byte maximumSequence = zone == FlatPromptFieldZoneV1.MonsterZone
+            ? (byte)6
+            : (byte)7;
+        if (sequence > maximumSequence)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sequence));
+        }
+
+        AbsolutePlayer = absolutePlayer;
+        Zone = zone;
+        Sequence = sequence;
+    }
+
+    public byte AbsolutePlayer { get; }
+
+    public FlatPromptFieldZoneV1 Zone { get; }
+
+    public byte Sequence { get; }
+}
+
+public abstract record FlatPromptPlaceSelectionPublicContextBaseV1
+    : FlatPromptPublicContextV1
+{
+    private readonly FlatPromptFieldPlaceV1[] eligiblePlaces;
+    private readonly ReadOnlyCollection<FlatPromptFieldPlaceV1>
+        eligiblePlacesView;
+
+    protected FlatPromptPlaceSelectionPublicContextBaseV1(
+        FlatPromptFamilyV1 family,
+        byte actingPlayer,
+        byte requiredPlaceCount,
+        IEnumerable<FlatPromptFieldPlaceV1> eligiblePlaces)
+        : base(family, actingPlayer, FlatPromptContractIdV1.Combinatorial)
+    {
+        ArgumentNullException.ThrowIfNull(eligiblePlaces);
+        this.eligiblePlaces = eligiblePlaces.ToArray();
+        if (this.eligiblePlaces.Length == 0)
+        {
+            throw new ArgumentException(
+                "Eligible place list must not be empty.",
+                nameof(eligiblePlaces));
+        }
+
+        eligiblePlacesView = Array.AsReadOnly(this.eligiblePlaces);
+        RequiredPlaceCount = requiredPlaceCount;
+    }
+
+    public byte RequiredPlaceCount { get; }
+
+    public IReadOnlyList<FlatPromptFieldPlaceV1> EligiblePlaces =>
+        eligiblePlacesView;
+}
+
+public sealed record FlatPromptPlaceSelectionPublicContextV1
+    : FlatPromptPlaceSelectionPublicContextBaseV1
+{
+    internal FlatPromptPlaceSelectionPublicContextV1(
+        byte actingPlayer,
+        byte requiredPlaceCount,
+        IEnumerable<FlatPromptFieldPlaceV1> eligiblePlaces)
+        : base(
+            FlatPromptFamilyValueV1.MsgSelectPlace,
+            actingPlayer,
+            requiredPlaceCount,
+            eligiblePlaces)
+    {
+    }
+}
+
+public sealed record FlatPromptDisfieldSelectionPublicContextV1
+    : FlatPromptPlaceSelectionPublicContextBaseV1
+{
+    internal FlatPromptDisfieldSelectionPublicContextV1(
+        byte actingPlayer,
+        byte requiredPlaceCount,
+        IEnumerable<FlatPromptFieldPlaceV1> eligiblePlaces)
+        : base(
+            FlatPromptFamilyValueV1.MsgSelectDisfield,
+            actingPlayer,
+            requiredPlaceCount,
+            eligiblePlaces)
+    {
+    }
+}
+
+public abstract record FlatPromptMaskSelectionPublicContextBaseV1
+    : FlatPromptPublicContextV1
+{
+    protected FlatPromptMaskSelectionPublicContextBaseV1(
+        FlatPromptFamilyV1 family,
+        byte actingPlayer,
+        byte requiredBitCount)
+        : base(family, actingPlayer, FlatPromptContractIdV1.Combinatorial)
+    {
+        RequiredBitCount = requiredBitCount;
+    }
+
+    public byte RequiredBitCount { get; }
+}
+
+public sealed record FlatPromptRaceSelectionPublicContextV1
+    : FlatPromptMaskSelectionPublicContextBaseV1
+{
+    internal FlatPromptRaceSelectionPublicContextV1(
+        byte actingPlayer,
+        byte requiredBitCount,
+        ulong availableRaceMask)
+        : base(
+            FlatPromptFamilyValueV1.MsgAnnounceRace,
+            actingPlayer,
+            requiredBitCount)
+    {
+        AvailableRaceMask = availableRaceMask;
+    }
+
+    public ulong AvailableRaceMask { get; }
+}
+
+public sealed record FlatPromptAttributeSelectionPublicContextV1
+    : FlatPromptMaskSelectionPublicContextBaseV1
+{
+    internal FlatPromptAttributeSelectionPublicContextV1(
+        byte actingPlayer,
+        byte requiredBitCount,
+        uint availableAttributeMask)
+        : base(
+            FlatPromptFamilyValueV1.MsgAnnounceAttrib,
+            actingPlayer,
+            requiredBitCount)
+    {
+        AvailableAttributeMask = availableAttributeMask;
+    }
+
+    public uint AvailableAttributeMask { get; }
 }
 
 public abstract record FlatPublicCandidateDescriptorV1
@@ -1222,7 +1410,69 @@ internal sealed record FlatPromptAnnounceNumberWireDraftV1
     internal IReadOnlyList<ulong> Values => valuesView;
 }
 
+internal sealed record FlatPromptPlaceWireDraftV1
+    : FlatPromptWireDraftV1
+{
+    internal FlatPromptPlaceWireDraftV1(
+        FlatPromptFamilyV1 family,
+        byte actingPlayer,
+        byte requiredPlaceCount,
+        uint fieldFlag)
+        : base(family)
+    {
+        if (family is not
+            (FlatPromptFamilyValueV1.MsgSelectPlace or
+             FlatPromptFamilyValueV1.MsgSelectDisfield))
+        {
+            throw new ArgumentOutOfRangeException(nameof(family));
+        }
+
+        ActingPlayer = actingPlayer;
+        RequiredPlaceCount = requiredPlaceCount;
+        FieldFlag = fieldFlag;
+    }
+
+    internal byte ActingPlayer { get; }
+
+    internal byte RequiredPlaceCount { get; }
+
+    internal uint FieldFlag { get; }
+}
+
+internal sealed record FlatPromptRaceWireDraftV1(
+    byte ActingPlayer,
+    byte RequiredBitCount,
+    ulong AvailableMask)
+    : FlatPromptWireDraftV1(FlatPromptFamilyValueV1.MsgAnnounceRace);
+
+internal sealed record FlatPromptAttributeWireDraftV1(
+    byte ActingPlayer,
+    byte RequiredBitCount,
+    uint AvailableMask)
+    : FlatPromptWireDraftV1(FlatPromptFamilyValueV1.MsgAnnounceAttrib);
+
+internal abstract class FlatPromptContinuationStateV1
+{
+    protected FlatPromptContinuationStateV1(
+        FlatPromptFamilyV1 family,
+        byte actingPlayer,
+        int step)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(step);
+        Family = family;
+        ActingPlayer = actingPlayer;
+        Step = step;
+    }
+
+    internal FlatPromptFamilyV1 Family { get; }
+
+    internal byte ActingPlayer { get; }
+
+    internal int Step { get; }
+}
+
 internal sealed class FlatPromptCardContinuationStateV1
+    : FlatPromptContinuationStateV1
 {
     private readonly FlatPublicCandidateDescriptorV1[] sourceCandidates;
     private readonly ReadOnlyCollection<FlatPublicCandidateDescriptorV1>
@@ -1242,6 +1492,7 @@ internal sealed class FlatPromptCardContinuationStateV1
         IEnumerable<byte> releaseValues,
         IEnumerable<int> selectedOrdinals,
         int step)
+        : base(family, actingPlayer, step)
     {
         if (family is not
             (FlatPromptFamilyValueV1.MsgSelectCard or
@@ -1253,7 +1504,6 @@ internal sealed class FlatPromptCardContinuationStateV1
         ArgumentNullException.ThrowIfNull(sourceCandidates);
         ArgumentNullException.ThrowIfNull(releaseValues);
         ArgumentNullException.ThrowIfNull(selectedOrdinals);
-        ArgumentOutOfRangeException.ThrowIfNegative(step);
 
         this.sourceCandidates = sourceCandidates.ToArray();
         this.releaseValues = releaseValues.ToArray();
@@ -1268,28 +1518,19 @@ internal sealed class FlatPromptCardContinuationStateV1
                 "Continuation state vectors must be complete and aligned.");
         }
 
-        Family = family;
-        ActingPlayer = actingPlayer;
         Minimum = minimum;
         Maximum = maximum;
         Cancelable = cancelable;
-        Step = step;
         sourceCandidatesView = Array.AsReadOnly(this.sourceCandidates);
         releaseValuesView = Array.AsReadOnly(this.releaseValues);
         selectedOrdinalsView = Array.AsReadOnly(this.selectedOrdinals);
     }
-
-    internal FlatPromptFamilyV1 Family { get; }
-
-    internal byte ActingPlayer { get; }
 
     internal uint Minimum { get; }
 
     internal uint Maximum { get; }
 
     internal bool Cancelable { get; }
-
-    internal int Step { get; }
 
     internal IReadOnlyList<FlatPublicCandidateDescriptorV1> SourceCandidates =>
         sourceCandidatesView;
@@ -1323,6 +1564,336 @@ internal sealed class FlatPromptCardContinuationStateV1
             releaseValues,
             selectedOrdinals.Append(ordinal),
             checked(Step + 1));
+
+    private static bool AreStrictlyIncreasing(int[] values)
+    {
+        for (int index = 1; index < values.Length; index++)
+        {
+            if (values[index - 1] >= values[index])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+internal readonly record struct FlatPromptPlaceContinuationEntryV1(
+    FlatPromptFieldPlacePublicCandidateV1 Candidate,
+    int CanonicalIndex);
+
+internal sealed class FlatPromptPlaceContinuationStateV1
+    : FlatPromptContinuationStateV1
+{
+    private readonly FlatPromptPlaceContinuationEntryV1[] sourcePlaces;
+    private readonly ReadOnlyCollection<FlatPromptPlaceContinuationEntryV1>
+        sourcePlacesView;
+    private readonly int[] selectedEntryOrdinals;
+    private readonly ReadOnlyCollection<int> selectedEntryOrdinalsView;
+
+    internal FlatPromptPlaceContinuationStateV1(
+        FlatPromptFamilyV1 family,
+        byte actingPlayer,
+        byte requiredPlaceCount,
+        IEnumerable<FlatPromptPlaceContinuationEntryV1> sourcePlaces,
+        IEnumerable<int> selectedEntryOrdinals,
+        int step)
+        : base(family, actingPlayer, step)
+    {
+        if (family is not
+            (FlatPromptFamilyValueV1.MsgSelectPlace or
+             FlatPromptFamilyValueV1.MsgSelectDisfield))
+        {
+            throw new ArgumentOutOfRangeException(nameof(family));
+        }
+
+        ArgumentNullException.ThrowIfNull(sourcePlaces);
+        ArgumentNullException.ThrowIfNull(selectedEntryOrdinals);
+        this.sourcePlaces = sourcePlaces.ToArray();
+        this.selectedEntryOrdinals = selectedEntryOrdinals.ToArray();
+        if (requiredPlaceCount == 0 ||
+            this.sourcePlaces.Length == 0 ||
+            this.selectedEntryOrdinals.Length > requiredPlaceCount ||
+            !AreStrictlyIncreasing(this.sourcePlaces.Select(
+                entry => entry.CanonicalIndex).ToArray()) ||
+            !AreStrictlyIncreasing(this.selectedEntryOrdinals) ||
+            this.sourcePlaces.Any(entry =>
+                entry.Candidate is null ||
+                entry.Candidate.ChoiceKind != FlatPromptChoiceKindV1.Pick ||
+                entry.CanonicalIndex < 0 ||
+                entry.CanonicalIndex > 31 ||
+                !TryGetCanonicalIndex(
+                    actingPlayer,
+                    entry.Candidate,
+                    out int expectedCanonicalIndex) ||
+                expectedCanonicalIndex != entry.CanonicalIndex) ||
+            this.selectedEntryOrdinals.Any(ordinal =>
+                ordinal < 0 || ordinal >= this.sourcePlaces.Length))
+        {
+            throw new ArgumentException(
+                "Place continuation state vectors must be valid and aligned.");
+        }
+
+        RequiredPlaceCount = requiredPlaceCount;
+        sourcePlacesView = Array.AsReadOnly(this.sourcePlaces);
+        selectedEntryOrdinalsView = Array.AsReadOnly(
+            this.selectedEntryOrdinals);
+    }
+
+    internal byte RequiredPlaceCount { get; }
+
+    internal IReadOnlyList<FlatPromptPlaceContinuationEntryV1> SourcePlaces =>
+        sourcePlacesView;
+
+    internal IReadOnlyList<int> SelectedEntryOrdinals =>
+        selectedEntryOrdinalsView;
+
+    internal int LastSelectedEntryOrdinal =>
+        selectedEntryOrdinals.Length == 0
+            ? -1
+            : selectedEntryOrdinals[^1];
+
+    internal int LastSelectedCanonicalIndex =>
+        LastSelectedEntryOrdinal < 0
+            ? -1
+            : sourcePlaces[LastSelectedEntryOrdinal].CanonicalIndex;
+
+    internal bool IsTerminal =>
+        selectedEntryOrdinals.Length == RequiredPlaceCount;
+
+    internal bool IsPickLegal(int sourceOrdinal)
+    {
+        if (sourceOrdinal < 0 ||
+            sourceOrdinal >= sourcePlaces.Length ||
+            sourceOrdinal <= LastSelectedEntryOrdinal)
+        {
+            return false;
+        }
+
+        int afterCount = selectedEntryOrdinals.Length + 1;
+        if (afterCount > RequiredPlaceCount)
+        {
+            return false;
+        }
+
+        int canonicalIndex = sourcePlaces[sourceOrdinal].CanonicalIndex;
+        int remaining = RequiredPlaceCount - afterCount;
+        int higherEligibleCount = sourcePlaces.Count(entry =>
+            entry.CanonicalIndex > canonicalIndex);
+        return higherEligibleCount >= remaining;
+    }
+
+    internal bool TryGetSourceOrdinal(
+        string key,
+        out int sourceOrdinal)
+    {
+        sourceOrdinal = -1;
+        if (string.IsNullOrEmpty(key))
+        {
+            return false;
+        }
+
+        for (int index = 0; index < sourcePlaces.Length; index++)
+        {
+            if (string.Equals(
+                    sourcePlaces[index].Candidate.I4LocalCandidateKey,
+                    key,
+                    StringComparison.Ordinal))
+            {
+                sourceOrdinal = index;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    internal FlatPromptPlaceContinuationStateV1 WithSelected(
+        int sourceOrdinal) =>
+        new(
+            Family,
+            ActingPlayer,
+            RequiredPlaceCount,
+            sourcePlaces,
+            selectedEntryOrdinals.Append(sourceOrdinal),
+            checked(Step + 1));
+
+    internal FlatPromptFieldPlaceV1[] CopySelectedPlaces() =>
+        selectedEntryOrdinals
+            .Select(ordinal =>
+            {
+                FlatPromptFieldPlacePublicCandidateV1 candidate =
+                    sourcePlaces[ordinal].Candidate;
+                return new FlatPromptFieldPlaceV1(
+                    candidate.AbsolutePlayer,
+                    candidate.Zone,
+                    candidate.Sequence);
+            })
+            .ToArray();
+
+    private static bool AreStrictlyIncreasing(int[] values)
+    {
+        for (int index = 1; index < values.Length; index++)
+        {
+            if (values[index - 1] >= values[index])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryGetCanonicalIndex(
+        byte actingPlayer,
+        FlatPromptFieldPlacePublicCandidateV1 candidate,
+        out int canonicalIndex)
+    {
+        canonicalIndex = -1;
+        int groupOffset;
+        if (candidate.Zone == FlatPromptFieldZoneV1.MonsterZone)
+        {
+            groupOffset = candidate.AbsolutePlayer == actingPlayer ? 0 : 16;
+            if (candidate.Sequence > 6)
+            {
+                return false;
+            }
+        }
+        else if (candidate.Zone == FlatPromptFieldZoneV1.SpellTrapZone)
+        {
+            groupOffset = candidate.AbsolutePlayer == actingPlayer ? 8 : 24;
+            if (candidate.Sequence > 7)
+            {
+                return false;
+            }
+        }
+        else
+        {
+            return false;
+        }
+
+        if (candidate.AbsolutePlayer > 1 ||
+            candidate.AbsolutePlayer != actingPlayer &&
+            candidate.AbsolutePlayer != (byte)(1 - actingPlayer))
+        {
+            return false;
+        }
+
+        canonicalIndex = groupOffset + candidate.Sequence;
+        return canonicalIndex is not 7 and not 23;
+    }
+}
+
+internal sealed class FlatPromptMaskContinuationStateV1
+    : FlatPromptContinuationStateV1
+{
+    private readonly int[] availableBitIndices;
+    private readonly ReadOnlyCollection<int> availableBitIndicesView;
+    private readonly int[] selectedBitIndices;
+    private readonly ReadOnlyCollection<int> selectedBitIndicesView;
+
+    internal FlatPromptMaskContinuationStateV1(
+        FlatPromptFamilyV1 family,
+        byte actingPlayer,
+        byte requiredBitCount,
+        ulong availableMask,
+        IEnumerable<int> availableBitIndices,
+        IEnumerable<int> selectedBitIndices,
+        int step)
+        : base(family, actingPlayer, step)
+    {
+        if (family is not
+            (FlatPromptFamilyValueV1.MsgAnnounceRace or
+             FlatPromptFamilyValueV1.MsgAnnounceAttrib))
+        {
+            throw new ArgumentOutOfRangeException(nameof(family));
+        }
+
+        ArgumentNullException.ThrowIfNull(availableBitIndices);
+        ArgumentNullException.ThrowIfNull(selectedBitIndices);
+        this.availableBitIndices = availableBitIndices.ToArray();
+        this.selectedBitIndices = selectedBitIndices.ToArray();
+        ulong allowedMask = family == FlatPromptFamilyValueV1.MsgAnnounceRace
+            ? FlatPromptMaskValueV1.RaceAllowedMask
+            : FlatPromptMaskValueV1.AttributeAllowedMask;
+        if (requiredBitCount == 0 ||
+            availableMask == 0 ||
+            (availableMask & ~allowedMask) != 0 ||
+            this.availableBitIndices.Length !=
+                BitOperations.PopCount(availableMask) ||
+            !AreStrictlyIncreasing(this.availableBitIndices) ||
+            this.availableBitIndices.Any(bitIndex =>
+                bitIndex < 0 ||
+                bitIndex > 63 ||
+                !IsBitInMask(availableMask, bitIndex)) ||
+            this.selectedBitIndices.Length > requiredBitCount ||
+            !AreStrictlyIncreasing(this.selectedBitIndices) ||
+            this.selectedBitIndices.Any(bitIndex =>
+                !this.availableBitIndices.Contains(bitIndex)))
+        {
+            throw new ArgumentException(
+                "Mask continuation state vectors must be valid and aligned.");
+        }
+
+        RequiredBitCount = requiredBitCount;
+        AvailableMask = availableMask;
+        availableBitIndicesView = Array.AsReadOnly(this.availableBitIndices);
+        selectedBitIndicesView = Array.AsReadOnly(this.selectedBitIndices);
+    }
+
+    internal byte RequiredBitCount { get; }
+
+    internal ulong AvailableMask { get; }
+
+    internal IReadOnlyList<int> AvailableBitIndices =>
+        availableBitIndicesView;
+
+    internal IReadOnlyList<int> SelectedBitIndices =>
+        selectedBitIndicesView;
+
+    internal int LastSelectedBitIndex =>
+        selectedBitIndices.Length == 0 ? -1 : selectedBitIndices[^1];
+
+    internal bool IsTerminal =>
+        selectedBitIndices.Length == RequiredBitCount;
+
+    internal ulong SelectedMask => selectedBitIndices.Aggregate(
+        0UL,
+        (mask, bitIndex) => mask | (1UL << bitIndex));
+
+    internal bool IsPickLegal(int bitIndex)
+    {
+        if (!availableBitIndices.Contains(bitIndex) ||
+            bitIndex <= LastSelectedBitIndex)
+        {
+            return false;
+        }
+
+        int afterCount = selectedBitIndices.Length + 1;
+        if (afterCount > RequiredBitCount)
+        {
+            return false;
+        }
+
+        int remaining = RequiredBitCount - afterCount;
+        int higherAvailableCount = availableBitIndices.Count(
+            available => available > bitIndex);
+        return higherAvailableCount >= remaining;
+    }
+
+    internal FlatPromptMaskContinuationStateV1 WithSelected(int bitIndex) =>
+        new(
+            Family,
+            ActingPlayer,
+            RequiredBitCount,
+            AvailableMask,
+            availableBitIndices,
+            selectedBitIndices.Append(bitIndex),
+            checked(Step + 1));
+
+    private static bool IsBitInMask(ulong mask, int bitIndex) =>
+        (mask & (1UL << bitIndex)) != 0;
 
     private static bool AreStrictlyIncreasing(int[] values)
     {
@@ -1705,6 +2276,46 @@ public sealed record FlatPromptAnnounceNumberPublicCandidateV1
     public ulong NumberValue { get; }
 }
 
+public sealed record FlatPromptFieldPlacePublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatPromptFieldPlacePublicCandidateV1(
+        string i4LocalCandidateKey,
+        byte absolutePlayer,
+        FlatPromptFieldZoneV1 zone,
+        byte sequence)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.Pick)
+    {
+        AbsolutePlayer = absolutePlayer;
+        Zone = zone;
+        Sequence = sequence;
+    }
+
+    public byte AbsolutePlayer { get; }
+
+    public FlatPromptFieldZoneV1 Zone { get; }
+
+    public byte Sequence { get; }
+}
+
+public sealed record FlatPromptMaskBitPublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatPromptMaskBitPublicCandidateV1(
+        string i4LocalCandidateKey,
+        int bitIndex,
+        ulong bitValue)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.Pick)
+    {
+        BitIndex = bitIndex;
+        BitValue = bitValue;
+    }
+
+    public int BitIndex { get; }
+
+    public ulong BitValue { get; }
+}
+
 public sealed class FlatPromptProjectionResultV1
 {
     private FlatPromptProjectionResultV1(
@@ -1758,7 +2369,7 @@ internal sealed class FlatPromptProjectionDraftV1
         IEnumerable<FlatPublicCandidateDescriptorV1> candidates,
         IEnumerable<string> localKeys,
         IEnumerable<int> responses,
-        FlatPromptCardContinuationStateV1? continuationState = null,
+        FlatPromptContinuationStateV1? continuationState = null,
         IEnumerable<byte[]>? responseBodies = null)
     {
         Context = context ?? throw new ArgumentNullException(nameof(context));
@@ -1800,7 +2411,7 @@ internal sealed class FlatPromptProjectionDraftV1
     internal byte[][]? CopyResponseBodies() =>
         responseBodies?.Select(body => body.ToArray()).ToArray();
 
-    internal FlatPromptCardContinuationStateV1? ContinuationState { get; }
+    internal FlatPromptContinuationStateV1? ContinuationState { get; }
 }
 
 internal abstract record FlatPromptWireDraftV1(
@@ -2041,7 +2652,7 @@ internal sealed class CurrentFlatPromptBindingV1
         string[] localKeys,
         Dictionary<string, int> responseByKey,
         byte[][]? responseBodies,
-        FlatPromptCardContinuationStateV1? continuationState)
+        FlatPromptContinuationStateV1? continuationState)
     {
         PromptInstanceOrdinal = promptInstanceOrdinal;
         Family = family;
@@ -2073,7 +2684,7 @@ internal sealed class CurrentFlatPromptBindingV1
 
     internal int ContinuationStep { get; }
 
-    internal FlatPromptCardContinuationStateV1? ContinuationState { get; }
+    internal FlatPromptContinuationStateV1? ContinuationState { get; }
 
     internal IReadOnlyList<FlatPublicCandidateDescriptorV1> Candidates =>
         candidatesView;
@@ -2140,7 +2751,7 @@ internal sealed class CurrentFlatPromptBindingV1
         out CurrentFlatPromptBindingV1? binding,
         out FlatPromptErrorCodeV1 error,
         byte[][]? responseBodies = null,
-        FlatPromptCardContinuationStateV1? continuationState = null)
+        FlatPromptContinuationStateV1? continuationState = null)
     {
         binding = null;
         error = FlatPromptErrorCodeV1.None;
@@ -2153,8 +2764,10 @@ internal sealed class CurrentFlatPromptBindingV1
             (responseBodies is not null &&
              responseBodies.Any(body => body is null || body.Length == 0)) ||
             (continuationState is not null &&
-             (continuationState.Family != family ||
-              continuationState.SourceCandidates.Count == 0)))
+             !IsContinuationStateCompatible(
+                 family,
+                 candidates,
+                 continuationState)))
         {
             error = FlatPromptErrorCodeV1.InvalidResponseBinding;
             return false;
@@ -2217,6 +2830,57 @@ internal sealed class CurrentFlatPromptBindingV1
             responseBodies,
             continuationState);
         return true;
+    }
+
+    private static bool IsContinuationStateCompatible(
+        FlatPromptFamilyV1 family,
+        FlatPublicCandidateDescriptorV1[] candidates,
+        FlatPromptContinuationStateV1 state)
+    {
+        switch (state)
+        {
+            case FlatPromptCardContinuationStateV1 card:
+                return card.Family == family &&
+                    family is
+                    (FlatPromptFamilyValueV1.MsgSelectCard or
+                     FlatPromptFamilyValueV1.MsgSelectTribute) &&
+                    card.SourceCandidates.Count > 0;
+
+            case FlatPromptPlaceContinuationStateV1 place:
+                if (place.Family != family ||
+                    (family is not
+                        (FlatPromptFamilyValueV1.MsgSelectPlace or
+                         FlatPromptFamilyValueV1.MsgSelectDisfield)) ||
+                    place.SourcePlaces.Count == 0)
+                {
+                    return false;
+                }
+
+                return candidates.All(candidate =>
+                    candidate is FlatPromptFieldPlacePublicCandidateV1
+                        placeCandidate &&
+                    place.TryGetSourceOrdinal(
+                        placeCandidate.I4LocalCandidateKey,
+                        out int sourceOrdinal) &&
+                    place.IsPickLegal(sourceOrdinal));
+
+            case FlatPromptMaskContinuationStateV1 mask:
+                if (mask.Family != family ||
+                    (family is not
+                        (FlatPromptFamilyValueV1.MsgAnnounceRace or
+                         FlatPromptFamilyValueV1.MsgAnnounceAttrib)) ||
+                    mask.AvailableBitIndices.Count == 0)
+                {
+                    return false;
+                }
+
+                return candidates.All(candidate =>
+                    candidate is FlatPromptMaskBitPublicCandidateV1 bit &&
+                    mask.IsPickLegal(bit.BitIndex));
+
+            default:
+                return false;
+        }
     }
 
     private static bool TryValidateResponseBody(
@@ -2429,10 +3093,86 @@ internal sealed class CurrentFlatPromptBindingV1
                 expectedResponse = number.SourceOrdinal;
                 return true;
 
+            case FlatPromptFamilyValueV1.MsgSelectPlace:
+            case FlatPromptFamilyValueV1.MsgSelectDisfield:
+                return TryGetPlaceBinding(
+                    candidate,
+                    family,
+                    out expectedKey,
+                    out expectedResponse);
+
+            case FlatPromptFamilyValueV1.MsgAnnounceRace:
+            case FlatPromptFamilyValueV1.MsgAnnounceAttrib:
+                return TryGetMaskBinding(
+                    candidate,
+                    family,
+                    out expectedKey,
+                    out expectedResponse);
+
             default:
                 return false;
         }
     }
+
+    private static bool TryGetPlaceBinding(
+        FlatPublicCandidateDescriptorV1 candidate,
+        FlatPromptFamilyV1 family,
+        out string expectedKey,
+        out int expectedResponse)
+    {
+        expectedKey = string.Empty;
+        expectedResponse = default;
+        if (candidate.GetType() !=
+                typeof(FlatPromptFieldPlacePublicCandidateV1) ||
+            candidate is not FlatPromptFieldPlacePublicCandidateV1 place ||
+            place.ChoiceKind != FlatPromptChoiceKindV1.Pick ||
+            !FlatPromptKeyV1.TryCreateFieldPlace(
+                family,
+                place.AbsolutePlayer,
+                place.Zone,
+                place.Sequence,
+                out expectedKey))
+        {
+            return false;
+        }
+
+        expectedResponse = 0;
+        return true;
+    }
+
+    private static bool TryGetMaskBinding(
+        FlatPublicCandidateDescriptorV1 candidate,
+        FlatPromptFamilyV1 family,
+        out string expectedKey,
+        out int expectedResponse)
+    {
+        expectedKey = string.Empty;
+        expectedResponse = default;
+        if (candidate.GetType() !=
+                typeof(FlatPromptMaskBitPublicCandidateV1) ||
+            candidate is not FlatPromptMaskBitPublicCandidateV1 bit ||
+            bit.ChoiceKind != FlatPromptChoiceKindV1.Pick ||
+            !IsAllowedMaskBit(family, bit.BitIndex) ||
+            bit.BitValue != (1UL << bit.BitIndex) ||
+            !FlatPromptKeyV1.TryCreateMaskBit(
+                family,
+                bit.BitIndex,
+                out expectedKey))
+        {
+            return false;
+        }
+
+        expectedResponse = 0;
+        return true;
+    }
+
+    private static bool IsAllowedMaskBit(
+        FlatPromptFamilyV1 family,
+        int bitIndex) =>
+        family == FlatPromptFamilyValueV1.MsgAnnounceRace
+            ? FlatPromptMaskValueV1.IsRaceBit(bitIndex)
+            : family == FlatPromptFamilyValueV1.MsgAnnounceAttrib &&
+              FlatPromptMaskValueV1.IsAttributeBit(bitIndex);
 
     private static bool TryGetCardContinuationBinding(
         FlatPublicCandidateDescriptorV1 candidate,
@@ -3019,6 +3759,14 @@ internal static class FlatPromptKeyV1
         "MSG_SELECT_UNSELECT_CARD:FINISH_OR_CANCEL";
     internal const string AnnounceNumberOptionPrefix =
         "MSG_ANNOUNCE_NUMBER:OPTION:";
+    internal const string SelectPlacePickPrefix =
+        "MSG_SELECT_PLACE:PICK:";
+    internal const string SelectDisfieldPickPrefix =
+        "MSG_SELECT_DISFIELD:PICK:";
+    internal const string AnnounceRacePickPrefix =
+        "MSG_ANNOUNCE_RACE:PICK:";
+    internal const string AnnounceAttribPickPrefix =
+        "MSG_ANNOUNCE_ATTRIB:PICK:";
     internal static bool TryCreateOption(
         int sourceOrdinal,
         out string key)
@@ -3082,6 +3830,86 @@ internal static class FlatPromptKeyV1
             "MSG_SELECT_IDLECMD:ACTIVATE:",
             sourceOrdinal,
             out key);
+
+    internal static bool TryCreateFieldPlace(
+        FlatPromptFamilyV1 family,
+        byte absolutePlayer,
+        FlatPromptFieldZoneV1 zone,
+        byte sequence,
+        out string key)
+    {
+        key = string.Empty;
+        string prefix = family == FlatPromptFamilyValueV1.MsgSelectPlace
+            ? SelectPlacePickPrefix
+            : family == FlatPromptFamilyValueV1.MsgSelectDisfield
+                ? SelectDisfieldPickPrefix
+                : string.Empty;
+        if (prefix.Length == 0 ||
+            absolutePlayer > 1 ||
+            zone is not
+                (FlatPromptFieldZoneV1.MonsterZone or
+                 FlatPromptFieldZoneV1.SpellTrapZone) ||
+            sequence >
+                (zone == FlatPromptFieldZoneV1.MonsterZone ? 6 : 7))
+        {
+            return false;
+        }
+
+        string playerDigits = absolutePlayer.ToString(
+            CultureInfo.InvariantCulture);
+        string sequenceDigits = sequence.ToString(
+            CultureInfo.InvariantCulture);
+        string zoneToken = zone == FlatPromptFieldZoneV1.MonsterZone
+            ? "MONSTER_ZONE"
+            : "SPELL_TRAP_ZONE";
+        if (!IsCanonicalAsciiDecimal(playerDigits) ||
+            !IsCanonicalAsciiDecimal(sequenceDigits))
+        {
+            return false;
+        }
+
+        key = prefix + playerDigits + ":" + zoneToken + ":" +
+            sequenceDigits;
+        return true;
+    }
+
+    internal static bool TryCreateMaskBit(
+        FlatPromptFamilyV1 family,
+        int bitIndex,
+        out string key)
+    {
+        key = string.Empty;
+        string prefix;
+        bool admitted;
+        if (family == FlatPromptFamilyValueV1.MsgAnnounceRace)
+        {
+            prefix = AnnounceRacePickPrefix;
+            admitted = FlatPromptMaskValueV1.IsRaceBit(bitIndex);
+        }
+        else if (family == FlatPromptFamilyValueV1.MsgAnnounceAttrib)
+        {
+            prefix = AnnounceAttribPickPrefix;
+            admitted = FlatPromptMaskValueV1.IsAttributeBit(bitIndex);
+        }
+        else
+        {
+            return false;
+        }
+
+        if (!admitted || bitIndex < 0 || bitIndex > 63)
+        {
+            return false;
+        }
+
+        string digits = bitIndex.ToString(CultureInfo.InvariantCulture);
+        if (!IsCanonicalAsciiDecimal(digits))
+        {
+            return false;
+        }
+
+        key = prefix + digits;
+        return true;
+    }
 
     internal static bool TryCreateOrdinalKey(
         string prefix,

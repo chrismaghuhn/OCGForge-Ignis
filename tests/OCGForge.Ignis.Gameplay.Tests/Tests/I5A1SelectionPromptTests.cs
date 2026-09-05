@@ -1519,7 +1519,10 @@ internal static class I5A1SelectionPromptTests
             new byte[] { 23 },
             FlatPromptErrorCodeV1.UnsupportedPromptFamily);
 
-        HashSet<byte> supported = new() { 15, 20, 26, 143 };
+        HashSet<byte> supported = new()
+        {
+            15, 20, 18, 24, 22, 25, 21, 140, 141, 143, 26
+        };
         for (int rawId = byte.MinValue; rawId <= byte.MaxValue; rawId++)
         {
             byte id = (byte)rawId;

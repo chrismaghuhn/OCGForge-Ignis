@@ -290,7 +290,12 @@ var tests = new (string Name, Action Body)[]
     ("I5A1 SELECT_TRIBUTE",
         I5A1SelectionPromptTests.TestSelectTribute),
     ("I5A1 SELECT_UNSELECT_CARD and ANNOUNCE_NUMBER",
-        I5A1SelectionPromptTests.TestSelectUnselectAndAnnounceNumber)
+        I5A1SelectionPromptTests.TestSelectUnselectAndAnnounceNumber),
+    ("I5A2 SELECT_PLACE and SELECT_DISFIELD",
+        I5A2PlaceAndMaskPromptTests.TestPlaceAndDisfield),
+
+    ("I5A2 ANNOUNCE_RACE and ANNOUNCE_ATTRIB",
+        I5A2PlaceAndMaskPromptTests.TestRaceAndAttribute)
 };
 
 int passed = 0;
