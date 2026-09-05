@@ -1,6 +1,6 @@
 # OCGForge-Ignis Combinatorial Prompt Continuation V1
 
-Status: I5A0 eleven-family contract-freeze draft; `SELECT_SUM` is intentionally
+Status: I5A0 eleven-family contract-freeze accepted; `SELECT_SUM` is intentionally
 fail-closed unsupported for V1 after the exact research blocker was confirmed.
 This document is not an implementation authorization and is not an accepted
 replacement for the I4 flat-prompt contract.
@@ -62,7 +62,7 @@ No I5A0 value is an OCGForge `public_action_key`, a model input, a network
 packet, a socket identity, or a continuation implementation. The final
 contract status is:
 
-    I5A0_CONTRACT_FREEZE=READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES
+    I5A0_CONTRACT_FREEZE=YES_FOR_11_FAMILIES
     SELECT_SUM_CONTRACT=FAIL_CLOSED_UNSUPPORTED_V1
     I5_IMPLEMENTATION_AUTHORIZED=NO
 
@@ -814,15 +814,15 @@ The intended final matrix is machine-readable in meaning:
     MODEL_INPUT_AUTHORITY_ACQUIRED=NO
     NETWORK_SEND_AUTHORITY_ACQUIRED=NO
 
-The twelve-message audit and the eleven-family contract are ready for
-independent review, but this commit does not claim that review's final pass:
+The twelve-message audit and the eleven-family contract passed independent
+review. The accepted final status is:
 
-    I5A0_CONTRACT_FREEZE=READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES
+    I5A0_CONTRACT_FREEZE=YES_FOR_11_FAMILIES
     SELECT_SUM_EXACT_SEMANTICS=NOT_APPLICABLE_DUE_FAIL_CLOSED
     SELECT_SUM_EXACT_ORACLE_CONTRACT=NOT_APPLICABLE_DUE_FAIL_CLOSED
     CONTRACT_FROZEN_FAMILY_COUNT=11
     ANNOUNCE_CARD_SUPPORT=FAIL_CLOSED_UNSUPPORTED
-    I5A0_CONTRACT_FREEZE_FINAL_PASS=NO
+    I5A0_CONTRACT_FREEZE_FINAL_PASS=YES
     I5_IMPLEMENTED=NO
     I5_FINAL=NO
 
@@ -830,6 +830,6 @@ The following are insufficient even if green: compilation; a single family;
 the pre-I5 108/108 aggregate; one deterministic process; fixture existence;
 successful parsing; N=1 output; no crash; PR mergeability; or hosted CI with no
 I5-specific contract/domain evidence for all eleven admitted families and the
-explicit SELECT_SUM unsupported boundary is required before I5A0 can receive
-final pass. A future re-admission of SELECT_SUM would additionally require a
-new source-backed exact-oracle review; that work is not part of this contract.
+explicit SELECT_SUM unsupported boundary. A future re-admission of SELECT_SUM
+would additionally require a new source-backed exact-oracle review; that work
+is not part of this contract.

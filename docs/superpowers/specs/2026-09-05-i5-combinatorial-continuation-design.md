@@ -1,8 +1,8 @@
 # OCGForge-Ignis I5A0 — Combinatorial Prompt / Continuation Design
 
-Status: DESIGN AND CONTRACT-FREEZE AUDIT ONLY. `SELECT_SUM` is intentionally
-fail-closed unsupported for V1; the eleven-family contract is ready for
-independent review and no I5 runtime implementation is authorized.
+Status: DESIGN AND CONTRACT-FREEZE AUDIT ACCEPTED. `SELECT_SUM` is intentionally
+fail-closed unsupported for V1; the eleven-family contract passed independent
+review and no I5 runtime implementation is authorized.
 
 Date: 2026-09-05
 
@@ -24,7 +24,7 @@ The research result is:
     I5_IMPLEMENTATION_AUTHORIZED=NO
     SELECT_SUM_WIRE_GRAMMAR=RESOLVED
     SELECT_SUM_SUPPORT=FAIL_CLOSED_UNSUPPORTED_V1
-    I5A0_CONTRACT_FREEZE=READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES
+    I5A0_CONTRACT_FREEZE=YES_FOR_11_FAMILIES
 
 Eleven families have a closed protocol/domain design in the companion
 contract draft. `SELECT_SUM` has a researched wire grammar but is deliberately
@@ -454,16 +454,16 @@ claim of success:
     MODEL_INPUT_AUTHORITY_ACQUIRED=NO
     NETWORK_SEND_AUTHORITY_ACQUIRED=NO
 
-This I5A0 slice is ready for independent review of the eleven-family freeze;
-this agent does not claim that final pass:
+This I5A0 slice passed independent review of the eleven-family freeze. The
+accepted final status is:
 
     BLOCKERS=0
     MAJORS=0
     MINORS=0
     NOTES=4
     CONTRACT_FROZEN_FAMILY_COUNT=11
-    I5A0_CONTRACT_FREEZE=READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES
-    I5A0_CONTRACT_FREEZE_FINAL_PASS=NO
+    I5A0_CONTRACT_FREEZE=YES_FOR_11_FAMILIES
+    I5A0_CONTRACT_FREEZE_FINAL_PASS=YES
     I5_IMPLEMENTATION_AUTHORIZED=NO
     I5_IMPLEMENTED=NO
     I5_FINAL=NO

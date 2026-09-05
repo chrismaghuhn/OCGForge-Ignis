@@ -30,7 +30,7 @@
   },
   "i5a0_combinatorial_contract": {
     "contract_id": "ocgforge-ignis.combinatorial-prompt-continuation.v1",
-    "status": "READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES",
+    "status": "YES_FOR_11_FAMILIES",
     "target_family_count": 12,
     "contract_frozen_family_count": 11,
     "implementation_status": "NOT_IMPLEMENTED",

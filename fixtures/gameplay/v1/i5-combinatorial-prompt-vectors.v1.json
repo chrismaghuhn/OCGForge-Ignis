@@ -2,7 +2,7 @@
   "schema_id": "ocgforge-ignis.i5_combinatorial_prompt_vectors.v1",
   "schema_version": 1,
   "contract_id": "ocgforge-ignis.combinatorial-prompt-continuation.v1",
-  "fixture_status": "I5A0_EVIDENCE_11_FAMILY_FREEZE_READY",
+  "fixture_status": "I5A0_EVIDENCE_11_FAMILY_FREEZE_ACCEPTED",
   "implementation_status": "NOT_IMPLEMENTED",
   "supported_family_count": 11,
   "select_sum_support": "FAIL_CLOSED_UNSUPPORTED_V1",

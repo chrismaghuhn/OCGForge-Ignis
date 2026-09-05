@@ -24,7 +24,7 @@ The current audit has:
     TARGET_FAMILY_COUNT=12
     CONTRACT_FROZEN_FAMILY_COUNT=11
     SELECT_SUM_CONTRACT=FAIL_CLOSED_UNSUPPORTED_V1
-    I5A0_CONTRACT_FREEZE=READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES
+    I5A0_CONTRACT_FREEZE=YES_FOR_11_FAMILIES
     I5_IMPLEMENTATION_AUTHORIZED=NO
 
 The future worker must stop before any code change if the contract file does
@@ -385,10 +385,10 @@ artifacts are updated:
     $changed = @($tracked + $untracked | Sort-Object -Unique)
 
 The expected six paths are exactly the four named Markdown files and the two
-named JSON fixtures. The current task must not claim the independent final
-review:
+named JSON fixtures. The independent review has accepted the eleven-family
+freeze; this status stamp does not authorize I5 implementation:
 
-    I5A0_CONTRACT_FREEZE_FINAL_PASS=NO
+    I5A0_CONTRACT_FREEZE_FINAL_PASS=YES
     I5_IMPLEMENTATION_AUTHORIZED=NO
     I5_IMPLEMENTED=NO
     I5_FINAL=NO
