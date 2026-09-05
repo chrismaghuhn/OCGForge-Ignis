@@ -298,7 +298,10 @@ var tests = new (string Name, Action Body)[]
         I5A2PlaceAndMaskPromptTests.TestRaceAndAttribute),
 
     ("I5A3 SELECT_COUNTER",
-        I5A3CounterPromptTests.TestSelectCounter)
+        I5A3CounterPromptTests.TestSelectCounter),
+
+    ("I5A4 SORT_CARD and SORT_CHAIN",
+        I5A4SortPromptTests.TestSortPrompts)
 };
 
 int passed = 0;

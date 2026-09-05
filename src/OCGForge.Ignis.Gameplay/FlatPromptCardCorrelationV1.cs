@@ -107,6 +107,32 @@ internal static class FlatPromptCardCorrelationV1
             out error);
     }
 
+    internal static bool TryCorrelateSort(
+        MirrorSnapshotV1 capturedMirror,
+        PublicStateSnapshotV1 acceptedSnapshot,
+        uint sourceCardCode,
+        byte controller,
+        byte location,
+        uint sequence,
+        out FlatPromptCardCorrelationResultV1? result,
+        out FlatPromptErrorCodeV1 error)
+    {
+        if ((location & 0x80) != 0)
+        {
+            result = null;
+            error = FlatPromptErrorCodeV1.UnprovenPublicReference;
+            return false;
+        }
+
+        return TryCorrelate(
+            capturedMirror,
+            acceptedSnapshot,
+            sourceCardCode,
+            new ModernLocInfoV1(controller, location, sequence, 0),
+            out result,
+            out error);
+    }
+
     private static bool TryCorrelateIndexed(
         PublicStateSnapshotV1 acceptedSnapshot,
         byte absolutePlayer,

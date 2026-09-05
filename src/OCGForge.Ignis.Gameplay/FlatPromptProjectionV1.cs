@@ -35,6 +35,8 @@ internal static class FlatPromptProjectionV1
     private const int AttributeMessageLength = 7;
     private const int CounterHeaderLength = 10;
     private const int CounterEntryLength = 9;
+    private const int SortHeaderLength = 6;
+    private const int SortEntryLength = 13;
     private const ushort MaximumSafeCounterAmount = (ushort)short.MaxValue;
 
     private static readonly int[] YesNoResponses = { 0, 1 };
@@ -143,6 +145,16 @@ internal static class FlatPromptProjectionV1
                 bytes,
                 out draft,
                 out error),
+            25 => TryParseSortWireDraft(
+                bytes,
+                FlatPromptFamilyValueV1.MsgSortCard,
+                out draft,
+                out error),
+            21 => TryParseSortWireDraft(
+                bytes,
+                FlatPromptFamilyValueV1.MsgSortChain,
+                out draft,
+                out error),
             143 => TryParseAnnounceNumberWireDraft(bytes, out draft, out error),
             23 => FailWireDraft(
                 FlatPromptErrorCodeV1.UnsupportedPromptFamily,
@@ -173,7 +185,9 @@ internal static class FlatPromptProjectionV1
                  FlatPromptFamilyValueV1.MsgSelectPlace or
                  FlatPromptFamilyValueV1.MsgSelectDisfield or
                  FlatPromptFamilyValueV1.MsgAnnounceRace or
-                 FlatPromptFamilyValueV1.MsgAnnounceAttrib))
+                 FlatPromptFamilyValueV1.MsgAnnounceAttrib or
+                 FlatPromptFamilyValueV1.MsgSortCard or
+                 FlatPromptFamilyValueV1.MsgSortChain))
         {
             error = FlatPromptErrorCodeV1.UnprovenPublicReference;
             return false;
@@ -248,6 +262,12 @@ internal static class FlatPromptProjectionV1
             FlatPromptSelectCounterWireDraftV1 counter =>
                 TryBuildSelectCounterProjection(
                     counter,
+                    authority,
+                    out projected,
+                    out error),
+            FlatPromptSortWireDraftV1 sort =>
+                TryBuildSortProjection(
+                    sort,
                     authority,
                     out projected,
                     out error),
@@ -967,6 +987,122 @@ internal static class FlatPromptProjectionV1
             actingPlayer,
             counterType,
             requiredTotal,
+            entries);
+        return true;
+    }
+
+    private static bool TryParseSortWireDraft(
+        ReadOnlySpan<byte> bytes,
+        FlatPromptFamilyV1 family,
+        out FlatPromptWireDraftV1? draft,
+        out FlatPromptErrorCodeV1 error)
+    {
+        draft = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (bytes.Length == 1)
+        {
+            error = FlatPromptErrorCodeV1.UnsupportedPromptLayout;
+            return false;
+        }
+
+        if (bytes.Length < SortHeaderLength)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        byte actingPlayer = bytes[1];
+        if (actingPlayer > 1)
+        {
+            error = FlatPromptErrorCodeV1.InvalidParticipant;
+            return false;
+        }
+
+        uint sourceCount = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(2, sizeof(uint)));
+        ulong requiredLength;
+        try
+        {
+            requiredLength = checked(
+                (ulong)SortHeaderLength +
+                checked((ulong)SortEntryLength * sourceCount));
+        }
+        catch (OverflowException)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (requiredLength > int.MaxValue)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (requiredLength != (ulong)bytes.Length)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        if (sourceCount == 0 || sourceCount > 128)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        FlatPromptSortWireEntryV1[] entries =
+            new FlatPromptSortWireEntryV1[(int)sourceCount];
+        int offset = SortHeaderLength;
+        for (int ordinal = 0; ordinal < entries.Length; ordinal++)
+        {
+            uint sourceCardCode = BinaryPrimitives.ReadUInt32LittleEndian(
+                bytes.Slice(offset, sizeof(uint)));
+            byte controller = bytes[offset + 4];
+            uint location = BinaryPrimitives.ReadUInt32LittleEndian(
+                bytes.Slice(offset + 5, sizeof(uint)));
+            uint sequence = BinaryPrimitives.ReadUInt32LittleEndian(
+                bytes.Slice(offset + 9, sizeof(uint)));
+            if (controller > 1)
+            {
+                error = FlatPromptErrorCodeV1.InvalidParticipant;
+                return false;
+            }
+
+            if (location > byte.MaxValue)
+            {
+                error = FlatPromptErrorCodeV1.InvalidLocation;
+                return false;
+            }
+
+            if ((location & 0x80) != 0)
+            {
+                error = FlatPromptErrorCodeV1.UnprovenPublicReference;
+                return false;
+            }
+
+            if (!TryValidatePrivateLocation(
+                    new ModernLocInfoV1(
+                        controller,
+                        (byte)location,
+                        sequence,
+                        0),
+                    out error))
+            {
+                return false;
+            }
+
+            entries[ordinal] = new FlatPromptSortWireEntryV1(
+                sourceCardCode,
+                controller,
+                (byte)location,
+                sequence);
+            offset += SortEntryLength;
+        }
+
+        draft = new FlatPromptSortWireDraftV1(
+            family,
+            actingPlayer,
             entries);
         return true;
     }
@@ -2192,6 +2328,134 @@ internal static class FlatPromptProjectionV1
             out error);
     }
 
+    private static bool TryBuildSortProjection(
+        FlatPromptSortWireDraftV1 wire,
+        FlatPromptCardAuthorityContextV1? authority,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        FlatPromptSortPublicCandidateBaseV1[] sourceCandidates =
+            new FlatPromptSortPublicCandidateBaseV1[wire.Entries.Count];
+        for (int ordinal = 0; ordinal < wire.Entries.Count; ordinal++)
+        {
+            FlatPromptSortWireEntryV1 entry = wire.Entries[ordinal];
+            if (!FlatPromptKeyV1.TryCreateSortPlace(
+                    wire.Family,
+                    ordinal,
+                    out string key))
+            {
+                error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                return false;
+            }
+
+            PublicSemanticLocatorV1? acceptedLocator = null;
+            if (authority is not null &&
+                FlatPromptCardCorrelationV1.TryCorrelateSort(
+                    authority.CapturedMirror,
+                    authority.AcceptedSnapshot,
+                    entry.SourceCardCode,
+                    entry.Controller,
+                    entry.Location,
+                    entry.Sequence,
+                    out FlatPromptCardCorrelationResultV1? correlation,
+                    out _))
+            {
+                acceptedLocator = correlation?.AcceptedLocator;
+            }
+
+            sourceCandidates[ordinal] = CreateSortCandidate(
+                key,
+                wire.Family,
+                ordinal,
+                entry.SourceCardCode,
+                acceptedLocator);
+        }
+
+        FlatPromptSortContinuationStateV1 state;
+        try
+        {
+            state = new FlatPromptSortContinuationStateV1(
+                wire.Family,
+                wire.ActingPlayer,
+                sourceCandidates,
+                Array.Empty<int>(),
+                0);
+        }
+        catch (ArgumentException)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        return TryBuildSortContinuationProjection(
+            state,
+            out projected,
+            out error);
+    }
+
+    private static FlatPromptSortPublicCandidateBaseV1 CreateSortCandidate(
+        string key,
+        FlatPromptFamilyV1 family,
+        int sourceOrdinal,
+        uint sourceCardCode,
+        PublicSemanticLocatorV1? acceptedLocator)
+    {
+        if (acceptedLocator is not null)
+        {
+            return sourceCardCode == 0
+                ? new FlatPromptSortLocatorPublicCandidateV1(
+                    key,
+                    family,
+                    sourceOrdinal,
+                    acceptedLocator)
+                : new FlatPromptSortLocatorPromptCodePublicCandidateV1(
+                    key,
+                    family,
+                    sourceOrdinal,
+                    acceptedLocator,
+                    sourceCardCode);
+        }
+
+        return sourceCardCode == 0
+            ? new FlatPromptSortAnonymousPublicCandidateV1(
+                key,
+                family,
+                sourceOrdinal)
+            : new FlatPromptSortPromptCodePublicCandidateV1(
+                key,
+                family,
+                sourceOrdinal,
+                sourceCardCode);
+    }
+
+    private static FlatPromptSortSourcePublicDescriptorBaseV1
+        CreateSortSourceDescriptor(
+            FlatPromptSortPublicCandidateBaseV1 candidate) =>
+        candidate switch
+        {
+            FlatPromptSortLocatorPromptCodePublicCandidateV1 value =>
+                new FlatPromptSortSourceLocatorPromptCodePublicDescriptorV1(
+                    value.SourceOrdinal,
+                    value.PublicSemanticCardLocator,
+                    value.PromptLocalCardCode),
+            FlatPromptSortLocatorPublicCandidateV1 value =>
+                new FlatPromptSortSourceLocatorPublicDescriptorV1(
+                    value.SourceOrdinal,
+                    value.PublicSemanticCardLocator),
+            FlatPromptSortPromptCodePublicCandidateV1 value =>
+                new FlatPromptSortSourcePromptCodePublicDescriptorV1(
+                    value.SourceOrdinal,
+                    value.PromptLocalCardCode),
+            FlatPromptSortAnonymousPublicCandidateV1 value =>
+                new FlatPromptSortSourceAnonymousPublicDescriptorV1(
+                    value.SourceOrdinal),
+            _ => throw new ArgumentException(
+                "Unknown sort candidate type.",
+                nameof(candidate))
+        };
+
     private static ushort GetSafeCounterCapacity(ushort rawCapacity) =>
         rawCapacity > MaximumSafeCounterAmount
             ? MaximumSafeCounterAmount
@@ -3091,6 +3355,104 @@ internal static class FlatPromptProjectionV1
         }
 
         return true;
+    }
+
+    private static bool TryBuildSortContinuationProjection(
+        FlatPromptSortContinuationStateV1 state,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        List<FlatPublicCandidateDescriptorV1> candidates = new();
+        List<string> keys = new();
+        List<int> responses = new();
+        for (int sourceOrdinal = 0;
+             sourceOrdinal < state.SourceCandidates.Count;
+             sourceOrdinal++)
+        {
+            if (!state.IsPlaceLegal(sourceOrdinal))
+            {
+                continue;
+            }
+
+            if (!FlatPromptKeyV1.TryCreateSortPlace(
+                    state.Family,
+                    sourceOrdinal,
+                    out string key) ||
+                !string.Equals(
+                    state.SourceCandidates[sourceOrdinal].I4LocalCandidateKey,
+                    key,
+                    StringComparison.Ordinal))
+            {
+                error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                return false;
+            }
+
+            candidates.Add(state.SourceCandidates[sourceOrdinal]);
+            keys.Add(key);
+            responses.Add(0);
+        }
+
+        if (!state.IsTerminal)
+        {
+            string cancelKey = state.Family ==
+                    FlatPromptFamilyValueV1.MsgSortCard
+                ? FlatPromptKeyV1.SortCardCancel
+                : FlatPromptKeyV1.SortChainCancel;
+            candidates.Add(new FlatPromptCancelPublicCandidateV1(cancelKey));
+            keys.Add(cancelKey);
+            responses.Add(-1);
+        }
+
+        if (candidates.Count == 0 && !state.IsTerminal)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        FlatPromptSortKindV1 sortKind = state.Family ==
+                FlatPromptFamilyValueV1.MsgSortCard
+            ? FlatPromptSortKindV1.SortCard
+            : FlatPromptSortKindV1.SortChain;
+        projected = new FlatPromptProjectionDraftV1(
+            new FlatPromptSortSelectionPublicContextV1(
+                state.ActingPlayer,
+                sortKind,
+                state.SourceCandidates.Select(CreateSortSourceDescriptor)),
+            candidates,
+            keys,
+            responses,
+            state);
+        return true;
+    }
+
+    internal static bool TryAdvanceSortContinuation(
+        FlatPromptSortContinuationStateV1 state,
+        int sourceOrdinal,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (!state.IsPlaceLegal(sourceOrdinal))
+        {
+            error = FlatPromptErrorCodeV1.InvalidContinuationAction;
+            return false;
+        }
+
+        try
+        {
+            return TryBuildSortContinuationProjection(
+                state.WithPlaced(sourceOrdinal),
+                out projected,
+                out error);
+        }
+        catch (OverflowException)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
     }
 
     internal static bool TryAdvanceCardContinuation(
