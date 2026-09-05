@@ -30,11 +30,11 @@
   },
   "i5a0_combinatorial_contract": {
     "contract_id": "ocgforge-ignis.combinatorial-prompt-continuation.v1",
-    "status": "BLOCKED_CONTRACT_EXECUTABILITY",
+    "status": "READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES",
     "target_family_count": 12,
     "contract_frozen_family_count": 11,
     "implementation_status": "NOT_IMPLEMENTED",
-    "select_sum_status": "UNRESOLVED",
+    "select_sum_status": "FAIL_CLOSED_UNSUPPORTED_V1",
     "announce_card_support": "FAIL_CLOSED_UNSUPPORTED",
     "prompt_local_card_disclosure_authority": "EXACT_CURRENT_PROMPT_TO_ACTING_PERSPECTIVE",
     "prompt_local_card_code_persists": false,
@@ -2584,7 +2584,7 @@
     {
       "message_id": 23,
       "symbolic_name": "MSG_SELECT_SUM",
-      "support_status": "CONTRACT_RESEARCHED_UNRESOLVED",
+      "support_status": "UNSUPPORTED_FAIL_CLOSED",
       "semantic_category": "PROMPT",
       "planned_slice": "I5",
       "layout_status": "FROZEN",

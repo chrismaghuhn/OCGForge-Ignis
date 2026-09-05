@@ -2,9 +2,10 @@
   "schema_id": "ocgforge-ignis.i5_combinatorial_prompt_vectors.v1",
   "schema_version": 1,
   "contract_id": "ocgforge-ignis.combinatorial-prompt-continuation.v1",
-  "fixture_status": "I5A0_RESEARCH_EVIDENCE_ONLY_BLOCKED",
+  "fixture_status": "I5A0_EVIDENCE_11_FAMILY_FREEZE_READY",
   "implementation_status": "NOT_IMPLEMENTED",
-  "blocker": "SELECT_SUM exact legality is unresolved for unrestricted packed sum_param values",
+  "supported_family_count": 11,
+  "select_sum_support": "FAIL_CLOSED_UNSUPPORTED_V1",
   "hex_encoding": "uppercase hexadecimal byte pairs separated by one space",
   "upstream_pins": {
     "edopro_repository": "https://github.com/edo9300/edopro",
@@ -166,7 +167,7 @@
       "case_id": "SELECT_SUM_EQUAL_SINGLE",
       "message_id": 23,
       "symbolic_name": "MSG_SELECT_SUM",
-      "classification": "SPECIAL_EXACT_ORACLE_REQUIRED",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
       "inner_byte_length": 41,
       "inner_hex": "17 00 00 03 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 33 33 33 33 00 00 00 00 00 00 00 00 00 00 03 00 03 00",
       "wire_decoded": {
@@ -179,14 +180,15 @@
         "optional_count": 1,
         "optional_sum_param_hex": ["0x00030003"]
       },
-      "expected_contract_status": "SELECT_SUM_CONTRACT_UNRESOLVED",
-      "terminal_response_body_hex": "03 00 00 00 01"
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT"
     },
     {
       "case_id": "SELECT_SUM_EQUAL_DUPLICATE_VALUES",
       "message_id": 23,
       "symbolic_name": "MSG_SELECT_SUM",
-      "classification": "SPECIAL_EXACT_ORACLE_REQUIRED",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
       "inner_byte_length": 59,
       "inner_hex": "17 00 00 04 00 00 00 02 00 00 00 02 00 00 00 00 00 00 00 02 00 00 00 44 44 44 44 00 00 00 00 00 00 00 00 00 00 02 00 02 00 44 44 44 44 00 00 00 00 00 00 00 00 00 00 02 00 02 00",
       "wire_decoded": {
@@ -199,14 +201,15 @@
         "optional_count": 2,
         "optional_sum_param_hex": ["0x00020002", "0x00020002"]
       },
-      "expected_contract_status": "SELECT_SUM_CONTRACT_UNRESOLVED",
-      "terminal_response_body_hex": "03 00 00 00 03"
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT"
     },
     {
       "case_id": "SELECT_SUM_MANDATORY_AND_OPTIONAL",
       "message_id": 23,
       "symbolic_name": "MSG_SELECT_SUM",
-      "classification": "SPECIAL_EXACT_ORACLE_REQUIRED",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
       "inner_byte_length": 77,
       "inner_hex": "17 00 00 04 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 01 00 02 00 00 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 03 00 03 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 05 00 05 00",
       "wire_decoded": {
@@ -220,14 +223,15 @@
         "mandatory_sum_param_hex": ["0x00010001"],
         "optional_sum_param_hex": ["0x00030003", "0x00050005"]
       },
-      "expected_contract_status": "SELECT_SUM_CONTRACT_UNRESOLVED",
-      "terminal_response_body_hex": "03 00 00 00 01"
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT"
     },
     {
       "case_id": "SELECT_SUM_GREATER_INTERVAL",
       "message_id": 23,
       "symbolic_name": "MSG_SELECT_SUM",
-      "classification": "SPECIAL_EXACT_ORACLE_REQUIRED",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
       "inner_byte_length": 59,
       "inner_hex": "17 00 01 05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 00 00 00 55 55 55 55 00 00 00 00 00 00 00 00 00 00 02 00 00 00 66 66 66 66 00 00 00 00 00 00 00 00 00 00 03 00 00 00",
       "wire_decoded": {
@@ -240,14 +244,15 @@
         "optional_count": 2,
         "optional_sum_param_hex": ["0x00000002", "0x00000003"]
       },
-      "expected_contract_status": "SELECT_SUM_CONTRACT_UNRESOLVED",
-      "terminal_response_body_hex": "03 00 00 00 03"
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT"
     },
     {
       "case_id": "SELECT_SUM_LARGE_BOUNDED_EVIDENCE",
       "message_id": 23,
       "symbolic_name": "MSG_SELECT_SUM",
-      "classification": "SPECIAL_EXACT_ORACLE_REQUIRED",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
       "inner_byte_length": 131,
       "inner_hex": "17 00 00 0A 00 00 00 02 00 00 00 04 00 00 00 00 00 00 00 06 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 01 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 02 00 02 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 03 00 03 00 04 00 00 00 00 00 00 00 00 00 00 00 00 00 04 00 04 00 05 00 00 00 00 00 00 00 00 00 00 00 00 00 05 00 05 00 06 00 00 00 00 00 00 00 00 00 00 00 00 00 06 00 06 00",
       "wire_decoded": {
@@ -260,25 +265,27 @@
         "optional_count": 6,
         "optional_sum_param_hex": ["0x00010001", "0x00020002", "0x00030003", "0x00040004", "0x00050005", "0x00060006"]
       },
-      "expected_contract_status": "SELECT_SUM_CONTRACT_UNRESOLVED",
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
+      "expected_public_domain": "ABSENT",
       "bounded_oracle_case": "many solutions and upper/lower count boundaries"
     },
     {
       "case_id": "SELECT_SUM_ZERO_OPTIONAL_UNEMITTED",
       "message_id": 23,
       "symbolic_name": "MSG_SELECT_SUM",
-      "classification": "SPECIAL_EXACT_ORACLE_REQUIRED",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
       "inner_byte_length": 23,
       "inner_hex": "17 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00",
-      "expected_error": "UnprovenPromptSemantics",
-      "expected_contract_status": "SELECT_SUM_CONTRACT_UNRESOLVED",
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
       "expected_public_domain": "ABSENT"
     },
     {
       "case_id": "SELECT_SUM_PACKED_SIGN_WITNESS",
       "message_id": 23,
       "symbolic_name": "MSG_SELECT_SUM",
-      "classification": "SPECIAL_EXACT_ORACLE_REQUIRED",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
       "inner_byte_length": 41,
       "inner_hex": "17 00 00 01 80 00 00 01 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 77 77 77 77 00 00 00 00 00 00 00 00 00 00 02 00 01 80",
       "wire_decoded": {
@@ -293,14 +300,15 @@
         "feasibility_high_word_unsigned": 32769,
         "final_validator_high_word_signed_behavior": "implementation-dependent for the pinned C++ expression"
       },
-      "expected_error": "SelectSumContractUnresolved",
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
       "expected_public_domain": "ABSENT"
     },
     {
       "case_id": "SELECT_SUM_NO_LEGAL_COMPLETION",
       "message_id": 23,
       "symbolic_name": "MSG_SELECT_SUM",
-      "classification": "SPECIAL_EXACT_ORACLE_REQUIRED",
+      "classification": "FAIL_CLOSED_UNSUPPORTED_V1",
       "inner_byte_length": 41,
       "inner_hex": "17 00 00 05 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 88 88 88 88 00 00 00 00 00 00 00 00 00 00 02 00 00 00",
       "wire_decoded": {
@@ -313,7 +321,8 @@
         "optional_count": 1,
         "optional_sum_param_hex": ["0x00000002"]
       },
-      "expected_error": "UnprovenPromptSemantics",
+      "expected_error": "UnsupportedPromptFamily",
+      "expected_contract_status": "SELECT_SUM_FAIL_CLOSED_UNSUPPORTED_V1",
       "expected_public_domain": "ABSENT"
     },
     {

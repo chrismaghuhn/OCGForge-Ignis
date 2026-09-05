@@ -1,8 +1,8 @@
 # I5A0 Combinatorial Prompt / Continuation Contract Freeze Plan
 
-> **For agentic workers:** This plan is an audit and future-planning artifact. The current I5A0 result is blocked by `SELECT_SUM`; do not implement any I5 runtime task until an independent review resolves that blocker and explicitly authorizes a later implementation slice.
+> **For agentic workers:** This plan is an audit and future-planning artifact. `SELECT_SUM` is deliberately fail-closed unsupported in the V1 scope; do not implement any I5 runtime task until the eleven-family contract has independent final review and explicit implementation authorization.
 
-**Goal:** Freeze a source-grounded combinatorial prompt/continuation contract for the twelve planned I5 families, or stop with a precise contract-executability finding.
+**Goal:** Freeze a source-grounded combinatorial prompt/continuation contract for eleven admitted I5 families and an explicit fail-closed boundary for researched `SELECT_SUM`.
 
 **Architecture:** A future adapter will own one private continuation state per original prompt and expose only the complete current semantic domain. It will reuse the I4B mirror/public-snapshot authority seam. I5 will not own network sending, model input, OCGForge action identity, or continuation authority outside the current prompt.
 
@@ -23,20 +23,21 @@ The current audit has:
 
     TARGET_FAMILY_COUNT=12
     CONTRACT_FROZEN_FAMILY_COUNT=11
-    SELECT_SUM_CONTRACT=UNRESOLVED
-    I5A0_CONTRACT_FREEZE=NO
+    SELECT_SUM_CONTRACT=FAIL_CLOSED_UNSUPPORTED_V1
+    I5A0_CONTRACT_FREEZE=READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES
     I5_IMPLEMENTATION_AUTHORIZED=NO
 
 The future worker must stop before any code change if the contract file does
-not contain an independently accepted `I5A0_CONTRACT_FREEZE=YES` and
-`SELECT_SUM_CONTRACT=FROZEN`. A green build, a plausible sum algorithm, or a
-fixture-only workaround is not authorization.
+not contain an independently accepted
+`I5A0_CONTRACT_FREEZE=YES_FOR_11_FAMILIES` and
+`SELECT_SUM_CONTRACT=FAIL_CLOSED_UNSUPPORTED_V1`. A green build, a plausible
+sum algorithm, or a fixture-only workaround is not authorization.
 
 ## 2. Future start guard
 
-This guard is for a later implementation branch after the contract blocker has
-been independently resolved. It is not run as a permission to start I5 on the
-current blocked branch.
+This guard is for a later implementation branch after the eleven-family
+contract has been independently accepted. It is not run as a permission to
+start I5 on the current review branch.
 
 Run from `C:\Users\chris\Documents\OCGForge-Ignis`:
 
@@ -52,11 +53,11 @@ Run from `C:\Users\chris\Documents\OCGForge-Ignis`:
     if (@(git status --short).Count -ne 0) {
         throw "STATUS=BLOCKED_DIRTY_WORKTREE"
     }
-    if ($contractText -notmatch '(?m)^\s*I5A0_CONTRACT_FREEZE=YES\s*$') {
+    if ($contractText -notmatch '(?m)^\s*I5A0_CONTRACT_FREEZE=YES_FOR_11_FAMILIES\s*$') {
         throw "STATUS=BLOCKED_CONTRACT_NOT_ACCEPTED"
     }
-    if ($contractText -match '(?m)^\s*SELECT_SUM_CONTRACT=UNRESOLVED\s*$') {
-        throw "STATUS=BLOCKED_SELECT_SUM_UNRESOLVED"
+    if ($contractText -notmatch '(?m)^\s*SELECT_SUM_CONTRACT=FAIL_CLOSED_UNSUPPORTED_V1\s*$') {
+        throw "STATUS=SELECT_SUM_SCOPE_NOT_FROZEN"
     }
 
     The later authorization message must supply the exact accepted main SHA,
@@ -89,8 +90,8 @@ If any additional path is needed to make the contract executable, stop with
 ## 4. Future implementation file map
 
 The following is a sequence of separate future slices. None is authorized by
-this plan. Each slice gets its own exact base, feature parent, review, and
-stop boundary.
+this plan. Each slice gets its own exact base, feature parent, review, and stop
+boundary.
 
 ### I5A1 — bounded card selection and flat terminal choices
 
@@ -168,29 +169,10 @@ private codec writes the source-indexed permutation bytes. Do not enumerate an
 N-factorial terminal domain and do not use a card identity to disambiguate
 duplicate-looking occurrences.
 
-### I5A5 — SELECT_SUM exact oracle
+### I5A5 — cross-family I5 acceptance and I5 FINAL
 
-Family: `SELECT_SUM` only.
-
-    MODIFY
-    src/OCGForge.Ignis.Gameplay/FlatPromptTypesV1.cs
-    src/OCGForge.Ignis.Gameplay/FlatPromptProjectionV1.cs
-    src/OCGForge.Ignis.Gameplay/FlatPromptSessionV1.cs
-    tests/OCGForge.Ignis.Gameplay.Tests/Program.cs
-
-    CREATE
-    src/OCGForge.Ignis.Gameplay/CombinatorialSumOracleV1.cs
-    tests/OCGForge.Ignis.Gameplay.Tests/Tests/I5A5SelectSumOracleTests.cs
-
-Do not begin this slice until the exact packed-value/sign and accumulator
-contract is separately accepted. The optimized oracle must be compared with
-an independent brute-force oracle over bounded generated inputs before any
-runtime acceptance. A heuristic, greedy, or unsigned reinterpretation is not
-an implementation of this slice.
-
-### I5A6 — cross-family I5 acceptance and I5 FINAL
-
-All twelve families after their individual acceptance:
+The eleven admitted families after their individual acceptance, plus the
+explicit SELECT_SUM unsupported boundary:
 
     MODIFY
     tests/OCGForge.Ignis.Gameplay.Tests/Program.cs
@@ -201,13 +183,15 @@ All twelve families after their individual acceptance:
 This final test-only slice proves cross-family continuation lifecycle, stale
 instances, failure atomicity, complete-domain preservation, public/private
 reflection, paired-world privacy, value-level determinism, and absence of I6/
-I8 authority. It does not add another parser or response sender.
+I8 authority. It also proves that SELECT_SUM is rejected with
+`UnsupportedPromptFamily` and cannot create a partial domain or binding. It
+does not add another parser, sum oracle, or response sender.
 
 Across all future slices the unique planned file totals are:
 
-    FUTURE_PRODUCTION_FILES=6
-    FUTURE_TEST_FILES=7
-    FUTURE_TOTAL_FILES=13
+    FUTURE_PRODUCTION_FILES=4
+    FUTURE_TEST_FILES=6
+    FUTURE_TOTAL_FILES=10
     FUTURE_NEW_GAMEPLAY_TEST_GROUPS=12
     CURRENT_GAMEPLAY=108
     FUTURE_GAMEPLAY_EXPECTED=120/120
@@ -221,7 +205,7 @@ The twelve proposed top-level groups are:
     5  race/attribute mask domain
     6  counter exact allocation
     7  sequential card/chain sorting
-    8  SELECT_SUM exact oracle and generated cross-check
+    8  SELECT_SUM explicit unsupported-family boundary
     9  malformed wire and final-response codec boundaries
     10 continuation lifecycle, staleness, and failure atomicity
     11 authority, privacy, ownership, and hidden-information pairs
@@ -229,7 +213,7 @@ The twelve proposed top-level groups are:
 
 ## 5. Future red-test-first execution order
 
-No red test is added in the current blocked I5A0 task. After independent
+No red test is added in the current docs-only I5A0 task. After independent
 contract acceptance, each future slice follows this order:
 
 1. Re-run the exact start guard and record the accepted contract/feature base.
@@ -274,8 +258,11 @@ correlation and an unproven position CardCode remains structurally absent.
 The future implementation must make path canonicalization explicit before
 building any candidate domain:
 
-    SELECT_CARD / SELECT_TRIBUTE / SELECT_SUM
+    SELECT_CARD / SELECT_TRIBUTE
         PICK only source ordinal > last picked ordinal
+
+    SELECT_SUM
+        unsupported V1 family; no continuation or oracle is constructed
 
     SELECT_PLACE / SELECT_DISFIELD
         PICK only semantic place index > last picked index
@@ -330,16 +317,16 @@ they are not added by the current documentation task:
 | 5 | ANNOUNCE_RACE, ANNOUNCE_ATTRIB | admitted bit universes, exact popcount, duplicate-free bit steps, mask codec |
 | 6 | SELECT_COUNTER | every zero-through-capacity assignment, exact remaining-capacity oracle, nonnegative amount codec |
 | 7 | SORT_CARD, SORT_CHAIN | sequential source occurrences, duplicate preservation, source-indexed permutation, unchanged-order cancel |
-| 8 | SELECT_SUM | exact resolved oracle only, independent brute-force cross-check, all bounded edge vectors |
+| 8 | SELECT_SUM | explicit UnsupportedPromptFamily boundary, no public domain, no binding, no ordinal advance |
 | 9 | all applicable families | malformed/truncated/trailing lengths, overflow, invalid flags/ranges, exact response-size rejection |
 | 10 | all continuation families | instance/step/key membership, atomic transitions, stale prior-step handles, no intermediate response |
 | 11 | card-bearing families | I3D persistent locator authority, prompt-local CardCode disclosure, Main Deck/no-locator, overlay/hidden privacy, source ownership |
-| 12 | all twelve families | paired privacy worlds, value-level fresh-process determinism, I4 regression, I5/I6 layer barrier |
+| 12 | eleven admitted families plus SELECT_SUM boundary | paired privacy worlds, value-level fresh-process determinism, I4 regression, I5/I6 layer barrier |
 
-Groups 1--7 and 9--12 may be implemented before group 8 only if the final
-contract explicitly excludes SELECT_SUM from their accepted family set until
-its blocker is resolved. No slice may claim all-twelve I5 support before group
-8 passes the exact-oracle gate.
+Groups 1--7 and 9--12 may be implemented only for the eleven admitted families;
+group 8 must assert the explicit SELECT_SUM unsupported boundary. No slice may
+claim SELECT_SUM runtime support or add an exact oracle without a new contract
+decision.
 
 Every future I5 slice must preserve the existing regression harnesses:
 
@@ -351,14 +338,15 @@ The final I5 acceptance additionally requires:
 
     I4_FINAL=YES
     I5A0_TARGET_FAMILY_COUNT=12
-    I5A0_SUPPORTED_CONTRACT_FAMILY_COUNT=12
+    I5A0_SUPPORTED_CONTRACT_FAMILY_COUNT=11
+    SELECT_SUM_SUPPORT=FAIL_CLOSED_UNSUPPORTED_V1
     ANNOUNCE_CARD_SUPPORT=FAIL_CLOSED_UNSUPPORTED
     I5_MESSAGE_IDS_FROZEN=PASS
     I5_MODERN_WIRE_GRAMMARS_FROZEN=PASS
-    I5_RESPONSE_CODECS_FROZEN=PASS
+    I5_RESPONSE_CODECS_FROZEN=PASS_FOR_11_ADMITTED_FAMILIES
     I5_CONTINUATION_MODEL_FROZEN=PASS
-    I5_CURRENT_DOMAIN_COMPLETENESS=PASS
-    I5_TERMINAL_COMPLETION_REACHABILITY=PASS
+    I5_CURRENT_DOMAIN_COMPLETENESS=PASS_FOR_11_ADMITTED_FAMILIES
+    I5_TERMINAL_COMPLETION_REACHABILITY=PASS_FOR_11_ADMITTED_FAMILIES
     I5_DUPLICATE_OCCURRENCE_PRESERVATION=PASS
     I5_FINISH_SEMANTICS_FROZEN=PASS
     I5_CANCEL_SEMANTICS_FROZEN=PASS
@@ -370,8 +358,8 @@ The final I5 acceptance additionally requires:
     I5_PRIVATE_RESPONSE_IS_MODEL_INPUT=NO
     I5_CONTINUATION_STATE_DETERMINISTIC=PASS
     I5_LOCAL_KEY_EQUALS_OCGFORGE_PUBLIC_ACTION_KEY=NO
-    SELECT_SUM_EXACT_SEMANTICS=PASS
-    SELECT_SUM_EXACT_ORACLE_CONTRACT=PASS
+    SELECT_SUM_EXACT_SEMANTICS=NOT_APPLICABLE_DUE_FAIL_CLOSED
+    SELECT_SUM_EXACT_ORACLE_CONTRACT=NOT_APPLICABLE_DUE_FAIL_CLOSED
     SELECT_SUM_HEURISTIC_ORACLE_ALLOWED=NO
     I6_AUTHORITY_ACQUIRED=NO
     MODEL_INPUT_AUTHORITY_ACQUIRED=NO
@@ -386,8 +374,8 @@ untracked scope audit.
 
 ## 10. Current-task final gate and stop boundary
 
-The current blocked audit task must use these checks after the six artifacts
-are written:
+The current scope-freeze remediation must use these checks after the six
+artifacts are updated:
 
     $base = 'd3a340977974260ed9242118eb68fdfb6c0127f8'
     git diff --check
@@ -397,7 +385,8 @@ are written:
     $changed = @($tracked + $untracked | Sort-Object -Unique)
 
 The expected six paths are exactly the four named Markdown files and the two
-named JSON fixtures. The current task must not claim a final contract pass:
+named JSON fixtures. The current task must not claim the independent final
+review:
 
     I5A0_CONTRACT_FREEZE_FINAL_PASS=NO
     I5_IMPLEMENTATION_AUTHORIZED=NO
@@ -406,21 +395,21 @@ named JSON fixtures. The current task must not claim a final contract pass:
     I6_AUTHORIZED=NO
     PR_CREATED=NO
 
-If the blocked research result is retained, a commit may record the audit and
-the six-file evidence scope using the requested message. That commit is not a
-contract acceptance and does not authorize a future implementation. If any
-future reviewer requires the unresolved artifact not be committed, stop with
-the worktree clean-up decision explicitly requested; never hide the finding.
+The commit records the authorized eleven-family scope decision and the
+negative SELECT_SUM evidence. It is not a runtime implementation and does not
+self-authorize one. SELECT_SUM remains outside the admitted V1 implementation
+scope unless a new contract decision explicitly re-admits it.
 
 ## 11. Commit/push protocol
 
-For a completed six-file audit artifact, the only permitted commit message is:
+For this completed six-file scope remediation, use:
 
-    docs: freeze I5 combinatorial continuation contracts
+    docs: freeze I5 eleven-family scope
 
 Push only:
 
     chris/i5a0-combinatorial-continuation-contract-freeze
 
-Do not create a PR, merge, begin I5A/I5B/I5C/I5D/I5E, or authorize I6. Stop
-after the push for independent review of the blocked `SELECT_SUM` finding.
+Do not create a PR, merge, begin an I5 runtime slice, or authorize I6. Stop
+after the push for independent review of the eleven-family contract and its
+explicit SELECT_SUM unsupported boundary.

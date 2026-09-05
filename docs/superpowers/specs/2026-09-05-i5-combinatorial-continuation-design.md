@@ -1,7 +1,8 @@
 # OCGForge-Ignis I5A0 — Combinatorial Prompt / Continuation Design
 
-Status: DESIGN AND CONTRACT-FREEZE AUDIT ONLY. `SELECT_SUM` prevents a final
-twelve-family freeze; no I5 runtime implementation is authorized.
+Status: DESIGN AND CONTRACT-FREEZE AUDIT ONLY. `SELECT_SUM` is intentionally
+fail-closed unsupported for V1; the eleven-family contract is ready for
+independent review and no I5 runtime implementation is authorized.
 
 Date: 2026-09-05
 
@@ -19,17 +20,18 @@ input, or OCGForge compatibility layer.
 
 The research result is:
 
-    I5A0_IMPLEMENTATION_CLASSIFICATION=UNRESOLVED
-    FUTURE_PRODUCTION_FILES=0
+    I5A0_ARTIFACT_CLASSIFICATION=DOCS_FIXTURE_ONLY
+    I5_IMPLEMENTATION_AUTHORIZED=NO
     SELECT_SUM_WIRE_GRAMMAR=RESOLVED
-    SELECT_SUM_FULL_LEGALITY=UNRESOLVED
-    I5A0_CONTRACT_FREEZE=NO
+    SELECT_SUM_SUPPORT=FAIL_CLOSED_UNSUPPORTED_V1
+    I5A0_CONTRACT_FREEZE=READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES
 
 Eleven families have a closed protocol/domain design in the companion
-contract draft. `SELECT_SUM` cannot be claimed frozen because the exact pinned
-core does not close the interpretation of arbitrary packed `sum_param` values
-between its feasibility and final-validation paths. This is a contract
-blocker, not an invitation to choose a convenient interpretation.
+contract draft. `SELECT_SUM` has a researched wire grammar but is deliberately
+outside the admitted V1 family domain because the exact pinned core does not
+make its unrestricted legality reconstructable from the prompt. This is an
+explicit fail-closed scope decision, not an invitation to choose a convenient
+interpretation.
 
 ## 2. Scope and authority
 
@@ -135,7 +137,7 @@ private response binding.
 | --- | --- | --- | --- | --- |
 | SELECT_CARD | `playerop.cpp#field::process(SelectCard&)`, `parse_response_cards` | `gframe/duelclient.cpp#ClientAnalyze`, `event_handler.cpp#SetResponseSelectedCards` | CONTINUATION_REQUIRED | FROZEN |
 | SELECT_TRIBUTE | `playerop.cpp#field::process(SelectTributeP&)`, `parse_response_cards` | `ClientAnalyze`, `SetResponseSelectedCards` | CONTINUATION_REQUIRED | FROZEN |
-| SELECT_SUM | `playerop.cpp#field::process(SelectSum&)`, `select_sum_check1` | `ClientAnalyze`, sum selection UI | SPECIAL_EXACT_ORACLE_REQUIRED | UNRESOLVED |
+| SELECT_SUM | `playerop.cpp#field::process(SelectSum&)`, `select_sum_check1` | `ClientAnalyze`, sum selection UI | FAIL_CLOSED_UNSUPPORTED_V1 | UNSUPPORTED |
 | SELECT_PLACE | `playerop.cpp#field::process(SelectPlace&)` | `ClientAnalyze`, field response construction | CONTINUATION_REQUIRED | FROZEN |
 | SELECT_DISFIELD | `SelectPlace&` with `disable_field` | `ClientAnalyze` same layout | CONTINUATION_REQUIRED | FROZEN |
 | SELECT_COUNTER | `playerop.cpp#field::process(SelectCounter&)` | `ClientAnalyze`, counter response construction | CONTINUATION_REQUIRED | FROZEN |
@@ -240,7 +242,7 @@ identity.
 locators. `POSITION` remains governed by its validated mask and must not
 inherit card-reference requirements from any I5 family.
 
-## 8. Exact SELECT_SUM blocker
+## 8. SELECT_SUM explicit V1 fail-closed boundary
 
 The wire layout is resolved as:
 
@@ -259,41 +261,34 @@ Each entry is 18 bytes and the message length is `23 + 18*(mandatory +
 optional)`. The source code proves that mandatory occurrences are always
 included and the response contains optional occurrence indexes.
 
-The exact future predicates would be:
+The exact future predicates cannot be admitted for this V1 family. The
+producer supplies no source-backed range that excludes the problematic
+`sum_param` values, the writer transmits only `acc & 0xffff`, and the final
+validator is preceded by pointer sorting of selected `card*` values. The
+research witnesses show that a wire-only, pointer-independent adapter cannot
+reconstruct the unrestricted legal domain.
 
-    IS_TERMINAL_LEGAL(S)
-    HAS_LEGAL_COMPLETION(S)
-    LEGAL_NEXT_CHOICES(S)
+Therefore the I5 V1 dispatch boundary rejects every `MSG_SELECT_SUM` before
+public context, candidate-domain, continuation, or response-binding
+construction:
 
-For equal mode, the final validator recursively chooses one low/high operation
-value per mandatory and selected optional occurrence and requires the target,
-while also requiring the optional count in `[min,max]`. For greater mode it
-uses the aggregate minimum/maximum interval test in `SelectSum`.
+    error=UnsupportedPromptFamily
+    public_context=ABSENT
+    public_candidates=ABSENT
+    private_binding=ABSENT
+    prompt_ordinal=UNCHANGED
 
-The blocker is not the ability to write a recursion. `card::sum_param` is an
-unrestricted `uint32_t` populated from an unrestricted Lua operation result.
-The feasibility helpers in `field.cpp` read the upper half as an unsigned
-masked value. The final exact-mode validator in `playerop.cpp#select_sum_check1`
-first promotes the same packed value to signed `int32_t` and right-shifts it
-without the mask. For a packed value with low half `2` and high half `0x8001`,
-the feasibility path can see a positive alternative while the final path can
-see a negative or implementation-defined value. The pinned source proves no
-producer range that removes this case.
+This is an explicit fail-closed scope decision. It is not a heuristic oracle,
+an unsigned reinterpretation, a narrowed implicit subdomain, or a production
+fix for the pinned core. A future contract may re-admit SELECT_SUM only under a
+new independently accepted source-backed exact-domain proof.
 
-The message also transmits only `acc & 0xffff`, so an unrestricted internal
-accumulator cannot be reconstructed from the wire alone. A safe adapter may
-not silently choose unsigned alternatives, silently narrow the source domain,
-or claim the two core paths are equivalent. Until a separate source-backed
-decision closes both issues:
-
-    SELECT_SUM_CONTRACT=UNRESOLVED
-    SELECT_SUM_EXACT_SEMANTICS=FAIL
-    SELECT_SUM_EXACT_ORACLE_CONTRACT=FAIL
+    SELECT_SUM_CONTRACT=FAIL_CLOSED_UNSUPPORTED_V1
+    SELECT_SUM_EXACT_SEMANTICS=NOT_APPLICABLE_DUE_FAIL_CLOSED
+    SELECT_SUM_EXACT_ORACLE_CONTRACT=NOT_APPLICABLE_DUE_FAIL_CLOSED
     SELECT_SUM_HEURISTIC_ORACLE_ALLOWED=NO
 
-This is a `BLOCKER`. No I5A implementation slice may include SELECT_SUM.
-
-## 9. Family semantics retained for later freeze
+## 9. Family semantics retained for the eleven-family V1 freeze
 
 The companion contract draft contains the complete formulas. The audit
 decisions that must survive a later SELECT_SUM remediation are:
@@ -316,7 +311,9 @@ decisions that must survive a later SELECT_SUM remediation are:
 * select/unselect preserves both sections, distinguishes SELECT from
   UNSELECT, and uses the core's combined-index response;
 * all source order and duplicate occurrences remain visible in the semantic
-  domain, while unsafe card identity remains absent.
+  domain, while unsafe card identity remains absent;
+* SELECT_SUM is an explicit unsupported-family boundary and is never silently
+  routed into an approximate continuation or oracle.
 
 ## 10. Response and network barrier
 
@@ -338,8 +335,8 @@ I5 does not own any of the latter values. `I5_LOCAL_KEY_EQUALS_OCGFORGE_PUBLIC_A
 ## 11. Future test evidence shape
 
 The future implementation must include exact raw-prompt/response vectors and
-test all eleven currently frozen families plus a separate SELECT_SUM oracle
-slice after the blocker is resolved. At minimum the vectors must cover:
+test all eleven admitted families plus an explicit SELECT_SUM unsupported
+boundary. At minimum the vectors must cover:
 
     minimal and multi-choice prompts
     duplicate-looking source occurrences
@@ -354,18 +351,23 @@ slice after the blocker is resolved. At minimum the vectors must cover:
     paired privacy worlds and public reflection boundary
     fresh-process value-level determinism
 
-`SELECT_SUM` additionally requires independent bounded brute-force and exact
-oracle cross-checks for zero optional entries, singleton, duplicates, equal
-sums, mandatory plus optional, lower/upper bounds, no/one/many solutions, and
-a large bounded vector. Those tests cannot authorize a heuristic oracle.
+The retained SELECT_SUM research vectors are negative unsupported-family
+evidence, not an oracle contract. Any future re-admission would require a new
+independent bounded brute-force/exact-oracle review for zero optional entries,
+singleton, duplicates, equal sums, mandatory plus optional, lower/upper bounds,
+no/one/many solutions, and a large bounded vector. Those tests cannot
+authorize a heuristic oracle.
 
 ## 12. Findings
 
-### BLOCKER — unrestricted SELECT_SUM exact legality is not closed
+### RESOLVED BLOCKER — SELECT_SUM is intentionally unsupported for V1
 
-The concrete signed/unsigned `sum_param` discrepancy and truncated internal
-accumulator prevent a complete exact wire-to-domain contract. This must be
-resolved before I5A0 final pass.
+The concrete signed/unsigned `sum_param` discrepancy, truncated internal
+accumulator, and pointer-ordered final validation prevent a complete exact
+wire-to-domain contract. The authorized V1 scope decision is to reject
+`MSG_SELECT_SUM` as `UnsupportedPromptFamily` before any public or private
+domain is constructed. This closes the blocker without inventing an oracle;
+re-admission belongs to a new contract review.
 
 ### Three MAJOR findings from the previous head — remediated here
 
@@ -383,8 +385,9 @@ resolved before I5A0 final pass.
    place, and mask choices, fixed source traversal for counter amounts, and
    full remaining-choice permutations for sorting.
 
-These three findings are closed by this docs/fixture remediation only. They do
-not change the SELECT_SUM blocker or authorize runtime implementation.
+These three findings are closed by the docs/fixture remediation only. The
+SELECT_SUM scope decision is separate and also does not authorize runtime
+implementation.
 
 ### NOTE — requested repository governance documents are absent
 
@@ -419,14 +422,15 @@ claim of success:
 
     I4_FINAL=YES
     I5A0_TARGET_FAMILY_COUNT=12
-    I5A0_SUPPORTED_CONTRACT_FAMILY_COUNT=12
+    I5A0_SUPPORTED_CONTRACT_FAMILY_COUNT=11
+    SELECT_SUM_SUPPORT=FAIL_CLOSED_UNSUPPORTED_V1
     ANNOUNCE_CARD_SUPPORT=FAIL_CLOSED_UNSUPPORTED
     I5_MESSAGE_IDS_FROZEN=PASS
     I5_MODERN_WIRE_GRAMMARS_FROZEN=PASS
-    I5_RESPONSE_CODECS_FROZEN=PASS
+    I5_RESPONSE_CODECS_FROZEN=PASS_FOR_11_ADMITTED_FAMILIES
     I5_CONTINUATION_MODEL_FROZEN=PASS
-    I5_CURRENT_DOMAIN_COMPLETENESS=PASS
-    I5_TERMINAL_COMPLETION_REACHABILITY=PASS
+    I5_CURRENT_DOMAIN_COMPLETENESS=PASS_FOR_11_ADMITTED_FAMILIES
+    I5_TERMINAL_COMPLETION_REACHABILITY=PASS_FOR_11_ADMITTED_FAMILIES
     I5_DUPLICATE_OCCURRENCE_PRESERVATION=PASS
     I5_FINISH_SEMANTICS_FROZEN=PASS
     I5_CANCEL_SEMANTICS_FROZEN=PASS
@@ -442,20 +446,22 @@ claim of success:
     I5_UNORDERED_CANONICAL_PATHS=MONOTONIC_SOURCE_INDEXES
     I5_SELECT_TRIBUTE_BOUND_SEMANTICS=MIN_VALUE_PLUS_MAX_COUNT
     I5_LOCAL_KEY_EQUALS_OCGFORGE_PUBLIC_ACTION_KEY=NO
-    SELECT_SUM_EXACT_SEMANTICS=PASS
-    SELECT_SUM_EXACT_ORACLE_CONTRACT=PASS
+    SELECT_SUM_EXACT_SEMANTICS=NOT_APPLICABLE_DUE_FAIL_CLOSED
+    SELECT_SUM_EXACT_ORACLE_CONTRACT=NOT_APPLICABLE_DUE_FAIL_CLOSED
     SELECT_SUM_HEURISTIC_ORACLE_ALLOWED=NO
     I6_AUTHORITY_ACQUIRED=NO
     MODEL_INPUT_AUTHORITY_ACQUIRED=NO
     NETWORK_SEND_AUTHORITY_ACQUIRED=NO
 
-This I5A0 audit does not satisfy the matrix:
+This I5A0 slice is ready for independent review of the eleven-family freeze;
+this agent does not claim that final pass:
 
-    BLOCKERS=1
+    BLOCKERS=0
     MAJORS=0
     MINORS=0
     NOTES=4
     CONTRACT_FROZEN_FAMILY_COUNT=11
+    I5A0_CONTRACT_FREEZE=READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES
     I5A0_CONTRACT_FREEZE_FINAL_PASS=NO
     I5_IMPLEMENTATION_AUTHORIZED=NO
     I5_IMPLEMENTED=NO

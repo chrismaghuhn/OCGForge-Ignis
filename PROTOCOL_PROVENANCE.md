@@ -416,3 +416,22 @@ from I5. A separate authorized contract decision must choose whether to prove
 a source-backed restricted domain or explicitly certify `SELECT_SUM` as
 V1 fail-closed unsupported. No production, test, fixture, or contract code was
 changed by this research-only finding.
+
+## I5A0 SELECT_SUM V1 scope decision (authorized, 2026-09-05)
+
+The independent review authorized the fail-closed scope decision after the
+research conclusion above. This is an Ignis contract decision, not an
+additional upstream fact:
+
+```text
+I5A0_TARGET_FAMILY_COUNT=12
+I5A0_SUPPORTED_CONTRACT_FAMILY_COUNT=11
+SELECT_SUM_SUPPORT=FAIL_CLOSED_UNSUPPORTED_V1
+SELECT_SUM_RUNTIME_IMPLEMENTATION=ABSENT
+ANNOUNCE_CARD_SUPPORT=FAIL_CLOSED_UNSUPPORTED
+I5_IMPLEMENTATION_AUTHORIZED=NO
+```
+
+The decision does not modify I4 semantics, add a response sender, or authorize
+re-admission of SELECT_SUM. Re-admission requires a separate source-backed
+contract decision.

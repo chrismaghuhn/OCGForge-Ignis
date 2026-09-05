@@ -1,9 +1,9 @@
 # OCGForge-Ignis Combinatorial Prompt Continuation V1
 
-Status: I5A0 research contract draft; blocked from acceptance by the exact
-`SELECT_SUM` legality gap recorded in Section 12. This document is not an
-implementation authorization and is not an accepted replacement for the I4
-flat-prompt contract.
+Status: I5A0 eleven-family contract-freeze draft; `SELECT_SUM` is intentionally
+fail-closed unsupported for V1 after the exact research blocker was confirmed.
+This document is not an implementation authorization and is not an accepted
+replacement for the I4 flat-prompt contract.
 
 Date: 2026-09-05
 
@@ -13,8 +13,8 @@ Contract ID:
 
 The contract is intentionally separate from
 `ocgforge-ignis.flat-prompt-projection.v1`. I4 remains final and unchanged.
-The twelve family grammars are audited below, but this contract cannot become
-an accepted twelve-family freeze while `SELECT_SUM` is unresolved.
+The twelve requested families are audited below; eleven are contract-supported
+and `SELECT_SUM` is a deliberately unsupported V1 boundary.
 
 ## 1. Authority and scope
 
@@ -44,7 +44,7 @@ message families:
 | --- | ---: | --- | --- |
 | `MSG_SELECT_CARD` | 15 | `CONTINUATION_REQUIRED` | FROZEN |
 | `MSG_SELECT_TRIBUTE` | 20 | `CONTINUATION_REQUIRED` | FROZEN |
-| `MSG_SELECT_SUM` | 23 | `SPECIAL_EXACT_ORACLE_REQUIRED` | UNRESOLVED |
+| `MSG_SELECT_SUM` | 23 | `FAIL_CLOSED_UNSUPPORTED_V1` | UNSUPPORTED |
 | `MSG_SELECT_PLACE` | 18 | `CONTINUATION_REQUIRED` | FROZEN |
 | `MSG_SELECT_DISFIELD` | 24 | `CONTINUATION_REQUIRED` | FROZEN |
 | `MSG_SELECT_COUNTER` | 22 | `CONTINUATION_REQUIRED` | FROZEN |
@@ -62,8 +62,8 @@ No I5A0 value is an OCGForge `public_action_key`, a model input, a network
 packet, a socket identity, or a continuation implementation. The final
 contract status is:
 
-    I5A0_CONTRACT_FREEZE=BLOCKED_CONTRACT_EXECUTABILITY
-    SELECT_SUM_CONTRACT=UNRESOLVED
+    I5A0_CONTRACT_FREEZE=READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES
+    SELECT_SUM_CONTRACT=FAIL_CLOSED_UNSUPPORTED_V1
     I5_IMPLEMENTATION_AUTHORIZED=NO
 
 ## 2. Common wire and parsing rules
@@ -415,7 +415,7 @@ source occurrence may remain an anonymous prompt-local candidate identified
 only by its section and ordinal; no raw address is exposed and no legal source
 occurrence is removed solely because I3D has no persistent pile locator.
 
-## 9. MSG_SELECT_SUM (23) — unresolved exact contract
+## 9. MSG_SELECT_SUM (23) — explicit V1 fail-closed unsupported boundary
 
 The modern wire grammar is identifiable:
 
@@ -442,45 +442,45 @@ entries are emitted after the core's card-operation ordering. The source
 writer does not emit this message when the optional source vector is empty.
 Mode zero is emitted when the original maximum is nonzero; mode one is
 emitted when it is zero. The writer transmits only the low sixteen bits of the
-original `acc`, which is not enough to reconstruct an unrestricted internal
-accumulator.
+original `acc`.
 
-The observed final consumer is exact in shape but not contract-executable for
-the unrestricted wire domain. In exact mode it validates an optional selected
-set of count between minimum and maximum and recursively chooses one packed
-operation value per mandatory/selected occurrence to equal the target. In
-greater mode it computes the aggregate low/high minimum and maximum and
-accepts the selected set under the core's interval predicate. There is no
-response field for which packed alternative was chosen.
+The exact wire fields remain documented for inventory and fail-closed
+dispatch, but `MSG_SELECT_SUM` is not an admitted I5 public-domain family in
+V1. Every occurrence of message ID 23 is rejected before public context,
+candidate-domain, continuation, or response-binding construction:
 
-The required future predicates would be:
+    error=UnsupportedPromptFamily
+    public_context=ABSENT
+    public_candidates=ABSENT
+    private_binding=ABSENT
+    prompt_ordinal=UNCHANGED
 
-    IS_TERMINAL_LEGAL(partial_optional_occurrences)
-    HAS_LEGAL_COMPLETION(partial_optional_occurrences)
-    LEGAL_NEXT_CHOICES(partial_optional_occurrences)
+This is a deliberate scope decision, not a parser shortcut. The pinned core
+accepts unrestricted Lua operation results into `uint32_t sum_param`, loses
+upper accumulator bits when writing `acc & 0xffff`, and uses a different
+signed/unsigned interpretation of packed alternatives in feasibility versus
+final validation. `parse_response_cards` additionally sorts selected `card*`
+values by private object address before the final validator; for admitted
+zero-valued alternatives this can make validity depend on pointer order that
+is absent from the prompt bytes. No exact, pointer-independent wire-to-domain
+oracle can therefore be claimed for the unrestricted family.
 
-The exact source currently has a material unresolved disagreement. Its
-feasibility helpers in `field.cpp` mask the upper half of `sum_param` as an
-unsigned value, while `playerop.cpp#select_sum_check1` promotes the same
-packed `uint32_t` to signed `int32_t` and right-shifts it without the mask.
-For example, a packed value with low `2` and high `0x8001` is considered a
-candidate high value by the feasibility helper, while the final signed path
-can treat that high half as negative or implementation-defined. The source
-does not constrain operation results to a range that removes this case.
+The following are explicitly not permitted as a substitute:
 
-Therefore this document freezes the wire layout and records the exact source
-predicates as evidence, but it deliberately does not freeze a legal current
-domain, terminal oracle, or response contract for arbitrary `sum_param`.
-No future implementation may narrow or reinterpret this silently. A separate
-contract decision must either prove an admitted source-value domain with
-complete producer coverage or freeze the exact affected-value behavior. Until
-then:
+    unsigned reinterpretation of all packed halves
+    narrowing the source domain without complete producer proof
+    heuristic or greedy completion search
+    pointer/address reproduction
+    candidate truncation or first-match selection
 
-    SELECT_SUM_CONTRACT=UNRESOLVED
-    SELECT_SUM_EXACT_SEMANTICS=FAIL
-    SELECT_SUM_EXACT_ORACLE_CONTRACT=FAIL
+`SELECT_SUM` remains a researched message with a frozen fail-closed boundary.
+A future contract version may re-admit it only after an independently accepted
+source-backed domain/codec proof. This contract does not authorize such work:
+
+    SELECT_SUM_CONTRACT=FAIL_CLOSED_UNSUPPORTED_V1
+    SELECT_SUM_EXACT_SEMANTICS=NOT_APPLICABLE_DUE_UNSUPPORTED
+    SELECT_SUM_EXACT_ORACLE_CONTRACT=NOT_APPLICABLE
     SELECT_SUM_HEURISTIC_ORACLE_ALLOWED=NO
-    I5A0_CONTRACT_FREEZE=NO
 
 ## 10. MSG_SELECT_PLACE (18) and MSG_SELECT_DISFIELD (24)
 
@@ -765,13 +765,13 @@ existing error enum, but their meaning is fixed:
 | --- | --- |
 | `MalformedPrompt` | length, primitive, count, endian, boolean, or trailing-byte failure |
 | `UnsupportedPromptLayout` | legacy layout, unsupported family, or unadmitted source form |
+| `UnsupportedPromptFamily` | a researched family that is deliberately outside the admitted V1 implementation scope |
 | `UnprovenPromptSemantics` | structurally parseable but producer/legality semantics are not proven |
 | `UnprovenPublicReference` | a required persistent private/public card correlation is zero or multiple, or a required overlay proof is missing |
 | `InvalidContinuationInstance` | stale or unknown continuation identity |
 | `StaleContinuationStep` | action belongs to a prior step or prior prompt |
 | `InvalidContinuationAction` | key is malformed, not in the current complete domain, or semantically illegal |
 | `InvalidFinalResponseBinding` | private state cannot serialize one exact legal response |
-| `SelectSumContractUnresolved` | the SELECT_SUM exact oracle has not been frozen |
 
 Every error publishes no partial domain and sends no network response.
 
@@ -781,14 +781,15 @@ The intended final matrix is machine-readable in meaning:
 
     I4_FINAL=YES
     I5A0_TARGET_FAMILY_COUNT=12
-    I5A0_SUPPORTED_CONTRACT_FAMILY_COUNT=12
+    I5A0_SUPPORTED_CONTRACT_FAMILY_COUNT=11
+    SELECT_SUM_SUPPORT=FAIL_CLOSED_UNSUPPORTED_V1
     ANNOUNCE_CARD_SUPPORT=FAIL_CLOSED_UNSUPPORTED
     I5_MESSAGE_IDS_FROZEN=PASS
     I5_MODERN_WIRE_GRAMMARS_FROZEN=PASS
-    I5_RESPONSE_CODECS_FROZEN=PASS
+    I5_RESPONSE_CODECS_FROZEN=PASS_FOR_11_ADMITTED_FAMILIES
     I5_CONTINUATION_MODEL_FROZEN=PASS
-    I5_CURRENT_DOMAIN_COMPLETENESS=PASS
-    I5_TERMINAL_COMPLETION_REACHABILITY=PASS
+    I5_CURRENT_DOMAIN_COMPLETENESS=PASS_FOR_11_ADMITTED_FAMILIES
+    I5_TERMINAL_COMPLETION_REACHABILITY=PASS_FOR_11_ADMITTED_FAMILIES
     I5_DUPLICATE_OCCURRENCE_PRESERVATION=PASS
     I5_FINISH_SEMANTICS_FROZEN=PASS
     I5_CANCEL_SEMANTICS_FROZEN=PASS
@@ -804,25 +805,29 @@ The intended final matrix is machine-readable in meaning:
     I5_UNORDERED_CANONICAL_PATHS=MONOTONIC_SOURCE_INDEXES
     I5_SELECT_TRIBUTE_BOUND_SEMANTICS=MIN_VALUE_PLUS_MAX_COUNT
     I5_LOCAL_KEY_EQUALS_OCGFORGE_PUBLIC_ACTION_KEY=NO
-    SELECT_SUM_EXACT_SEMANTICS=PASS
-    SELECT_SUM_EXACT_ORACLE_CONTRACT=PASS
+    SELECT_SUM_EXACT_SEMANTICS=NOT_APPLICABLE_DUE_FAIL_CLOSED
+    SELECT_SUM_EXACT_ORACLE_CONTRACT=NOT_APPLICABLE_DUE_FAIL_CLOSED
     SELECT_SUM_HEURISTIC_ORACLE_ALLOWED=NO
     I6_AUTHORITY_ACQUIRED=NO
     MODEL_INPUT_AUTHORITY_ACQUIRED=NO
     NETWORK_SEND_AUTHORITY_ACQUIRED=NO
 
-The matrix is intentionally not satisfied by this draft:
+The twelve-message audit and the eleven-family contract are ready for
+independent review, but this commit does not claim that review's final pass:
 
-    I5A0_CONTRACT_FREEZE=NO
-    SELECT_SUM_EXACT_SEMANTICS=FAIL
-    SELECT_SUM_EXACT_ORACLE_CONTRACT=FAIL
+    I5A0_CONTRACT_FREEZE=READY_FOR_INDEPENDENT_REVIEW_11_FAMILIES
+    SELECT_SUM_EXACT_SEMANTICS=NOT_APPLICABLE_DUE_FAIL_CLOSED
+    SELECT_SUM_EXACT_ORACLE_CONTRACT=NOT_APPLICABLE_DUE_FAIL_CLOSED
     CONTRACT_FROZEN_FAMILY_COUNT=11
+    ANNOUNCE_CARD_SUPPORT=FAIL_CLOSED_UNSUPPORTED
+    I5A0_CONTRACT_FREEZE_FINAL_PASS=NO
     I5_IMPLEMENTED=NO
     I5_FINAL=NO
 
 The following are insufficient even if green: compilation; a single family;
 the pre-I5 108/108 aggregate; one deterministic process; fixture existence;
 successful parsing; N=1 output; no crash; PR mergeability; or hosted CI with no
-I5-specific contract/oracle evidence. The full future matrix, including an
-independent SELECT_SUM brute-force cross-check, is required before I5A0 can
-receive final pass.
+I5-specific contract/domain evidence for all eleven admitted families and the
+explicit SELECT_SUM unsupported boundary is required before I5A0 can receive
+final pass. A future re-admission of SELECT_SUM would additionally require a
+new source-backed exact-oracle review; that work is not part of this contract.
