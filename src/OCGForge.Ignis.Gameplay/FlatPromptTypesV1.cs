@@ -1982,7 +1982,9 @@ internal sealed class FlatPromptCounterContinuationStateV1
             this.assignedAmounts.Length > this.sources.Length ||
             this.sources.Any(source => source is null) ||
             this.sources.Select((source, index) =>
-                source.SourceOrdinal == index && source.Capacity > 0)
+                source.SourceOrdinal == index &&
+                source.Capacity > 0 &&
+                source.Capacity <= short.MaxValue)
                 .Any(isValid => !isValid))
         {
             throw new ArgumentException(
@@ -2513,10 +2515,11 @@ public sealed record FlatPromptCounterSourcePublicDescriptorV1
         ushort capacity,
         PublicSemanticLocatorV1 publicSemanticCardLocator)
     {
-        if (sourceOrdinal < 0 || capacity == 0)
+        ArgumentOutOfRangeException.ThrowIfNegative(sourceOrdinal);
+
+        if (capacity == 0 || capacity > short.MaxValue)
         {
-            throw new ArgumentOutOfRangeException(
-                sourceOrdinal < 0 ? nameof(sourceOrdinal) : nameof(capacity));
+            throw new ArgumentOutOfRangeException(nameof(capacity));
         }
 
         SourceOrdinal = sourceOrdinal;
@@ -4265,7 +4268,7 @@ internal static class FlatPromptKeyV1
         key = string.Empty;
         if (sourceOrdinal < 0 ||
             amount < 0 ||
-            amount > ushort.MaxValue)
+            amount > short.MaxValue)
         {
             return false;
         }

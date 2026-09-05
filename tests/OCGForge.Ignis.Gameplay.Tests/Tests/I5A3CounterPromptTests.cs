@@ -14,6 +14,7 @@ internal static class I5A3CounterPromptTests
         AssertExactDomainAndTerminalResponses();
         AssertPruningAndDuplicateOccurrences();
         AssertWireAndDomainFailures();
+        AssertSafeCapacityBoundaries();
         AssertAtomicityStalenessOwnershipAndCodec();
         AssertBindingAndPublicBoundary();
         AssertLaterFamilyBoundary();
@@ -197,10 +198,6 @@ internal static class I5A3CounterPromptTests
             new[] { "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:1:3" },
             exactAfter.Projection!.Candidates!);
 
-        Authority duplicateAuthority = CreateAuthority(
-            new CardSpec(
-                0x55555555,
-                new ModernLocInfoV1(0, 0x04, 0, 0x05)));
         byte[] duplicateMessage = CounterMessage(
             0,
             8,
@@ -213,40 +210,41 @@ internal static class I5A3CounterPromptTests
                 0x55555555,
                 new ModernLocInfoV1(0, 0x04, 0, 0),
                 2));
-        FlatPromptSessionV1 duplicateSession = new();
-        FlatPromptProjectionResultV1 duplicate = Accept(
-            duplicateSession,
-            duplicateMessage,
-            duplicateAuthority);
-        AssertSuccess(duplicate);
-        FlatPromptCounterSelectionPublicContextV1 duplicateContext =
-            (FlatPromptCounterSelectionPublicContextV1)duplicate.Context!;
-        Equal(2, duplicateContext.Sources.Count);
-        Equal(0, duplicateContext.Sources[0].SourceOrdinal);
-        Equal(1, duplicateContext.Sources[1].SourceOrdinal);
+        AssertFailureResult(
+            new FlatPromptSessionV1().TryAcceptI5Prompt(duplicateMessage),
+            FlatPromptErrorCodeV1.UnprovenCandidateDomain);
+
+        Authority differentAddressAuthority = CreateAuthority(
+            new CardSpec(
+                0x55555555,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05)),
+            new CardSpec(
+                0x55555555,
+                new ModernLocInfoV1(0, 0x04, 1, 0x05)));
+        byte[] differentAddressMessage = CounterMessage(
+            0,
+            8,
+            2,
+            new CounterEntry(
+                0x55555555,
+                new ModernLocInfoV1(0, 0x04, 0, 0),
+                1),
+            new CounterEntry(
+                0x55555555,
+                new ModernLocInfoV1(0, 0x04, 1, 0),
+                2));
+        FlatPromptProjectionResultV1 differentAddress = Accept(
+            new FlatPromptSessionV1(),
+            differentAddressMessage,
+            differentAddressAuthority);
+        AssertSuccess(differentAddress);
+        FlatPromptCounterSelectionPublicContextV1 differentAddressContext =
+            (FlatPromptCounterSelectionPublicContextV1)
+                differentAddress.Context!;
         Equal("p0:MONSTER_ZONE:0",
-            duplicateContext.Sources[0].PublicSemanticCardLocator.Value);
-        Equal("p0:MONSTER_ZONE:0",
-            duplicateContext.Sources[1].PublicSemanticCardLocator.Value);
-        EqualKeys(
-            new[]
-            {
-                "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:0",
-                "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:1"
-            },
-            duplicate.Candidates!);
-        RunTerminalPath(
-            duplicateMessage,
-            duplicateAuthority,
-            "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:0",
-            "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:1:2",
-            new byte[] { 0x00, 0x00, 0x02, 0x00 });
-        RunTerminalPath(
-            duplicateMessage,
-            duplicateAuthority,
-            "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:1",
-            "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:1:1",
-            new byte[] { 0x01, 0x00, 0x01, 0x00 });
+            differentAddressContext.Sources[0].PublicSemanticCardLocator.Value);
+        Equal("p0:MONSTER_ZONE:1",
+            differentAddressContext.Sources[1].PublicSemanticCardLocator.Value);
     }
 
     private static void AssertWireAndDomainFailures()
@@ -271,6 +269,36 @@ internal static class I5A3CounterPromptTests
                 new ModernLocInfoV1(0, 0x04, 1, 0),
                 3));
 
+        Authority spellTrapAuthority = CreateAuthority(
+            new CardSpec(
+                0xABCD0001,
+                new ModernLocInfoV1(0, 0x08, 0, 0x05)),
+            new CardSpec(
+                0xABCD0002,
+                new ModernLocInfoV1(0, 0x08, 1, 0x05)));
+        FlatPromptProjectionResultV1 spellTrap = Accept(
+            new FlatPromptSessionV1(),
+            CounterMessage(
+                0,
+                1,
+                1,
+                new CounterEntry(
+                    0xABCD0001,
+                    new ModernLocInfoV1(0, 0x08, 0, 0),
+                    1),
+                new CounterEntry(
+                    0xABCD0002,
+                    new ModernLocInfoV1(0, 0x08, 1, 0),
+                    1)),
+            spellTrapAuthority);
+        AssertSuccess(spellTrap);
+        FlatPromptCounterSelectionPublicContextV1 spellTrapContext =
+            (FlatPromptCounterSelectionPublicContextV1)spellTrap.Context!;
+        Equal("p0:SPELL_TRAP_ZONE:0",
+            spellTrapContext.Sources[0].PublicSemanticCardLocator.Value);
+        Equal("p0:SPELL_TRAP_ZONE:1",
+            spellTrapContext.Sources[1].PublicSemanticCardLocator.Value);
+
         AssertFailure(
             new FlatPromptSessionV1(),
             valid,
@@ -291,6 +319,16 @@ internal static class I5A3CounterPromptTests
             new FlatPromptSessionV1(),
             SetByte(valid, 15, 0x84),
             FlatPromptErrorCodeV1.UnprovenPublicReference);
+        foreach (byte impossibleLocation in new byte[]
+                 { 0x00, 0x01, 0x02, 0x10, 0x20, 0x40 })
+        {
+            AssertFailureResult(
+                Accept(
+                    new FlatPromptSessionV1(),
+                    SetByte(valid, 15, impossibleLocation),
+                    authority),
+                FlatPromptErrorCodeV1.InvalidLocation);
+        }
         AssertFailure(
             new FlatPromptSessionV1(),
             SetU16(valid, 4, 0),
@@ -377,6 +415,98 @@ internal static class I5A3CounterPromptTests
         Equal(
             FlatPromptErrorCodeV1.InvalidContinuationAction,
             overCapacityError);
+        AssertFailure(
+            new FlatPromptSessionV1(),
+            new byte[] { 22 },
+            FlatPromptErrorCodeV1.MalformedPrompt);
+    }
+
+    private static void AssertSafeCapacityBoundaries()
+    {
+        Authority authority = CreateAuthority(
+            new CardSpec(
+                0xABABABAB,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05)),
+            new CardSpec(
+                0xCDCDCDCD,
+                new ModernLocInfoV1(0, 0x04, 1, 0x05)));
+        byte[] rawMaximum = CounterMessage(
+            0,
+            9,
+            (ushort)short.MaxValue,
+            new CounterEntry(
+                0xABABABAB,
+                new ModernLocInfoV1(0, 0x04, 0, 0),
+                ushort.MaxValue),
+            new CounterEntry(
+                0xCDCDCDCD,
+                new ModernLocInfoV1(0, 0x04, 1, 0),
+                1));
+        FlatPromptSessionV1 maximumSession = new();
+        FlatPromptProjectionResultV1 maximum = Accept(
+            maximumSession,
+            rawMaximum,
+            authority);
+        AssertSuccess(maximum);
+        FlatPromptCounterSelectionPublicContextV1 maximumContext =
+            (FlatPromptCounterSelectionPublicContextV1)maximum.Context!;
+        Equal((ushort)short.MaxValue, maximumContext.Sources[0].Capacity);
+        EqualKeys(
+            new[]
+            {
+                "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:32766",
+                "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:32767"
+            },
+            maximum.Candidates!);
+        False(maximumSession.TryCaptureSelection(
+            "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:32768",
+            out _,
+            out FlatPromptErrorCodeV1 overSafeKeyError));
+        Equal(
+            FlatPromptErrorCodeV1.InvalidI4LocalCandidateKey,
+            overSafeKeyError);
+        False(maximumSession.TryCaptureSelection(
+            "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:65535",
+            out _,
+            out FlatPromptErrorCodeV1 highBitKeyError));
+        Equal(
+            FlatPromptErrorCodeV1.InvalidI4LocalCandidateKey,
+            highBitKeyError);
+        FlatPromptContinuationStepResultV1 maximumAfter =
+            maximumSession.TryApplySelection(Capture(
+                maximumSession,
+                "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:0:32767"));
+        True(maximumAfter.IsSuccess, maximumAfter.Error.ToString());
+        EqualKeys(
+            new[] { "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:1:0" },
+            maximumAfter.Projection!.Candidates!);
+        FlatPromptContinuationStepResultV1 maximumTerminal =
+            maximumSession.TryApplySelection(Capture(
+                maximumSession,
+                "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:1:0"));
+        True(maximumTerminal.IsTerminal);
+        BytesEqual(
+            new byte[] { 0xFF, 0x7F, 0x00, 0x00 },
+            maximumTerminal.TerminalResponseBody.ToArray());
+
+        byte[] exceedsSafeTotal = CounterMessage(
+            0,
+            9,
+            32769,
+            new CounterEntry(
+                0xABABABAB,
+                new ModernLocInfoV1(0, 0x04, 0, 0),
+                ushort.MaxValue),
+            new CounterEntry(
+                0xCDCDCDCD,
+                new ModernLocInfoV1(0, 0x04, 1, 0),
+                1));
+        AssertFailureResult(
+            Accept(
+                new FlatPromptSessionV1(),
+                exceedsSafeTotal,
+                authority),
+            FlatPromptErrorCodeV1.UnprovenCandidateDomain);
     }
 
     private static void AssertAtomicityStalenessOwnershipAndCodec()
@@ -467,12 +597,12 @@ internal static class I5A3CounterPromptTests
         Equal(FlatPromptErrorCodeV1.StaleContinuationStep, staleStep.Error);
 
         True(FlatPromptProjectionV1.TryEncodeCounterResponse(
-                new[] { 0, ushort.MaxValue },
+                new[] { 0, short.MaxValue },
                 out byte[] maxResponse,
                 out FlatPromptErrorCodeV1 maxResponseError),
             maxResponseError.ToString());
         BytesEqual(
-            new byte[] { 0x00, 0x00, 0xFF, 0xFF },
+            new byte[] { 0x00, 0x00, 0xFF, 0x7F },
             maxResponse);
         False(FlatPromptProjectionV1.TryEncodeCounterResponse(
             new[] { -1 },
@@ -480,7 +610,7 @@ internal static class I5A3CounterPromptTests
             out FlatPromptErrorCodeV1 negativeError));
         Equal(FlatPromptErrorCodeV1.InvalidResponseBinding, negativeError);
         False(FlatPromptProjectionV1.TryEncodeCounterResponse(
-            new[] { ushort.MaxValue + 1 },
+            new[] { short.MaxValue + 1 },
             out _,
             out FlatPromptErrorCodeV1 overflowError));
         Equal(FlatPromptErrorCodeV1.InvalidResponseBinding, overflowError);
@@ -493,20 +623,20 @@ internal static class I5A3CounterPromptTests
             "expected maximum-capacity locator");
         FlatPromptCounterSourcePublicDescriptorV1[] maximumSources =
         {
-            new(0, ushort.MaxValue, maximumLocator!),
+            new(0, (ushort)short.MaxValue, maximumLocator!),
             new(1, 1, maximumLocator!)
         };
         FlatPromptCounterContinuationStateV1 maximumState = new(
             0,
             2,
-            ushort.MaxValue,
+            (ushort)short.MaxValue,
             maximumSources,
             Array.Empty<int>(),
             0);
         True(FlatPromptProjectionV1.TryAdvanceCounterContinuation(
                 maximumState,
                 0,
-                ushort.MaxValue,
+                short.MaxValue,
                 out FlatPromptProjectionDraftV1? maximumDraft,
                 out FlatPromptErrorCodeV1 maximumError),
             maximumError.ToString());

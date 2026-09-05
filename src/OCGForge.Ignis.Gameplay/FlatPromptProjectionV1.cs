@@ -35,6 +35,7 @@ internal static class FlatPromptProjectionV1
     private const int AttributeMessageLength = 7;
     private const int CounterHeaderLength = 10;
     private const int CounterEntryLength = 9;
+    private const ushort MaximumSafeCounterAmount = (ushort)short.MaxValue;
 
     private static readonly int[] YesNoResponses = { 0, 1 };
     private static readonly int[] EffectYnResponses = { 0, 1 };
@@ -843,12 +844,6 @@ internal static class FlatPromptProjectionV1
     {
         draft = null;
         error = FlatPromptErrorCodeV1.None;
-        if (bytes.Length == 1)
-        {
-            error = FlatPromptErrorCodeV1.UnsupportedPromptLayout;
-            return false;
-        }
-
         if (bytes.Length < CounterHeaderLength)
         {
             error = FlatPromptErrorCodeV1.MalformedPrompt;
@@ -902,7 +897,9 @@ internal static class FlatPromptProjectionV1
 
         FlatPromptSelectCounterWireEntryV1[] entries =
             new FlatPromptSelectCounterWireEntryV1[(int)occurrenceCount];
-        ulong totalCapacity = 0;
+        HashSet<(byte Controller, byte Location, byte Sequence)>
+            sourceAddresses = new();
+        ulong totalSafeCapacity = 0;
         int offset = CounterHeaderLength;
         for (int ordinal = 0; ordinal < entries.Length; ordinal++)
         {
@@ -925,6 +922,18 @@ internal static class FlatPromptProjectionV1
                 return false;
             }
 
+            if (location is not (0x04 or 0x08))
+            {
+                error = FlatPromptErrorCodeV1.InvalidLocation;
+                return false;
+            }
+
+            if (!sourceAddresses.Add((controller, location, sequence)))
+            {
+                error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+                return false;
+            }
+
             if (!TryValidatePrivateLocation(
                     new ModernLocInfoV1(
                         controller,
@@ -942,11 +951,13 @@ internal static class FlatPromptProjectionV1
                 location,
                 sequence,
                 capacity);
-            totalCapacity += capacity;
+            totalSafeCapacity += Math.Min(
+                capacity,
+                MaximumSafeCounterAmount);
             offset += CounterEntryLength;
         }
 
-        if ((ulong)requiredTotal > totalCapacity)
+        if ((ulong)requiredTotal > totalSafeCapacity)
         {
             error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
             return false;
@@ -2154,7 +2165,7 @@ internal static class FlatPromptProjectionV1
 
             sources.Add(new FlatPromptCounterSourcePublicDescriptorV1(
                 ordinal,
-                entry.Capacity,
+                GetSafeCounterCapacity(entry.Capacity),
                 correlation.AcceptedLocator));
         }
 
@@ -2180,6 +2191,11 @@ internal static class FlatPromptProjectionV1
             out projected,
             out error);
     }
+
+    private static ushort GetSafeCounterCapacity(ushort rawCapacity) =>
+        rawCapacity > MaximumSafeCounterAmount
+            ? MaximumSafeCounterAmount
+            : rawCapacity;
 
     private static bool TryBuildMaskProjection(
         FlatPromptFamilyV1 family,
@@ -3062,7 +3078,7 @@ internal static class FlatPromptProjectionV1
         for (int index = 0; index < assignedAmounts.Count; index++)
         {
             int amount = assignedAmounts[index];
-            if (amount < 0 || amount > ushort.MaxValue)
+            if (amount < 0 || amount > short.MaxValue)
             {
                 responseBody = Array.Empty<byte>();
                 error = FlatPromptErrorCodeV1.InvalidResponseBinding;
