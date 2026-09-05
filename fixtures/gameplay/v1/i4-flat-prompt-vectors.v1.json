@@ -103,7 +103,6 @@
             "source_section": "ATTACKABLE",
             "source_ordinal": 1,
             "public_semantic_card_locator": "p0:MONSTER_ZONE:1",
-            "card_code": 16909060,
             "direct_attackable": 0
           },
           "private_response_binding": {
@@ -273,7 +272,7 @@
           "public_descriptor": {
             "i4_local_candidate_key": "MSG_SELECT_IDLECMD:ACTIVATE:0",
             "choice_kind": "ACTIVATE",
-            "source_section": "ACTIVATABLE",
+            "source_section": "ACTIVATE",
             "source_ordinal": 0,
             "public_semantic_card_locator": "p1:MONSTER_ZONE:5",
             "card_code": 353769240,
