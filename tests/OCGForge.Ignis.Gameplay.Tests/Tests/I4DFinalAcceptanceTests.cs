@@ -285,12 +285,26 @@ internal static class I4DFinalAcceptanceTests
             0);
         AssertNextOrdinal(currentHandle, nextHandle);
 
+        FlatPromptSelectionHandleV1 finalYesNoHandle = nextHandle;
+        FlatPromptProjectionResultV1 sameFamilyYesNo = Accept(
+            session,
+            FlatPromptFamilyV1.MsgSelectYesNo,
+            YesNoMessage(),
+            authority);
+        AssertSuccess(sameFamilyYesNo, FlatPromptFamilyV1.MsgSelectYesNo);
+        AssertStale(session, finalYesNoHandle);
+        FlatPromptSelectionHandleV1 sameKeyYesNoHandle = CaptureAndResolve(
+            session,
+            "MSG_SELECT_YESNO:NO",
+            0);
+        AssertNextOrdinal(finalYesNoHandle, sameKeyYesNoHandle);
+
         FlatPromptSelectionHandleV1 wrongFamilyHandle =
             new(
-                nextHandle.PromptInstanceOrdinal,
+                sameKeyYesNoHandle.PromptInstanceOrdinal,
                 FlatPromptFamilyV1.MsgSelectOption,
-                nextHandle.I4LocalCandidateKey,
-                nextHandle.OrderedDomain);
+                sameKeyYesNoHandle.I4LocalCandidateKey,
+                sameKeyYesNoHandle.OrderedDomain);
         AssertStale(session, wrongFamilyHandle);
     }
 
@@ -478,6 +492,24 @@ internal static class I4DFinalAcceptanceTests
             new[] { noCandidate, noCandidate },
             new[] { noCandidate.I4LocalCandidateKey, noCandidate.I4LocalCandidateKey },
             new[] { 0, 0 });
+
+        True(PublicSemanticLocatorV1.TryCreateIndexed(
+            0,
+            PublicSemanticZoneV1.MonsterZone,
+            0,
+            out PublicSemanticLocatorV1? fakeLocator));
+        FlatPublicCandidateDescriptorV1 wrongRuntimeType =
+            new FakeBattleActivatablePublicCandidateV1(
+                "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+                0,
+                fakeLocator!,
+                7,
+                0);
+        AssertInvalidBinding(
+            FlatPromptFamilyV1.MsgSelectBattleCmd,
+            new[] { wrongRuntimeType },
+            new[] { "MSG_SELECT_BATTLECMD:ACTIVATE:0" },
+            new[] { 0 });
     }
 
     internal static void TestCompleteDomainsAndResponseIsolation()
@@ -978,18 +1010,25 @@ internal static class I4DFinalAcceptanceTests
                 property.Name is "CardCode" or
                     "PublicSemanticCardLocator")));
 
-        string firstSignature = PublicResultSignature(effect);
-        FlatPromptProjectionResultV1 secondEffect = Accept(
-            new FlatPromptSessionV1(),
-            FlatPromptFamilyV1.MsgSelectEffectYn,
-            EffectMessage(
-                0x11223344,
-                new ModernLocInfoV1(0, 0x04, 0, 0),
-                7),
-            authority);
-        string secondSignature = PublicResultSignature(secondEffect);
-        Equal(firstSignature, secondSignature);
-        AssertResponseForFamily(
+        AssertFreshValueDeterminism(
+            FlatPromptFamilyV1.MsgSelectYesNo,
+            YesNoMessage(),
+            authority,
+            "MSG_SELECT_YESNO:NO",
+            0);
+        AssertFreshValueDeterminism(
+            FlatPromptFamilyV1.MsgSelectOption,
+            OptionMessage(7),
+            authority,
+            "MSG_SELECT_OPTION:OPTION:0",
+            0);
+        AssertFreshValueDeterminism(
+            FlatPromptFamilyV1.MsgSelectPosition,
+            PositionMessage(),
+            authority,
+            "MSG_SELECT_POSITION:FACEUP_ATTACK",
+            1);
+        AssertFreshValueDeterminism(
             FlatPromptFamilyV1.MsgSelectEffectYn,
             EffectMessage(
                 0x11223344,
@@ -998,6 +1037,57 @@ internal static class I4DFinalAcceptanceTests
             authority,
             "MSG_SELECT_EFFECTYN:NO",
             0);
+        AssertFreshValueDeterminism(
+            FlatPromptFamilyV1.MsgSelectChain,
+            ChainMessage(
+                false,
+                new ChainEntrySpec(
+                    0x11223344,
+                    new ModernLocInfoV1(0, 0x04, 0, 0),
+                    7,
+                    0)),
+            authority,
+            "MSG_SELECT_CHAIN:CHAIN_ENTRY:0",
+            0);
+        AssertFreshValueDeterminism(
+            FlatPromptFamilyV1.MsgSelectBattleCmd,
+            BattleMessage(
+                new[]
+                {
+                    new BattleActivationSpec(
+                        0x11223344,
+                        new ModernLocInfoV1(0, 0x04, 0, 0),
+                        7,
+                        0)
+                },
+                Array.Empty<BattleAttackSpec>(),
+                0,
+                0),
+            authority,
+            "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+            0);
+        AssertFreshValueDeterminism(
+            FlatPromptFamilyV1.MsgSelectIdleCmd,
+            IdleMessage(
+                Array.Empty<IdleCardSpec>(),
+                Array.Empty<IdleCardSpec>(),
+                Array.Empty<IdleCardSpec>(),
+                Array.Empty<IdleCardSpec>(),
+                Array.Empty<IdleCardSpec>(),
+                new[]
+                {
+                    new IdleActivationSpec(
+                        0x11223344,
+                        new ModernLocInfoV1(0, 0x04, 0, 0),
+                        7,
+                        0)
+                },
+                0,
+                0,
+                0),
+            authority,
+            "MSG_SELECT_IDLECMD:ACTIVATE:0",
+            5);
     }
 
     private static void AssertSuccess(
@@ -1168,6 +1258,100 @@ internal static class I4DFinalAcceptanceTests
             authority);
         AssertSuccess(result, family);
         _ = CaptureAndResolve(session, key, response);
+    }
+
+    private static void AssertFreshValueDeterminism(
+        FlatPromptFamilyV1 family,
+        byte[] message,
+        Authority authority,
+        string key,
+        int expectedResponse)
+    {
+        FlatPromptSessionV1 firstSession = new();
+        FlatPromptSessionV1 secondSession = new();
+        FlatPromptProjectionResultV1 firstResult = Accept(
+            firstSession,
+            family,
+            message,
+            authority);
+        FlatPromptProjectionResultV1 secondResult = Accept(
+            secondSession,
+            family,
+            message,
+            authority);
+        AssertSuccess(firstResult, family);
+        AssertSuccess(secondResult, family);
+        Equal(
+            PublicResultSignature(firstResult),
+            PublicResultSignature(secondResult));
+
+        FlatPromptSelectionHandleV1 firstHandle = CaptureAndResolve(
+            firstSession,
+            key,
+            expectedResponse);
+        FlatPromptSelectionHandleV1 secondHandle = CaptureAndResolve(
+            secondSession,
+            key,
+            expectedResponse);
+        Equal(
+            firstHandle.PromptInstanceOrdinal,
+            secondHandle.PromptInstanceOrdinal);
+
+        FlatPromptProjectionResultV1 firstFailure = family is
+            FlatPromptFamilyV1.MsgSelectYesNo or
+            FlatPromptFamilyV1.MsgSelectOption or
+            FlatPromptFamilyV1.MsgSelectPosition
+            ? firstSession.TryAcceptPrompt(new byte[] { 0xFF })
+            : firstSession.TryAcceptPrompt(
+                new byte[] { 0xFF },
+                authority.Mirror,
+                authority.Projection);
+        FlatPromptProjectionResultV1 secondFailure = family is
+            FlatPromptFamilyV1.MsgSelectYesNo or
+            FlatPromptFamilyV1.MsgSelectOption or
+            FlatPromptFamilyV1.MsgSelectPosition
+            ? secondSession.TryAcceptPrompt(new byte[] { 0xFF })
+            : secondSession.TryAcceptPrompt(
+                new byte[] { 0xFF },
+                authority.Mirror,
+                authority.Projection);
+        AssertFailureResult(
+            firstFailure,
+            FlatPromptErrorCodeV1.UnsupportedPromptLayout);
+        AssertFailureResult(
+            secondFailure,
+            FlatPromptErrorCodeV1.UnsupportedPromptLayout);
+        Equal(
+            PublicResultSignature(firstFailure),
+            PublicResultSignature(secondFailure));
+        AssertStale(firstSession, firstHandle);
+        AssertStale(secondSession, secondHandle);
+
+        FlatPromptProjectionResultV1 firstAgain = Accept(
+            firstSession,
+            family,
+            message,
+            authority);
+        FlatPromptProjectionResultV1 secondAgain = Accept(
+            secondSession,
+            family,
+            message,
+            authority);
+        AssertSuccess(firstAgain, family);
+        AssertSuccess(secondAgain, family);
+        FlatPromptSelectionHandleV1 firstAgainHandle = CaptureAndResolve(
+            firstSession,
+            key,
+            expectedResponse);
+        FlatPromptSelectionHandleV1 secondAgainHandle = CaptureAndResolve(
+            secondSession,
+            key,
+            expectedResponse);
+        AssertNextOrdinal(firstHandle, firstAgainHandle);
+        AssertNextOrdinal(secondHandle, secondAgainHandle);
+        Equal(
+            firstAgainHandle.PromptInstanceOrdinal,
+            secondAgainHandle.PromptInstanceOrdinal);
     }
 
     private static Authority CreateAuthority(params CardSpec[] cards)
@@ -1383,6 +1567,25 @@ internal static class I4DFinalAcceptanceTests
             wideSequence
                 ? U32(entry.Location.Sequence)
                 : new[] { checked((byte)entry.Location.Sequence) })));
+    }
+
+    private sealed record FakeBattleActivatablePublicCandidateV1
+        : FlatBattleActivatablePublicCandidateBaseV1
+    {
+        internal FakeBattleActivatablePublicCandidateV1(
+            string i4LocalCandidateKey,
+            int sourceOrdinal,
+            PublicSemanticLocatorV1 publicSemanticCardLocator,
+            ulong descriptionOrEffectId,
+            byte clientMode)
+            : base(
+                i4LocalCandidateKey,
+                sourceOrdinal,
+                publicSemanticCardLocator,
+                descriptionOrEffectId,
+                clientMode)
+        {
+        }
     }
 
     private readonly record struct Authority(
