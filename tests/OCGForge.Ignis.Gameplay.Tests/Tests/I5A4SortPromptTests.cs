@@ -407,6 +407,22 @@ internal static class I5A4SortPromptTests
             new SortEntry(2, 0, 0x01, 1));
         AssertFailure(
             new FlatPromptSessionV1(),
+            new byte[] { 21 },
+            FlatPromptErrorCodeV1.MalformedPrompt);
+        AssertFailure(
+            new FlatPromptSessionV1(),
+            new byte[] { 25 },
+            FlatPromptErrorCodeV1.MalformedPrompt);
+        AssertFailure(
+            new FlatPromptSessionV1(),
+            new byte[] { 21, 0, 0 },
+            FlatPromptErrorCodeV1.MalformedPrompt);
+        AssertFailure(
+            new FlatPromptSessionV1(),
+            new byte[] { 25, 0, 0, 0, 0 },
+            FlatPromptErrorCodeV1.MalformedPrompt);
+        AssertFailure(
+            new FlatPromptSessionV1(),
             SortMessage(25, 0),
             FlatPromptErrorCodeV1.UnprovenCandidateDomain);
         AssertFailure(

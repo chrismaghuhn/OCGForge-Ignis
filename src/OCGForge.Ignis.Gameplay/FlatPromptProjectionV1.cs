@@ -999,12 +999,6 @@ internal static class FlatPromptProjectionV1
     {
         draft = null;
         error = FlatPromptErrorCodeV1.None;
-        if (bytes.Length == 1)
-        {
-            error = FlatPromptErrorCodeV1.UnsupportedPromptLayout;
-            return false;
-        }
-
         if (bytes.Length < SortHeaderLength)
         {
             error = FlatPromptErrorCodeV1.MalformedPrompt;

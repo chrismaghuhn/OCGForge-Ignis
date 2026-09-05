@@ -710,10 +710,10 @@ internal static class I5A3CounterPromptTests
             FlatPromptErrorCodeV1.UnsupportedPromptFamily);
         AssertFailureResult(
             new FlatPromptSessionV1().TryAcceptI5Prompt(new byte[] { 21 }),
-            FlatPromptErrorCodeV1.UnsupportedPromptLayout);
+            FlatPromptErrorCodeV1.MalformedPrompt);
         AssertFailureResult(
             new FlatPromptSessionV1().TryAcceptI5Prompt(new byte[] { 25 }),
-            FlatPromptErrorCodeV1.UnsupportedPromptLayout);
+            FlatPromptErrorCodeV1.MalformedPrompt);
         AssertFailureResult(
             new FlatPromptSessionV1().TryAcceptI5Prompt(new byte[] { 142 }),
             FlatPromptErrorCodeV1.UnsupportedPromptLayout);

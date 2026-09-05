@@ -690,7 +690,7 @@ internal static class I5A2PlaceAndMaskPromptTests
         {
             AssertFailure(
                 new[] { id },
-                FlatPromptErrorCodeV1.UnsupportedPromptLayout);
+                FlatPromptErrorCodeV1.MalformedPrompt);
         }
 
         AssertFailure(
