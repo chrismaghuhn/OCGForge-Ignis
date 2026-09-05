@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Collections.ObjectModel;
 using System.Globalization;
 
@@ -12,6 +13,30 @@ public enum FlatPromptFamilyV1 : byte
     MsgSelectChain = 16,
     MsgSelectBattleCmd = 10,
     MsgSelectIdleCmd = 11
+}
+
+internal static class FlatPromptFamilyValueV1
+{
+    internal const FlatPromptFamilyV1 MsgSelectCard =
+        (FlatPromptFamilyV1)15;
+
+    internal const FlatPromptFamilyV1 MsgSelectTribute =
+        (FlatPromptFamilyV1)20;
+
+    internal const FlatPromptFamilyV1 MsgSelectUnselectCard =
+        (FlatPromptFamilyV1)26;
+
+    internal const FlatPromptFamilyV1 MsgAnnounceNumber =
+        (FlatPromptFamilyV1)143;
+}
+
+internal static class FlatPromptContractIdV1
+{
+    internal const string FlatPrompt =
+        "ocgforge-ignis.flat-prompt-projection.v1";
+
+    internal const string Combinatorial =
+        "ocgforge-ignis.combinatorial-prompt-continuation.v1";
 }
 
 public enum FlatPromptChoiceKindV1 : byte
@@ -35,7 +60,14 @@ public enum FlatPromptChoiceKindV1 : byte
     Mset = 16,
     Sset = 17,
     ToBp = 18,
-    ShuffleHand = 19
+    ShuffleHand = 19,
+    Pick = 20,
+    Finish = 21,
+    Cancel = 22,
+    Select = 23,
+    Unselect = 24,
+    FinishOrCancel = 25,
+    NumberOption = 26
 }
 
 public enum FlatPromptSourceSectionV1 : byte
@@ -49,7 +81,12 @@ public enum FlatPromptSourceSectionV1 : byte
     Reposition = 6,
     Mset = 7,
     Sset = 8,
-    Activate = 9
+    Activate = 9,
+    SelectCard = 10,
+    SelectTribute = 11,
+    Selectable = 12,
+    Unselectable = 13,
+    NumberOptions = 14
 }
 
 public enum FlatPromptErrorCodeV1 : byte
@@ -69,19 +106,22 @@ public enum FlatPromptErrorCodeV1 : byte
     InvalidLocation = 12,
     InvalidBoolean = 13,
     InvalidClientMode = 14,
-    AuthorityMismatch = 15
+    AuthorityMismatch = 15,
+    InvalidContinuationInstance = 16,
+    StaleContinuationStep = 17,
+    InvalidContinuationAction = 18,
+    UnsupportedPromptFamily = 19
 }
 
 public abstract record FlatPromptPublicContextV1
 {
-    private const string ContractIdValue =
-        "ocgforge-ignis.flat-prompt-projection.v1";
-
     protected FlatPromptPublicContextV1(
         FlatPromptFamilyV1 promptFamily,
-        byte actingPlayer)
+        byte actingPlayer,
+        string contractId = FlatPromptContractIdV1.FlatPrompt)
     {
-        ContractId = ContractIdValue;
+        ContractId = contractId ??
+            throw new ArgumentNullException(nameof(contractId));
         PromptFamily = promptFamily;
         ActingPlayer = actingPlayer;
     }
@@ -215,6 +255,110 @@ public sealed record FlatPromptIdlePublicContextV1
         : base(FlatPromptFamilyV1.MsgSelectIdleCmd, actingPlayer)
     {
     }
+}
+
+public sealed record FlatPromptCardSelectionPublicContextV1
+    : FlatPromptPublicContextV1
+{
+    internal FlatPromptCardSelectionPublicContextV1(
+        byte actingPlayer,
+        uint minimumCount,
+        uint maximumCount,
+        bool effectiveCancellation)
+        : base(
+            FlatPromptFamilyValueV1.MsgSelectCard,
+            actingPlayer,
+            FlatPromptContractIdV1.Combinatorial)
+    {
+        MinimumCount = minimumCount;
+        MaximumCount = maximumCount;
+        EffectiveCancellation = effectiveCancellation;
+    }
+
+    public uint MinimumCount { get; }
+
+    public uint MaximumCount { get; }
+
+    public bool EffectiveCancellation { get; }
+}
+
+public sealed record FlatPromptTributeSelectionPublicContextV1
+    : FlatPromptPublicContextV1
+{
+    internal FlatPromptTributeSelectionPublicContextV1(
+        byte actingPlayer,
+        uint minimumRequiredTributeValue,
+        uint maximumSelectedCardCount,
+        bool effectiveCancellation)
+        : base(
+            FlatPromptFamilyValueV1.MsgSelectTribute,
+            actingPlayer,
+            FlatPromptContractIdV1.Combinatorial)
+    {
+        MinimumRequiredTributeValue = minimumRequiredTributeValue;
+        MaximumSelectedCardCount = maximumSelectedCardCount;
+        EffectiveCancellation = effectiveCancellation;
+    }
+
+    public uint MinimumRequiredTributeValue { get; }
+
+    public uint MaximumSelectedCardCount { get; }
+
+    public bool EffectiveCancellation { get; }
+}
+
+public sealed record FlatPromptSelectUnselectCardPublicContextV1
+    : FlatPromptPublicContextV1
+{
+    internal FlatPromptSelectUnselectCardPublicContextV1(
+        byte actingPlayer,
+        bool finishable,
+        bool cancelable,
+        uint minimumCount,
+        uint maximumCount,
+        int selectableCount,
+        int unselectableCount)
+        : base(
+            FlatPromptFamilyValueV1.MsgSelectUnselectCard,
+            actingPlayer,
+            FlatPromptContractIdV1.Combinatorial)
+    {
+        Finishable = finishable;
+        Cancelable = cancelable;
+        MinimumCount = minimumCount;
+        MaximumCount = maximumCount;
+        SelectableCount = selectableCount;
+        UnselectableCount = unselectableCount;
+    }
+
+    public bool Finishable { get; }
+
+    public bool Cancelable { get; }
+
+    public uint MinimumCount { get; }
+
+    public uint MaximumCount { get; }
+
+    public int SelectableCount { get; }
+
+    public int UnselectableCount { get; }
+}
+
+public sealed record FlatPromptAnnounceNumberPublicContextV1
+    : FlatPromptPublicContextV1
+{
+    internal FlatPromptAnnounceNumberPublicContextV1(
+        byte actingPlayer,
+        int optionCount)
+        : base(
+            FlatPromptFamilyValueV1.MsgAnnounceNumber,
+            actingPlayer,
+            FlatPromptContractIdV1.Combinatorial)
+    {
+        OptionCount = optionCount;
+    }
+
+    public int OptionCount { get; }
 }
 
 public abstract record FlatPublicCandidateDescriptorV1
@@ -925,6 +1069,642 @@ public sealed record FlatIdleSsetCardCodePublicCandidateV1
     public uint CardCode { get; }
 }
 
+internal readonly record struct FlatPromptSelectCardWireEntryV1(
+    uint SourceCardCode,
+    ModernLocInfoV1 SourceLocation);
+
+internal sealed record FlatPromptSelectCardWireDraftV1
+    : FlatPromptWireDraftV1
+{
+    private readonly FlatPromptSelectCardWireEntryV1[] entries;
+    private readonly ReadOnlyCollection<FlatPromptSelectCardWireEntryV1>
+        entriesView;
+
+    internal FlatPromptSelectCardWireDraftV1(
+        byte actingPlayer,
+        bool cancelable,
+        uint minimumCount,
+        uint maximumCount,
+        FlatPromptSelectCardWireEntryV1[] entries)
+        : base(FlatPromptFamilyValueV1.MsgSelectCard)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        this.entries = entries.ToArray();
+        entriesView = Array.AsReadOnly(this.entries);
+        ActingPlayer = actingPlayer;
+        Cancelable = cancelable;
+        MinimumCount = minimumCount;
+        MaximumCount = maximumCount;
+    }
+
+    internal byte ActingPlayer { get; }
+
+    internal bool Cancelable { get; }
+
+    internal uint MinimumCount { get; }
+
+    internal uint MaximumCount { get; }
+
+    internal IReadOnlyList<FlatPromptSelectCardWireEntryV1> Entries =>
+        entriesView;
+}
+
+internal readonly record struct FlatPromptSelectTributeWireEntryV1(
+    uint SourceCardCode,
+    ModernLocInfoV1 SourceLocation,
+    byte ReleaseValue);
+
+internal sealed record FlatPromptSelectTributeWireDraftV1
+    : FlatPromptWireDraftV1
+{
+    private readonly FlatPromptSelectTributeWireEntryV1[] entries;
+    private readonly ReadOnlyCollection<FlatPromptSelectTributeWireEntryV1>
+        entriesView;
+
+    internal FlatPromptSelectTributeWireDraftV1(
+        byte actingPlayer,
+        bool cancelable,
+        uint minimumRequiredTributeValue,
+        uint maximumSelectedCardCount,
+        FlatPromptSelectTributeWireEntryV1[] entries)
+        : base(FlatPromptFamilyValueV1.MsgSelectTribute)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        this.entries = entries.ToArray();
+        entriesView = Array.AsReadOnly(this.entries);
+        ActingPlayer = actingPlayer;
+        Cancelable = cancelable;
+        MinimumRequiredTributeValue = minimumRequiredTributeValue;
+        MaximumSelectedCardCount = maximumSelectedCardCount;
+    }
+
+    internal byte ActingPlayer { get; }
+
+    internal bool Cancelable { get; }
+
+    internal uint MinimumRequiredTributeValue { get; }
+
+    internal uint MaximumSelectedCardCount { get; }
+
+    internal IReadOnlyList<FlatPromptSelectTributeWireEntryV1> Entries =>
+        entriesView;
+}
+
+internal sealed record FlatPromptSelectUnselectWireDraftV1
+    : FlatPromptWireDraftV1
+{
+    private readonly FlatPromptSelectCardWireEntryV1[] selectableEntries;
+    private readonly FlatPromptSelectCardWireEntryV1[] unselectableEntries;
+    private readonly ReadOnlyCollection<FlatPromptSelectCardWireEntryV1>
+        selectableEntriesView;
+    private readonly ReadOnlyCollection<FlatPromptSelectCardWireEntryV1>
+        unselectableEntriesView;
+
+    internal FlatPromptSelectUnselectWireDraftV1(
+        byte actingPlayer,
+        bool finishable,
+        bool cancelable,
+        uint minimumCount,
+        uint maximumCount,
+        FlatPromptSelectCardWireEntryV1[] selectableEntries,
+        FlatPromptSelectCardWireEntryV1[] unselectableEntries)
+        : base(FlatPromptFamilyValueV1.MsgSelectUnselectCard)
+    {
+        ArgumentNullException.ThrowIfNull(selectableEntries);
+        ArgumentNullException.ThrowIfNull(unselectableEntries);
+        this.selectableEntries = selectableEntries.ToArray();
+        this.unselectableEntries = unselectableEntries.ToArray();
+        selectableEntriesView = Array.AsReadOnly(this.selectableEntries);
+        unselectableEntriesView = Array.AsReadOnly(this.unselectableEntries);
+        ActingPlayer = actingPlayer;
+        Finishable = finishable;
+        Cancelable = cancelable;
+        MinimumCount = minimumCount;
+        MaximumCount = maximumCount;
+    }
+
+    internal byte ActingPlayer { get; }
+
+    internal bool Finishable { get; }
+
+    internal bool Cancelable { get; }
+
+    internal uint MinimumCount { get; }
+
+    internal uint MaximumCount { get; }
+
+    internal IReadOnlyList<FlatPromptSelectCardWireEntryV1>
+        SelectableEntries => selectableEntriesView;
+
+    internal IReadOnlyList<FlatPromptSelectCardWireEntryV1>
+        UnselectableEntries => unselectableEntriesView;
+}
+
+internal sealed record FlatPromptAnnounceNumberWireDraftV1
+    : FlatPromptWireDraftV1
+{
+    private readonly ulong[] values;
+    private readonly ReadOnlyCollection<ulong> valuesView;
+
+    internal FlatPromptAnnounceNumberWireDraftV1(
+        byte actingPlayer,
+        ulong[] values)
+        : base(FlatPromptFamilyValueV1.MsgAnnounceNumber)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        this.values = values.ToArray();
+        valuesView = Array.AsReadOnly(this.values);
+        ActingPlayer = actingPlayer;
+    }
+
+    internal byte ActingPlayer { get; }
+
+    internal IReadOnlyList<ulong> Values => valuesView;
+}
+
+internal sealed class FlatPromptCardContinuationStateV1
+{
+    private readonly FlatPublicCandidateDescriptorV1[] sourceCandidates;
+    private readonly ReadOnlyCollection<FlatPublicCandidateDescriptorV1>
+        sourceCandidatesView;
+    private readonly byte[] releaseValues;
+    private readonly ReadOnlyCollection<byte> releaseValuesView;
+    private readonly int[] selectedOrdinals;
+    private readonly ReadOnlyCollection<int> selectedOrdinalsView;
+
+    internal FlatPromptCardContinuationStateV1(
+        FlatPromptFamilyV1 family,
+        byte actingPlayer,
+        uint minimum,
+        uint maximum,
+        bool cancelable,
+        IEnumerable<FlatPublicCandidateDescriptorV1> sourceCandidates,
+        IEnumerable<byte> releaseValues,
+        IEnumerable<int> selectedOrdinals,
+        int step)
+    {
+        if (family is not
+            (FlatPromptFamilyValueV1.MsgSelectCard or
+             FlatPromptFamilyValueV1.MsgSelectTribute))
+        {
+            throw new ArgumentOutOfRangeException(nameof(family));
+        }
+
+        ArgumentNullException.ThrowIfNull(sourceCandidates);
+        ArgumentNullException.ThrowIfNull(releaseValues);
+        ArgumentNullException.ThrowIfNull(selectedOrdinals);
+        ArgumentOutOfRangeException.ThrowIfNegative(step);
+
+        this.sourceCandidates = sourceCandidates.ToArray();
+        this.releaseValues = releaseValues.ToArray();
+        this.selectedOrdinals = selectedOrdinals.ToArray();
+        if (this.sourceCandidates.Length == 0 ||
+            this.sourceCandidates.Length != this.releaseValues.Length ||
+            !AreStrictlyIncreasing(this.selectedOrdinals) ||
+            this.selectedOrdinals.Any(
+                ordinal => ordinal < 0 || ordinal >= this.sourceCandidates.Length))
+        {
+            throw new ArgumentException(
+                "Continuation state vectors must be complete and aligned.");
+        }
+
+        Family = family;
+        ActingPlayer = actingPlayer;
+        Minimum = minimum;
+        Maximum = maximum;
+        Cancelable = cancelable;
+        Step = step;
+        sourceCandidatesView = Array.AsReadOnly(this.sourceCandidates);
+        releaseValuesView = Array.AsReadOnly(this.releaseValues);
+        selectedOrdinalsView = Array.AsReadOnly(this.selectedOrdinals);
+    }
+
+    internal FlatPromptFamilyV1 Family { get; }
+
+    internal byte ActingPlayer { get; }
+
+    internal uint Minimum { get; }
+
+    internal uint Maximum { get; }
+
+    internal bool Cancelable { get; }
+
+    internal int Step { get; }
+
+    internal IReadOnlyList<FlatPublicCandidateDescriptorV1> SourceCandidates =>
+        sourceCandidatesView;
+
+    internal IReadOnlyList<byte> ReleaseValues => releaseValuesView;
+
+    internal IReadOnlyList<int> SelectedOrdinals => selectedOrdinalsView;
+
+    internal int LastSelectedOrdinal =>
+        selectedOrdinals.Length == 0 ? -1 : selectedOrdinals[^1];
+
+    internal uint SelectedTributeValue =>
+        selectedOrdinals.Aggregate(
+            0u,
+            (sum, ordinal) => checked(sum + releaseValues[ordinal]));
+
+    internal bool CanFinish =>
+        selectedOrdinals.Length <= Maximum &&
+        (Family == FlatPromptFamilyValueV1.MsgSelectCard
+            ? (uint)selectedOrdinals.Length >= Minimum
+            : SelectedTributeValue >= Minimum);
+
+    internal FlatPromptCardContinuationStateV1 WithSelected(int ordinal) =>
+        new(
+            Family,
+            ActingPlayer,
+            Minimum,
+            Maximum,
+            Cancelable,
+            sourceCandidates,
+            releaseValues,
+            selectedOrdinals.Append(ordinal),
+            checked(Step + 1));
+
+    private static bool AreStrictlyIncreasing(int[] values)
+    {
+        for (int index = 1; index < values.Length; index++)
+        {
+            if (values[index - 1] >= values[index])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+internal sealed class FlatPromptContinuationStepResultV1
+{
+    private readonly ReadOnlyCollection<byte> terminalResponseBodyView;
+
+    private FlatPromptContinuationStepResultV1(
+        bool isSuccess,
+        FlatPromptErrorCodeV1 error,
+        FlatPromptProjectionResultV1? projection,
+        byte[]? terminalResponseBody,
+        bool isTerminal)
+    {
+        IsSuccess = isSuccess;
+        Error = error;
+        Projection = projection;
+        byte[] responseCopy = terminalResponseBody is null
+            ? Array.Empty<byte>()
+            : terminalResponseBody.ToArray();
+        terminalResponseBodyView = Array.AsReadOnly(responseCopy);
+        TerminalResponseBody = terminalResponseBodyView;
+        IsTerminal = isTerminal;
+    }
+
+    internal bool IsSuccess { get; }
+
+    internal FlatPromptErrorCodeV1 Error { get; }
+
+    internal FlatPromptProjectionResultV1? Projection { get; }
+
+    internal IReadOnlyList<byte> TerminalResponseBody { get; }
+
+    internal bool IsTerminal { get; }
+
+    internal static FlatPromptContinuationStepResultV1 Intermediate(
+        FlatPromptProjectionResultV1 projection) =>
+        new(
+            true,
+            FlatPromptErrorCodeV1.None,
+            projection ?? throw new ArgumentNullException(nameof(projection)),
+            null,
+            false);
+
+    internal static FlatPromptContinuationStepResultV1 Terminal(
+        byte[] responseBody) =>
+        new(
+            true,
+            FlatPromptErrorCodeV1.None,
+            null,
+            responseBody ?? throw new ArgumentNullException(nameof(responseBody)),
+            true);
+
+    internal static FlatPromptContinuationStepResultV1 Failure(
+        FlatPromptErrorCodeV1 error) =>
+        new(false, error, null, null, false);
+}
+
+public abstract record FlatPromptCardSelectionCandidateBaseV1
+    : FlatPublicCandidateDescriptorV1
+{
+    protected FlatPromptCardSelectionCandidateBaseV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.Pick)
+    {
+        SourceSection = FlatPromptSourceSectionV1.SelectCard;
+        SourceOrdinal = sourceOrdinal;
+    }
+
+    public FlatPromptSourceSectionV1 SourceSection { get; }
+
+    public int SourceOrdinal { get; }
+}
+
+public sealed record FlatPromptCardSelectionAnonymousCandidateV1
+    : FlatPromptCardSelectionCandidateBaseV1
+{
+    internal FlatPromptCardSelectionAnonymousCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal)
+        : base(i4LocalCandidateKey, sourceOrdinal)
+    {
+    }
+}
+
+public sealed record FlatPromptCardSelectionPromptCodeCandidateV1
+    : FlatPromptCardSelectionCandidateBaseV1
+{
+    internal FlatPromptCardSelectionPromptCodeCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        uint promptLocalCardCode)
+        : base(i4LocalCandidateKey, sourceOrdinal)
+    {
+        PromptLocalCardCode = promptLocalCardCode;
+    }
+
+    public uint PromptLocalCardCode { get; }
+}
+
+public sealed record FlatPromptCardSelectionLocatorCandidateV1
+    : FlatPromptCardSelectionCandidateBaseV1
+{
+    internal FlatPromptCardSelectionLocatorCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(i4LocalCandidateKey, sourceOrdinal)
+    {
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+    }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+}
+
+public sealed record FlatPromptCardSelectionLocatorPromptCodeCandidateV1
+    : FlatPromptCardSelectionCandidateBaseV1
+{
+    internal FlatPromptCardSelectionLocatorPromptCodeCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        uint promptLocalCardCode)
+        : base(i4LocalCandidateKey, sourceOrdinal)
+    {
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+        PromptLocalCardCode = promptLocalCardCode;
+    }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+
+    public uint PromptLocalCardCode { get; }
+}
+
+public abstract record FlatPromptTributeSelectionCandidateBaseV1
+    : FlatPublicCandidateDescriptorV1
+{
+    protected FlatPromptTributeSelectionCandidateBaseV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.Pick)
+    {
+        SourceSection = FlatPromptSourceSectionV1.SelectTribute;
+        SourceOrdinal = sourceOrdinal;
+    }
+
+    public FlatPromptSourceSectionV1 SourceSection { get; }
+
+    public int SourceOrdinal { get; }
+}
+
+public sealed record FlatPromptTributeSelectionAnonymousCandidateV1
+    : FlatPromptTributeSelectionCandidateBaseV1
+{
+    internal FlatPromptTributeSelectionAnonymousCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal)
+        : base(i4LocalCandidateKey, sourceOrdinal)
+    {
+    }
+}
+
+public sealed record FlatPromptTributeSelectionPromptCodeCandidateV1
+    : FlatPromptTributeSelectionCandidateBaseV1
+{
+    internal FlatPromptTributeSelectionPromptCodeCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        uint promptLocalCardCode)
+        : base(i4LocalCandidateKey, sourceOrdinal)
+    {
+        PromptLocalCardCode = promptLocalCardCode;
+    }
+
+    public uint PromptLocalCardCode { get; }
+}
+
+public sealed record FlatPromptTributeSelectionLocatorCandidateV1
+    : FlatPromptTributeSelectionCandidateBaseV1
+{
+    internal FlatPromptTributeSelectionLocatorCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(i4LocalCandidateKey, sourceOrdinal)
+    {
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+    }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+}
+
+public sealed record FlatPromptTributeSelectionLocatorPromptCodeCandidateV1
+    : FlatPromptTributeSelectionCandidateBaseV1
+{
+    internal FlatPromptTributeSelectionLocatorPromptCodeCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        uint promptLocalCardCode)
+        : base(i4LocalCandidateKey, sourceOrdinal)
+    {
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+        PromptLocalCardCode = promptLocalCardCode;
+    }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+
+    public uint PromptLocalCardCode { get; }
+}
+
+public sealed record FlatPromptFinishPublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatPromptFinishPublicCandidateV1(string i4LocalCandidateKey)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.Finish)
+    {
+    }
+}
+
+public sealed record FlatPromptCancelPublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatPromptCancelPublicCandidateV1(string i4LocalCandidateKey)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.Cancel)
+    {
+    }
+}
+
+public abstract record FlatPromptSelectUnselectCardCandidateBaseV1
+    : FlatPublicCandidateDescriptorV1
+{
+    protected FlatPromptSelectUnselectCardCandidateBaseV1(
+        string i4LocalCandidateKey,
+        FlatPromptChoiceKindV1 choiceKind,
+        FlatPromptSourceSectionV1 sourceSection,
+        int sourceOrdinal)
+        : base(i4LocalCandidateKey, choiceKind)
+    {
+        SourceSection = sourceSection;
+        SourceOrdinal = sourceOrdinal;
+    }
+
+    public FlatPromptSourceSectionV1 SourceSection { get; }
+
+    public int SourceOrdinal { get; }
+}
+
+public sealed record FlatPromptSelectUnselectAnonymousCandidateV1
+    : FlatPromptSelectUnselectCardCandidateBaseV1
+{
+    internal FlatPromptSelectUnselectAnonymousCandidateV1(
+        string i4LocalCandidateKey,
+        FlatPromptChoiceKindV1 choiceKind,
+        FlatPromptSourceSectionV1 sourceSection,
+        int sourceOrdinal)
+        : base(
+            i4LocalCandidateKey,
+            choiceKind,
+            sourceSection,
+            sourceOrdinal)
+    {
+    }
+}
+
+public sealed record FlatPromptSelectUnselectPromptCodeCandidateV1
+    : FlatPromptSelectUnselectCardCandidateBaseV1
+{
+    internal FlatPromptSelectUnselectPromptCodeCandidateV1(
+        string i4LocalCandidateKey,
+        FlatPromptChoiceKindV1 choiceKind,
+        FlatPromptSourceSectionV1 sourceSection,
+        int sourceOrdinal,
+        uint promptLocalCardCode)
+        : base(
+            i4LocalCandidateKey,
+            choiceKind,
+            sourceSection,
+            sourceOrdinal)
+    {
+        PromptLocalCardCode = promptLocalCardCode;
+    }
+
+    public uint PromptLocalCardCode { get; }
+}
+
+public sealed record FlatPromptSelectUnselectLocatorCandidateV1
+    : FlatPromptSelectUnselectCardCandidateBaseV1
+{
+    internal FlatPromptSelectUnselectLocatorCandidateV1(
+        string i4LocalCandidateKey,
+        FlatPromptChoiceKindV1 choiceKind,
+        FlatPromptSourceSectionV1 sourceSection,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+        : base(
+            i4LocalCandidateKey,
+            choiceKind,
+            sourceSection,
+            sourceOrdinal)
+    {
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+    }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+}
+
+public sealed record FlatPromptSelectUnselectLocatorPromptCodeCandidateV1
+    : FlatPromptSelectUnselectCardCandidateBaseV1
+{
+    internal FlatPromptSelectUnselectLocatorPromptCodeCandidateV1(
+        string i4LocalCandidateKey,
+        FlatPromptChoiceKindV1 choiceKind,
+        FlatPromptSourceSectionV1 sourceSection,
+        int sourceOrdinal,
+        PublicSemanticLocatorV1 publicSemanticCardLocator,
+        uint promptLocalCardCode)
+        : base(
+            i4LocalCandidateKey,
+            choiceKind,
+            sourceSection,
+            sourceOrdinal)
+    {
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+        PromptLocalCardCode = promptLocalCardCode;
+    }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+
+    public uint PromptLocalCardCode { get; }
+}
+
+public sealed record FlatPromptFinishOrCancelPublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatPromptFinishOrCancelPublicCandidateV1(
+        string i4LocalCandidateKey)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.FinishOrCancel)
+    {
+    }
+}
+
+public sealed record FlatPromptAnnounceNumberPublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatPromptAnnounceNumberPublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        ulong numberValue)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.NumberOption)
+    {
+        SourceSection = FlatPromptSourceSectionV1.NumberOptions;
+        SourceOrdinal = sourceOrdinal;
+        NumberValue = numberValue;
+    }
+
+    public FlatPromptSourceSectionV1 SourceSection { get; }
+
+    public int SourceOrdinal { get; }
+
+    public ulong NumberValue { get; }
+}
+
 public sealed class FlatPromptProjectionResultV1
 {
     private FlatPromptProjectionResultV1(
@@ -971,12 +1751,15 @@ internal sealed class FlatPromptProjectionDraftV1
     private readonly FlatPublicCandidateDescriptorV1[] candidates;
     private readonly string[] localKeys;
     private readonly int[] responses;
+    private readonly byte[][]? responseBodies;
 
     internal FlatPromptProjectionDraftV1(
         FlatPromptPublicContextV1 context,
         IEnumerable<FlatPublicCandidateDescriptorV1> candidates,
         IEnumerable<string> localKeys,
-        IEnumerable<int> responses)
+        IEnumerable<int> responses,
+        FlatPromptCardContinuationStateV1? continuationState = null,
+        IEnumerable<byte[]>? responseBodies = null)
     {
         Context = context ?? throw new ArgumentNullException(nameof(context));
         this.candidates = candidates?.ToArray() ??
@@ -985,11 +1768,22 @@ internal sealed class FlatPromptProjectionDraftV1
             throw new ArgumentNullException(nameof(localKeys));
         this.responses = responses?.ToArray() ??
             throw new ArgumentNullException(nameof(responses));
+        this.responseBodies = responseBodies is null
+            ? null
+            : responseBodies.Select(
+                body => body?.ToArray() ??
+                    throw new ArgumentException(
+                        "Response bodies must not contain null."))
+                .ToArray();
         if (this.candidates.Length != this.localKeys.Length ||
-            this.candidates.Length != this.responses.Length)
+            this.candidates.Length != this.responses.Length ||
+            (this.responseBodies is not null &&
+             this.candidates.Length != this.responseBodies.Length))
         {
             throw new ArgumentException("Projection draft arrays must align.");
         }
+
+        ContinuationState = continuationState;
     }
 
     internal FlatPromptPublicContextV1 Context { get; }
@@ -1002,6 +1796,11 @@ internal sealed class FlatPromptProjectionDraftV1
     internal string[] CopyLocalKeys() => localKeys.ToArray();
 
     internal int[] CopyResponses() => responses.ToArray();
+
+    internal byte[][]? CopyResponseBodies() =>
+        responseBodies?.Select(body => body.ToArray()).ToArray();
+
+    internal FlatPromptCardContinuationStateV1? ContinuationState { get; }
 }
 
 internal abstract record FlatPromptWireDraftV1(
@@ -1233,13 +2032,16 @@ internal sealed class CurrentFlatPromptBindingV1
     private readonly string[] localKeys;
     private readonly ReadOnlyCollection<string> localKeysView;
     private readonly Dictionary<string, int> responseByKey;
+    private readonly Dictionary<string, byte[]> responseBodyByKey;
 
     private CurrentFlatPromptBindingV1(
         ulong promptInstanceOrdinal,
         FlatPromptFamilyV1 family,
         FlatPublicCandidateDescriptorV1[] candidates,
         string[] localKeys,
-        Dictionary<string, int> responseByKey)
+        Dictionary<string, int> responseByKey,
+        byte[][]? responseBodies,
+        FlatPromptCardContinuationStateV1? continuationState)
     {
         PromptInstanceOrdinal = promptInstanceOrdinal;
         Family = family;
@@ -1250,11 +2052,28 @@ internal sealed class CurrentFlatPromptBindingV1
         this.responseByKey = new Dictionary<string, int>(
             responseByKey,
             StringComparer.Ordinal);
+        responseBodyByKey = new Dictionary<string, byte[]>(
+            StringComparer.Ordinal);
+        if (responseBodies is not null)
+        {
+            for (int index = 0; index < responseBodies.Length; index++)
+            {
+                responseBodyByKey.Add(
+                    this.localKeys[index],
+                    responseBodies[index].ToArray());
+            }
+        }
+        ContinuationState = continuationState;
+        ContinuationStep = continuationState?.Step ?? 0;
     }
 
     internal ulong PromptInstanceOrdinal { get; }
 
     internal FlatPromptFamilyV1 Family { get; }
+
+    internal int ContinuationStep { get; }
+
+    internal FlatPromptCardContinuationStateV1? ContinuationState { get; }
 
     internal IReadOnlyList<FlatPublicCandidateDescriptorV1> Candidates =>
         candidatesView;
@@ -1272,6 +2091,46 @@ internal sealed class CurrentFlatPromptBindingV1
         return responseByKey.TryGetValue(key, out response);
     }
 
+    internal bool TryGetCandidate(
+        string? key,
+        out FlatPublicCandidateDescriptorV1? candidate)
+    {
+        candidate = null;
+        if (string.IsNullOrEmpty(key))
+        {
+            return false;
+        }
+
+        for (int index = 0; index < localKeys.Length; index++)
+        {
+            if (string.Equals(
+                    localKeys[index],
+                    key,
+                    StringComparison.Ordinal))
+            {
+                candidate = candidates[index];
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    internal bool TryGetResponseBody(
+        string? key,
+        out byte[] responseBody)
+    {
+        responseBody = Array.Empty<byte>();
+        if (string.IsNullOrEmpty(key) ||
+            !responseBodyByKey.TryGetValue(key, out byte[]? stored))
+        {
+            return false;
+        }
+
+        responseBody = stored.ToArray();
+        return true;
+    }
+
     internal static bool TryCreate(
         ulong promptInstanceOrdinal,
         FlatPromptFamilyV1 family,
@@ -1279,14 +2138,23 @@ internal sealed class CurrentFlatPromptBindingV1
         string[]? localKeys,
         int[]? responses,
         out CurrentFlatPromptBindingV1? binding,
-        out FlatPromptErrorCodeV1 error)
+        out FlatPromptErrorCodeV1 error,
+        byte[][]? responseBodies = null,
+        FlatPromptCardContinuationStateV1? continuationState = null)
     {
         binding = null;
         error = FlatPromptErrorCodeV1.None;
         if (candidates is null || localKeys is null || responses is null ||
             candidates.Length == 0 ||
             candidates.Length != localKeys.Length ||
-            candidates.Length != responses.Length)
+            candidates.Length != responses.Length ||
+            (responseBodies is not null &&
+             candidates.Length != responseBodies.Length) ||
+            (responseBodies is not null &&
+             responseBodies.Any(body => body is null || body.Length == 0)) ||
+            (continuationState is not null &&
+             (continuationState.Family != family ||
+              continuationState.SourceCandidates.Count == 0)))
         {
             error = FlatPromptErrorCodeV1.InvalidResponseBinding;
             return false;
@@ -1294,12 +2162,16 @@ internal sealed class CurrentFlatPromptBindingV1
 
         Dictionary<string, int> responseByKey =
             new(StringComparer.Ordinal);
+        int selectableCount = candidates.Count(candidate =>
+            candidate is FlatPromptSelectUnselectCardCandidateBaseV1
+                selectUnselect &&
+            selectUnselect.SourceSection ==
+                FlatPromptSourceSectionV1.Selectable);
         for (int i = 0; i < candidates.Length; i++)
         {
             FlatPublicCandidateDescriptorV1? candidate = candidates[i];
             string? key = localKeys[i];
-            if (candidate is null ||
-                string.IsNullOrEmpty(key) ||
+            if (candidate is null || string.IsNullOrEmpty(key) ||
                 !string.Equals(
                     candidate.I4LocalCandidateKey,
                     key,
@@ -1307,11 +2179,29 @@ internal sealed class CurrentFlatPromptBindingV1
                 !TryGetExpectedBinding(
                     family,
                     candidate,
+                    selectableCount,
                     out string expectedKey,
                     out int expectedResponse) ||
                 !string.Equals(key, expectedKey, StringComparison.Ordinal) ||
-                responses[i] != expectedResponse ||
-                !responseByKey.TryAdd(key, expectedResponse))
+                responses[i] != expectedResponse)
+            {
+                error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                return false;
+            }
+
+            if (responseBodies is not null &&
+                !TryValidateResponseBody(
+                    family,
+                    candidate,
+                    selectableCount,
+                    expectedResponse,
+                    responseBodies[i]))
+            {
+                error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                return false;
+            }
+
+            if (!responseByKey.TryAdd(key!, expectedResponse))
             {
                 error = FlatPromptErrorCodeV1.InvalidResponseBinding;
                 return false;
@@ -1323,13 +2213,67 @@ internal sealed class CurrentFlatPromptBindingV1
             family,
             candidates,
             localKeys,
-            responseByKey);
+            responseByKey,
+            responseBodies,
+            continuationState);
         return true;
+    }
+
+    private static bool TryValidateResponseBody(
+        FlatPromptFamilyV1 family,
+        FlatPublicCandidateDescriptorV1 candidate,
+        int selectableCount,
+        int expectedResponse,
+        byte[] responseBody)
+    {
+        if (family == FlatPromptFamilyValueV1.MsgAnnounceNumber)
+        {
+            return responseBody.Length == sizeof(int) &&
+                BinaryPrimitives.ReadInt32LittleEndian(responseBody) ==
+                    expectedResponse;
+        }
+
+        if (family != FlatPromptFamilyValueV1.MsgSelectUnselectCard)
+        {
+            return false;
+        }
+
+        if (candidate is FlatPromptSelectUnselectCardCandidateBaseV1 card &&
+            card.ChoiceKind is
+                (FlatPromptChoiceKindV1.Select or
+                 FlatPromptChoiceKindV1.Unselect))
+        {
+            if (responseBody.Length != sizeof(uint) * 2 ||
+                BinaryPrimitives.ReadUInt32LittleEndian(responseBody) != 1 ||
+                BinaryPrimitives.ReadUInt32LittleEndian(
+                    responseBody.AsSpan(sizeof(uint))) !=
+                    (uint)expectedResponse)
+            {
+                return false;
+            }
+
+            return card.ChoiceKind == FlatPromptChoiceKindV1.Select
+                ? card.SourceSection == FlatPromptSourceSectionV1.Selectable &&
+                    expectedResponse == card.SourceOrdinal
+                : card.SourceSection == FlatPromptSourceSectionV1.Unselectable &&
+                    card.SourceOrdinal >= 0 &&
+                    selectableCount <= int.MaxValue - card.SourceOrdinal &&
+                    expectedResponse == selectableCount + card.SourceOrdinal;
+        }
+
+        return candidate is
+            (FlatPromptFinishPublicCandidateV1 or
+             FlatPromptCancelPublicCandidateV1 or
+             FlatPromptFinishOrCancelPublicCandidateV1) &&
+            responseBody.Length == sizeof(int) &&
+            BinaryPrimitives.ReadInt32LittleEndian(responseBody) == -1 &&
+            expectedResponse == -1;
     }
 
     private static bool TryGetExpectedBinding(
         FlatPromptFamilyV1 family,
         FlatPublicCandidateDescriptorV1 candidate,
+        int selectableCount,
         out string expectedKey,
         out int expectedResponse)
     {
@@ -1443,10 +2387,243 @@ internal sealed class CurrentFlatPromptBindingV1
                     out expectedKey,
                     out expectedResponse);
 
+            case FlatPromptFamilyValueV1.MsgSelectCard:
+                return TryGetCardContinuationBinding(
+                    candidate,
+                    FlatPromptFamilyValueV1.MsgSelectCard,
+                    FlatPromptSourceSectionV1.SelectCard,
+                    FlatPromptKeyV1.SelectCardPickPrefix,
+                    out expectedKey,
+                    out expectedResponse);
+
+            case FlatPromptFamilyValueV1.MsgSelectTribute:
+                return TryGetCardContinuationBinding(
+                    candidate,
+                    FlatPromptFamilyValueV1.MsgSelectTribute,
+                    FlatPromptSourceSectionV1.SelectTribute,
+                    FlatPromptKeyV1.SelectTributePickPrefix,
+                    out expectedKey,
+                    out expectedResponse);
+
+            case FlatPromptFamilyValueV1.MsgSelectUnselectCard:
+                return TryGetSelectUnselectBinding(
+                    candidate,
+                    selectableCount,
+                    out expectedKey,
+                    out expectedResponse);
+
+            case FlatPromptFamilyValueV1.MsgAnnounceNumber:
+                if (candidate is not FlatPromptAnnounceNumberPublicCandidateV1
+                        number ||
+                    number.ChoiceKind != FlatPromptChoiceKindV1.NumberOption ||
+                    number.SourceSection !=
+                        FlatPromptSourceSectionV1.NumberOptions ||
+                    !FlatPromptKeyV1.TryCreateOrdinalKey(
+                        FlatPromptKeyV1.AnnounceNumberOptionPrefix,
+                        number.SourceOrdinal,
+                        out expectedKey))
+                {
+                    return false;
+                }
+
+                expectedResponse = number.SourceOrdinal;
+                return true;
+
             default:
                 return false;
         }
     }
+
+    private static bool TryGetCardContinuationBinding(
+        FlatPublicCandidateDescriptorV1 candidate,
+        FlatPromptFamilyV1 family,
+        FlatPromptSourceSectionV1 sourceSection,
+        string pickPrefix,
+        out string expectedKey,
+        out int expectedResponse)
+    {
+        expectedKey = string.Empty;
+        expectedResponse = default;
+        if (candidate is FlatPromptCardSelectionCandidateBaseV1 card &&
+            family == FlatPromptFamilyValueV1.MsgSelectCard &&
+            card.ChoiceKind == FlatPromptChoiceKindV1.Pick &&
+            card.SourceSection == sourceSection &&
+            IsConcreteType(
+                candidate,
+                typeof(FlatPromptCardSelectionAnonymousCandidateV1),
+                typeof(FlatPromptCardSelectionPromptCodeCandidateV1),
+                typeof(FlatPromptCardSelectionLocatorCandidateV1),
+                typeof(FlatPromptCardSelectionLocatorPromptCodeCandidateV1)) &&
+            !HasNonZeroPromptCardCodeIfInvalid(candidate) &&
+            FlatPromptKeyV1.TryCreateOrdinalKey(
+                pickPrefix,
+                card.SourceOrdinal,
+                out expectedKey))
+        {
+            expectedResponse = card.SourceOrdinal;
+            return true;
+        }
+
+        if (candidate is FlatPromptTributeSelectionCandidateBaseV1 tribute &&
+            family == FlatPromptFamilyValueV1.MsgSelectTribute &&
+            tribute.ChoiceKind == FlatPromptChoiceKindV1.Pick &&
+            tribute.SourceSection == sourceSection &&
+            IsConcreteType(
+                candidate,
+                typeof(FlatPromptTributeSelectionAnonymousCandidateV1),
+                typeof(FlatPromptTributeSelectionPromptCodeCandidateV1),
+                typeof(FlatPromptTributeSelectionLocatorCandidateV1),
+                typeof(FlatPromptTributeSelectionLocatorPromptCodeCandidateV1)) &&
+            !HasNonZeroPromptCardCodeIfInvalid(candidate) &&
+            FlatPromptKeyV1.TryCreateOrdinalKey(
+                pickPrefix,
+                tribute.SourceOrdinal,
+                out expectedKey))
+        {
+            expectedResponse = tribute.SourceOrdinal;
+            return true;
+        }
+
+        if (candidate is FlatPromptFinishPublicCandidateV1 finish &&
+            finish.ChoiceKind == FlatPromptChoiceKindV1.Finish)
+        {
+            expectedKey = family == FlatPromptFamilyValueV1.MsgSelectCard
+                ? FlatPromptKeyV1.SelectCardFinish
+                : family == FlatPromptFamilyValueV1.MsgSelectTribute
+                    ? FlatPromptKeyV1.SelectTributeFinish
+                    : string.Empty;
+            expectedResponse = -1;
+            return expectedKey.Length != 0 &&
+                string.Equals(
+                    finish.I4LocalCandidateKey,
+                    expectedKey,
+                    StringComparison.Ordinal);
+        }
+
+        if (candidate is FlatPromptCancelPublicCandidateV1 cancel &&
+            cancel.ChoiceKind == FlatPromptChoiceKindV1.Cancel)
+        {
+            expectedKey = family == FlatPromptFamilyValueV1.MsgSelectCard
+                ? FlatPromptKeyV1.SelectCardCancel
+                : family == FlatPromptFamilyValueV1.MsgSelectTribute
+                    ? FlatPromptKeyV1.SelectTributeCancel
+                    : string.Empty;
+            expectedResponse = -1;
+            return expectedKey.Length != 0 &&
+                string.Equals(
+                    cancel.I4LocalCandidateKey,
+                    expectedKey,
+                    StringComparison.Ordinal);
+        }
+
+        return false;
+    }
+
+    private static bool TryGetSelectUnselectBinding(
+        FlatPublicCandidateDescriptorV1 candidate,
+        int selectableCount,
+        out string expectedKey,
+        out int expectedResponse)
+    {
+        expectedKey = string.Empty;
+        expectedResponse = default;
+        if (candidate is FlatPromptSelectUnselectCardCandidateBaseV1 card &&
+            IsConcreteType(
+                candidate,
+                typeof(FlatPromptSelectUnselectAnonymousCandidateV1),
+                typeof(FlatPromptSelectUnselectPromptCodeCandidateV1),
+                typeof(FlatPromptSelectUnselectLocatorCandidateV1),
+                typeof(FlatPromptSelectUnselectLocatorPromptCodeCandidateV1)) &&
+            !HasNonZeroPromptCardCodeIfInvalid(candidate))
+        {
+            bool isSelect = card.ChoiceKind == FlatPromptChoiceKindV1.Select &&
+                card.SourceSection == FlatPromptSourceSectionV1.Selectable;
+            bool isUnselect = card.ChoiceKind == FlatPromptChoiceKindV1.Unselect &&
+                card.SourceSection == FlatPromptSourceSectionV1.Unselectable;
+            string prefix = isSelect
+                ? FlatPromptKeyV1.SelectUnselectSelectPrefix
+                : isUnselect
+                    ? FlatPromptKeyV1.SelectUnselectUnselectPrefix
+                    : string.Empty;
+            if (prefix.Length != 0 &&
+                FlatPromptKeyV1.TryCreateOrdinalKey(
+                    prefix,
+                    card.SourceOrdinal,
+                    out expectedKey))
+            {
+                if (isUnselect &&
+                    (card.SourceOrdinal < 0 ||
+                     selectableCount > int.MaxValue - card.SourceOrdinal))
+                {
+                    return false;
+                }
+
+                expectedResponse = isUnselect
+                    ? selectableCount + card.SourceOrdinal
+                    : card.SourceOrdinal;
+                return true;
+            }
+        }
+
+        if (candidate is FlatPromptFinishPublicCandidateV1 finish &&
+            finish.ChoiceKind == FlatPromptChoiceKindV1.Finish)
+        {
+            expectedKey = FlatPromptKeyV1.SelectUnselectFinish;
+            expectedResponse = -1;
+            return string.Equals(
+                finish.I4LocalCandidateKey,
+                expectedKey,
+                StringComparison.Ordinal);
+        }
+
+        if (candidate is FlatPromptCancelPublicCandidateV1 cancel &&
+            cancel.ChoiceKind == FlatPromptChoiceKindV1.Cancel)
+        {
+            expectedKey = FlatPromptKeyV1.SelectUnselectCancel;
+            expectedResponse = -1;
+            return string.Equals(
+                cancel.I4LocalCandidateKey,
+                expectedKey,
+                StringComparison.Ordinal);
+        }
+
+        if (candidate is FlatPromptFinishOrCancelPublicCandidateV1 both &&
+            both.ChoiceKind == FlatPromptChoiceKindV1.FinishOrCancel)
+        {
+            expectedKey = FlatPromptKeyV1.SelectUnselectFinishOrCancel;
+            expectedResponse = -1;
+            return string.Equals(
+                both.I4LocalCandidateKey,
+                expectedKey,
+                StringComparison.Ordinal);
+        }
+
+        return false;
+    }
+
+    private static bool HasNonZeroPromptCardCodeIfInvalid(
+        FlatPublicCandidateDescriptorV1 candidate) =>
+        candidate switch
+        {
+            FlatPromptCardSelectionPromptCodeCandidateV1 value =>
+                value.PromptLocalCardCode == 0,
+            FlatPromptCardSelectionLocatorPromptCodeCandidateV1 value =>
+                value.PromptLocalCardCode == 0,
+            FlatPromptTributeSelectionPromptCodeCandidateV1 value =>
+                value.PromptLocalCardCode == 0,
+            FlatPromptTributeSelectionLocatorPromptCodeCandidateV1 value =>
+                value.PromptLocalCardCode == 0,
+            FlatPromptSelectUnselectPromptCodeCandidateV1 value =>
+                value.PromptLocalCardCode == 0,
+            FlatPromptSelectUnselectLocatorPromptCodeCandidateV1 value =>
+                value.PromptLocalCardCode == 0,
+            _ => false
+        };
+
+    private static bool IsConcreteType(
+        FlatPublicCandidateDescriptorV1 candidate,
+        params Type[] allowedTypes) =>
+        allowedTypes.Contains(candidate.GetType());
 
     private static bool TryGetBattleBinding(
         FlatPublicCandidateDescriptorV1 candidate,
@@ -1767,7 +2944,8 @@ internal sealed class FlatPromptSelectionHandleV1
         ulong promptInstanceOrdinal,
         FlatPromptFamilyV1 family,
         string i4LocalCandidateKey,
-        IReadOnlyList<FlatPublicCandidateDescriptorV1> orderedDomain)
+        IReadOnlyList<FlatPublicCandidateDescriptorV1> orderedDomain,
+        int continuationStep = 0)
     {
         PromptInstanceOrdinal = promptInstanceOrdinal;
         Family = family;
@@ -1776,11 +2954,15 @@ internal sealed class FlatPromptSelectionHandleV1
         ArgumentNullException.ThrowIfNull(orderedDomain);
         this.orderedDomain = orderedDomain.ToArray();
         orderedDomainView = Array.AsReadOnly(this.orderedDomain);
+        ArgumentOutOfRangeException.ThrowIfNegative(continuationStep);
+        ContinuationStep = continuationStep;
     }
 
     internal ulong PromptInstanceOrdinal { get; }
 
     internal FlatPromptFamilyV1 Family { get; }
+
+    internal int ContinuationStep { get; }
 
     internal string I4LocalCandidateKey { get; }
 
@@ -1813,6 +2995,30 @@ internal static class FlatPromptKeyV1
         "MSG_SELECT_IDLECMD:MSET:";
     internal const string IdleSsetPrefix =
         "MSG_SELECT_IDLECMD:SSET:";
+    internal const string SelectCardPickPrefix =
+        "MSG_SELECT_CARD:PICK:";
+    internal const string SelectCardFinish =
+        "MSG_SELECT_CARD:FINISH";
+    internal const string SelectCardCancel =
+        "MSG_SELECT_CARD:CANCEL";
+    internal const string SelectTributePickPrefix =
+        "MSG_SELECT_TRIBUTE:PICK:";
+    internal const string SelectTributeFinish =
+        "MSG_SELECT_TRIBUTE:FINISH";
+    internal const string SelectTributeCancel =
+        "MSG_SELECT_TRIBUTE:CANCEL";
+    internal const string SelectUnselectSelectPrefix =
+        "MSG_SELECT_UNSELECT_CARD:SELECT:";
+    internal const string SelectUnselectUnselectPrefix =
+        "MSG_SELECT_UNSELECT_CARD:UNSELECT:";
+    internal const string SelectUnselectFinish =
+        "MSG_SELECT_UNSELECT_CARD:FINISH";
+    internal const string SelectUnselectCancel =
+        "MSG_SELECT_UNSELECT_CARD:CANCEL";
+    internal const string SelectUnselectFinishOrCancel =
+        "MSG_SELECT_UNSELECT_CARD:FINISH_OR_CANCEL";
+    internal const string AnnounceNumberOptionPrefix =
+        "MSG_ANNOUNCE_NUMBER:OPTION:";
     internal static bool TryCreateOption(
         int sourceOrdinal,
         out string key)

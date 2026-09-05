@@ -91,6 +91,247 @@ public sealed class FlatPromptSessionV1
         return CommitProjection(projected);
     }
 
+    public FlatPromptProjectionResultV1 TryAcceptI5Prompt(
+        ReadOnlySpan<byte> completeInnerGameMessage)
+    {
+        if (!FlatPromptProjectionV1.TryParseI5WireDraft(
+                completeInnerGameMessage,
+                out FlatPromptWireDraftV1? wireDraft,
+                out FlatPromptErrorCodeV1 parseError) ||
+            wireDraft is null)
+        {
+            currentBinding = null;
+            return FlatPromptProjectionResultV1.Failure(parseError);
+        }
+
+        if (!FlatPromptProjectionV1.TryBuildProjectedDraft(
+                wireDraft,
+                null,
+                out FlatPromptProjectionDraftV1? projected,
+                out FlatPromptErrorCodeV1 projectionError) ||
+            projected is null)
+        {
+            currentBinding = null;
+            return FlatPromptProjectionResultV1.Failure(projectionError);
+        }
+
+        return CommitProjection(projected);
+    }
+
+    public FlatPromptProjectionResultV1 TryAcceptI5Prompt(
+        ReadOnlySpan<byte> completeInnerGameMessage,
+        PerspectiveStateMirrorV1? mirror,
+        PublicStateProjectionResultV1? acceptedProjection)
+    {
+        if (!FlatPromptProjectionV1.TryParseI5WireDraft(
+                completeInnerGameMessage,
+                out FlatPromptWireDraftV1? wireDraft,
+                out FlatPromptErrorCodeV1 parseError) ||
+            wireDraft is null)
+        {
+            currentBinding = null;
+            return FlatPromptProjectionResultV1.Failure(parseError);
+        }
+
+        if (acceptedProjection is null ||
+            !acceptedProjection.IsSuccess ||
+            acceptedProjection.Snapshot is null ||
+            mirror is null)
+        {
+            currentBinding = null;
+            return FlatPromptProjectionResultV1.Failure(
+                FlatPromptErrorCodeV1.UnprovenPublicReference);
+        }
+
+        MirrorSnapshotV1 capturedMirror = mirror.Snapshot;
+        PublicStateSnapshotV1 acceptedSnapshot = acceptedProjection.Snapshot;
+        PublicStateProjectionResultV1 recomputedProjection =
+            PublicStateProjectionV1.TryProject(
+                capturedMirror,
+                new PublicStateProjectionContextV1(
+                    acceptedSnapshot.DuelFlags));
+        if (!recomputedProjection.IsSuccess ||
+            recomputedProjection.Snapshot is null ||
+            !recomputedProjection.CanonicalBytes.Span.SequenceEqual(
+                acceptedProjection.CanonicalBytes.Span) ||
+            !string.Equals(
+                recomputedProjection.Sha256,
+                acceptedProjection.Sha256,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                recomputedProjection.PublicProjectionId,
+                acceptedProjection.PublicProjectionId,
+                StringComparison.Ordinal))
+        {
+            currentBinding = null;
+            return FlatPromptProjectionResultV1.Failure(
+                FlatPromptErrorCodeV1.AuthorityMismatch);
+        }
+
+        if (!FlatPromptProjectionV1.TryBuildProjectedDraft(
+                wireDraft,
+                new FlatPromptCardAuthorityContextV1(
+                    capturedMirror,
+                    acceptedSnapshot),
+                out FlatPromptProjectionDraftV1? projected,
+                out FlatPromptErrorCodeV1 projectionError) ||
+            projected is null)
+        {
+            currentBinding = null;
+            return FlatPromptProjectionResultV1.Failure(projectionError);
+        }
+
+        return CommitProjection(projected);
+    }
+
+    internal FlatPromptContinuationStepResultV1 TryApplySelection(
+        FlatPromptSelectionHandleV1? handle)
+    {
+        if (handle is null)
+        {
+            return FlatPromptContinuationStepResultV1.Failure(
+                FlatPromptErrorCodeV1.InvalidResponseBinding);
+        }
+
+        if (currentBinding is null ||
+            handle.PromptInstanceOrdinal != currentBinding.PromptInstanceOrdinal ||
+            handle.Family != currentBinding.Family)
+        {
+            return FlatPromptContinuationStepResultV1.Failure(
+                FlatPromptErrorCodeV1.InvalidContinuationInstance);
+        }
+
+        if (handle.ContinuationStep != currentBinding.ContinuationStep)
+        {
+            return FlatPromptContinuationStepResultV1.Failure(
+                FlatPromptErrorCodeV1.StaleContinuationStep);
+        }
+
+        if (!DomainsEqual(handle.OrderedDomain, currentBinding.Candidates))
+        {
+            return FlatPromptContinuationStepResultV1.Failure(
+                FlatPromptErrorCodeV1.InvalidContinuationInstance);
+        }
+
+        if (!currentBinding.TryGetCandidate(
+                handle.I4LocalCandidateKey,
+                out FlatPublicCandidateDescriptorV1? candidate) ||
+            candidate is null)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Failure(
+                FlatPromptErrorCodeV1.InvalidI4LocalCandidateKey);
+        }
+
+        if (currentBinding.ContinuationState is null)
+        {
+            if (currentBinding.TryGetResponseBody(
+                    handle.I4LocalCandidateKey,
+                    out byte[] responseBody))
+            {
+                currentBinding = null;
+                return FlatPromptContinuationStepResultV1.Terminal(
+                    responseBody);
+            }
+
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Failure(
+                FlatPromptErrorCodeV1.InvalidContinuationAction);
+        }
+
+        FlatPromptCardContinuationStateV1 state =
+            currentBinding.ContinuationState;
+        if (candidate is FlatPromptCardSelectionCandidateBaseV1 cardCandidate &&
+            state.Family == FlatPromptFamilyValueV1.MsgSelectCard &&
+            cardCandidate.ChoiceKind == FlatPromptChoiceKindV1.Pick)
+        {
+            return ApplyCardPick(state, cardCandidate.SourceOrdinal);
+        }
+
+        if (candidate is FlatPromptTributeSelectionCandidateBaseV1 tributeCandidate &&
+            state.Family == FlatPromptFamilyValueV1.MsgSelectTribute &&
+            tributeCandidate.ChoiceKind == FlatPromptChoiceKindV1.Pick)
+        {
+            return ApplyCardPick(state, tributeCandidate.SourceOrdinal);
+        }
+
+        if (candidate is FlatPromptFinishPublicCandidateV1 finish &&
+            finish.ChoiceKind == FlatPromptChoiceKindV1.Finish &&
+            state.CanFinish)
+        {
+            if (!FlatPromptProjectionV1.TryEncodeCardIndexResponse(
+                    state.SelectedOrdinals,
+                    out byte[] responseBody,
+                    out FlatPromptErrorCodeV1 error))
+            {
+                currentBinding = null;
+                return FlatPromptContinuationStepResultV1.Failure(error);
+            }
+
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Terminal(responseBody);
+        }
+
+        if (candidate is FlatPromptCancelPublicCandidateV1 cancel &&
+            cancel.ChoiceKind == FlatPromptChoiceKindV1.Cancel &&
+            state.Cancelable)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Terminal(
+                CreateInt32Response(-1));
+        }
+
+        currentBinding = null;
+        return FlatPromptContinuationStepResultV1.Failure(
+            FlatPromptErrorCodeV1.InvalidContinuationAction);
+    }
+
+    private FlatPromptContinuationStepResultV1 ApplyCardPick(
+        FlatPromptCardContinuationStateV1 state,
+        int sourceOrdinal)
+    {
+        if (!FlatPromptProjectionV1.TryAdvanceCardContinuation(
+                state,
+                sourceOrdinal,
+                out FlatPromptProjectionDraftV1? nextDraft,
+                out FlatPromptErrorCodeV1 error) ||
+            nextDraft is null ||
+            currentBinding is null)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Failure(error);
+        }
+
+        CurrentFlatPromptBindingV1 binding = currentBinding;
+
+        FlatPublicCandidateDescriptorV1[] candidates =
+            nextDraft.CopyCandidates();
+        string[] localKeys = nextDraft.CopyLocalKeys();
+        int[] responses = nextDraft.CopyResponses();
+        if (!CurrentFlatPromptBindingV1.TryCreate(
+                binding.PromptInstanceOrdinal,
+                nextDraft.Context.PromptFamily,
+                candidates,
+                localKeys,
+                responses,
+                out CurrentFlatPromptBindingV1? nextBinding,
+                out FlatPromptErrorCodeV1 bindingError,
+                nextDraft.CopyResponseBodies(),
+                nextDraft.ContinuationState) ||
+            nextBinding is null)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Failure(bindingError);
+        }
+
+        FlatPromptProjectionResultV1 projection =
+            FlatPromptProjectionResultV1.Success(
+                nextDraft.Context,
+                candidates);
+        currentBinding = nextBinding;
+        return FlatPromptContinuationStepResultV1.Intermediate(projection);
+    }
+
     private FlatPromptProjectionResultV1 CommitProjection(
         FlatPromptProjectionDraftV1 draft)
     {
@@ -117,7 +358,9 @@ public sealed class FlatPromptSessionV1
                 localKeys,
                 responses,
                 out CurrentFlatPromptBindingV1? binding,
-                out FlatPromptErrorCodeV1 bindingError) ||
+                out FlatPromptErrorCodeV1 bindingError,
+                draft.CopyResponseBodies(),
+                draft.ContinuationState) ||
             binding is null)
         {
             currentBinding = null;
@@ -150,8 +393,18 @@ public sealed class FlatPromptSessionV1
             currentBinding.PromptInstanceOrdinal,
             currentBinding.Family,
             i4LocalCandidateKey,
-            currentBinding.Candidates);
+            currentBinding.Candidates,
+            currentBinding.ContinuationStep);
         return true;
+    }
+
+    private static byte[] CreateInt32Response(int value)
+    {
+        byte[] body = new byte[sizeof(int)];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(
+            body,
+            value);
+        return body;
     }
 
     internal bool TryResolveSelection(
@@ -170,9 +423,19 @@ public sealed class FlatPromptSessionV1
         if (currentBinding is null ||
             handle.PromptInstanceOrdinal != currentBinding.PromptInstanceOrdinal ||
             handle.Family != currentBinding.Family ||
+            handle.ContinuationStep != currentBinding.ContinuationStep ||
             !DomainsEqual(handle.OrderedDomain, currentBinding.Candidates))
         {
             error = FlatPromptErrorCodeV1.StalePromptBinding;
+            return false;
+        }
+
+        if (currentBinding.Family is
+            FlatPromptFamilyValueV1.MsgSelectCard or
+            FlatPromptFamilyValueV1.MsgSelectTribute or
+            FlatPromptFamilyValueV1.MsgSelectUnselectCard)
+        {
+            error = FlatPromptErrorCodeV1.InvalidContinuationAction;
             return false;
         }
 
@@ -330,9 +593,92 @@ public sealed class FlatPromptSessionV1
             (FlatIdleShuffleHandPublicCandidateV1 left,
                 FlatIdleShuffleHandPublicCandidateV1 right) =>
                 left.TransitionToken == right.TransitionToken,
+            (FlatPromptCardSelectionAnonymousCandidateV1 left,
+                FlatPromptCardSelectionAnonymousCandidateV1 right) =>
+                CardSelectionEqual(left, right),
+            (FlatPromptCardSelectionPromptCodeCandidateV1 left,
+                FlatPromptCardSelectionPromptCodeCandidateV1 right) =>
+                CardSelectionEqual(left, right) &&
+                left.PromptLocalCardCode == right.PromptLocalCardCode,
+            (FlatPromptCardSelectionLocatorCandidateV1 left,
+                FlatPromptCardSelectionLocatorCandidateV1 right) =>
+                CardSelectionEqual(left, right) &&
+                left.PublicSemanticCardLocator ==
+                    right.PublicSemanticCardLocator,
+            (FlatPromptCardSelectionLocatorPromptCodeCandidateV1 left,
+                FlatPromptCardSelectionLocatorPromptCodeCandidateV1 right) =>
+                CardSelectionEqual(left, right) &&
+                left.PublicSemanticCardLocator ==
+                    right.PublicSemanticCardLocator &&
+                left.PromptLocalCardCode == right.PromptLocalCardCode,
+            (FlatPromptTributeSelectionAnonymousCandidateV1 left,
+                FlatPromptTributeSelectionAnonymousCandidateV1 right) =>
+                TributeSelectionEqual(left, right),
+            (FlatPromptTributeSelectionPromptCodeCandidateV1 left,
+                FlatPromptTributeSelectionPromptCodeCandidateV1 right) =>
+                TributeSelectionEqual(left, right) &&
+                left.PromptLocalCardCode == right.PromptLocalCardCode,
+            (FlatPromptTributeSelectionLocatorCandidateV1 left,
+                FlatPromptTributeSelectionLocatorCandidateV1 right) =>
+                TributeSelectionEqual(left, right) &&
+                left.PublicSemanticCardLocator ==
+                    right.PublicSemanticCardLocator,
+            (FlatPromptTributeSelectionLocatorPromptCodeCandidateV1 left,
+                FlatPromptTributeSelectionLocatorPromptCodeCandidateV1 right) =>
+                TributeSelectionEqual(left, right) &&
+                left.PublicSemanticCardLocator ==
+                    right.PublicSemanticCardLocator &&
+                left.PromptLocalCardCode == right.PromptLocalCardCode,
+            (FlatPromptFinishPublicCandidateV1,
+                FlatPromptFinishPublicCandidateV1) => true,
+            (FlatPromptCancelPublicCandidateV1,
+                FlatPromptCancelPublicCandidateV1) => true,
+            (FlatPromptFinishOrCancelPublicCandidateV1,
+                FlatPromptFinishOrCancelPublicCandidateV1) => true,
+            (FlatPromptSelectUnselectAnonymousCandidateV1 left,
+                FlatPromptSelectUnselectAnonymousCandidateV1 right) =>
+                SelectUnselectEqual(left, right),
+            (FlatPromptSelectUnselectPromptCodeCandidateV1 left,
+                FlatPromptSelectUnselectPromptCodeCandidateV1 right) =>
+                SelectUnselectEqual(left, right) &&
+                left.PromptLocalCardCode == right.PromptLocalCardCode,
+            (FlatPromptSelectUnselectLocatorCandidateV1 left,
+                FlatPromptSelectUnselectLocatorCandidateV1 right) =>
+                SelectUnselectEqual(left, right) &&
+                left.PublicSemanticCardLocator ==
+                    right.PublicSemanticCardLocator,
+            (FlatPromptSelectUnselectLocatorPromptCodeCandidateV1 left,
+                FlatPromptSelectUnselectLocatorPromptCodeCandidateV1 right) =>
+                SelectUnselectEqual(left, right) &&
+                left.PublicSemanticCardLocator ==
+                    right.PublicSemanticCardLocator &&
+                left.PromptLocalCardCode == right.PromptLocalCardCode,
+            (FlatPromptAnnounceNumberPublicCandidateV1 left,
+                FlatPromptAnnounceNumberPublicCandidateV1 right) =>
+                left.SourceSection == right.SourceSection &&
+                left.SourceOrdinal == right.SourceOrdinal &&
+                left.NumberValue == right.NumberValue,
             _ => false
         };
     }
+
+    private static bool CardSelectionEqual(
+        FlatPromptCardSelectionCandidateBaseV1 first,
+        FlatPromptCardSelectionCandidateBaseV1 second) =>
+        first.SourceSection == second.SourceSection &&
+        first.SourceOrdinal == second.SourceOrdinal;
+
+    private static bool TributeSelectionEqual(
+        FlatPromptTributeSelectionCandidateBaseV1 first,
+        FlatPromptTributeSelectionCandidateBaseV1 second) =>
+        first.SourceSection == second.SourceSection &&
+        first.SourceOrdinal == second.SourceOrdinal;
+
+    private static bool SelectUnselectEqual(
+        FlatPromptSelectUnselectCardCandidateBaseV1 first,
+        FlatPromptSelectUnselectCardCandidateBaseV1 second) =>
+        first.SourceSection == second.SourceSection &&
+        first.SourceOrdinal == second.SourceOrdinal;
 
     private static bool BattleActivatableEqual(
         FlatBattleActivatablePublicCandidateBaseV1 first,
