@@ -21,6 +21,15 @@ internal static class FlatPromptProjectionV1
     private const int OptionDescriptionLength = 8;
     private const int PositionMessageLength = 7;
     private const byte ValidPositionMask = 0x0F;
+    private const int SelectCardHeaderLength = 15;
+    private const int SelectCardEntryLength = 14;
+    private const int SelectTributeHeaderLength = 15;
+    private const int SelectTributeEntryLength = 11;
+    private const int SelectUnselectHeaderLength = 20;
+    private const int SelectUnselectEntryLength = 14;
+    private const int AnnounceNumberHeaderLength = 3;
+    private const int AnnounceNumberOptionLength = 8;
+    private const uint MaximumTributeCardCount = 5;
 
     private static readonly int[] YesNoResponses = { 0, 1 };
     private static readonly int[] EffectYnResponses = { 0, 1 };
@@ -91,6 +100,36 @@ internal static class FlatPromptProjectionV1
         };
     }
 
+    internal static bool TryParseI5WireDraft(
+        ReadOnlySpan<byte> bytes,
+        out FlatPromptWireDraftV1? draft,
+        out FlatPromptErrorCodeV1 error)
+    {
+        draft = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (bytes.IsEmpty)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        return bytes[0] switch
+        {
+            15 => TryParseSelectCardWireDraft(bytes, out draft, out error),
+            20 => TryParseSelectTributeWireDraft(bytes, out draft, out error),
+            26 => TryParseSelectUnselectWireDraft(bytes, out draft, out error),
+            143 => TryParseAnnounceNumberWireDraft(bytes, out draft, out error),
+            23 => FailWireDraft(
+                FlatPromptErrorCodeV1.UnsupportedPromptFamily,
+                out draft,
+                out error),
+            _ => FailWireDraft(
+                FlatPromptErrorCodeV1.UnsupportedPromptLayout,
+                out draft,
+                out error)
+        };
+    }
+
     internal static bool TryBuildProjectedDraft(
         FlatPromptWireDraftV1 draft,
         FlatPromptCardAuthorityContextV1? authority,
@@ -100,36 +139,66 @@ internal static class FlatPromptProjectionV1
         ArgumentNullException.ThrowIfNull(draft);
         projected = null;
         error = FlatPromptErrorCodeV1.None;
-        if (authority is null)
+        if (authority is null &&
+            draft.Family is not
+                (FlatPromptFamilyValueV1.MsgSelectCard or
+                 FlatPromptFamilyValueV1.MsgSelectTribute or
+                 FlatPromptFamilyValueV1.MsgSelectUnselectCard or
+                 FlatPromptFamilyValueV1.MsgAnnounceNumber))
         {
             error = FlatPromptErrorCodeV1.UnprovenPublicReference;
             return false;
         }
+
+        FlatPromptCardAuthorityContextV1 requiredAuthority = authority!;
 
         return draft switch
         {
             FlatPromptBattleWireDraftV1 battle =>
                 TryBuildBattleProjection(
                     battle,
-                    authority,
+                    requiredAuthority,
                     out projected,
                     out error),
             FlatPromptIdleWireDraftV1 idle =>
                 TryBuildIdleProjection(
                     idle,
-                    authority,
+                    requiredAuthority,
                     out projected,
                     out error),
             FlatPromptEffectYnWireDraftV1 effect =>
                 TryBuildEffectYnProjection(
                     effect,
-                    authority,
+                    requiredAuthority,
                     out projected,
                     out error),
             FlatPromptChainWireDraftV1 chain =>
                 TryBuildChainProjection(
                     chain,
+                    requiredAuthority,
+                    out projected,
+                    out error),
+            FlatPromptSelectCardWireDraftV1 selectCard =>
+                TryBuildSelectCardProjection(
+                    selectCard,
                     authority,
+                    out projected,
+                    out error),
+            FlatPromptSelectTributeWireDraftV1 tribute =>
+                TryBuildSelectTributeProjection(
+                    tribute,
+                    authority,
+                    out projected,
+                    out error),
+            FlatPromptSelectUnselectWireDraftV1 selectUnselect =>
+                TryBuildSelectUnselectProjection(
+                    selectUnselect,
+                    authority,
+                    out projected,
+                    out error),
+            FlatPromptAnnounceNumberWireDraftV1 announceNumber =>
+                TryBuildAnnounceNumberProjection(
+                    announceNumber,
                     out projected,
                     out error),
             _ => FailProjection(
@@ -138,6 +207,538 @@ internal static class FlatPromptProjectionV1
                 out error)
         };
     }
+
+    private static bool TryProjectI5A1(
+        ReadOnlySpan<byte> bytes,
+        out FlatPromptProjectionDraftV1? draft,
+        out FlatPromptErrorCodeV1 error)
+    {
+        draft = null;
+        if (!TryParseI5WireDraft(
+                bytes,
+                out FlatPromptWireDraftV1? wireDraft,
+                out error) ||
+            wireDraft is null)
+        {
+            return false;
+        }
+
+        return TryBuildProjectedDraft(
+            wireDraft,
+            null,
+            out draft,
+            out error);
+    }
+
+    private static bool TryParseSelectCardWireDraft(
+        ReadOnlySpan<byte> bytes,
+        out FlatPromptWireDraftV1? draft,
+        out FlatPromptErrorCodeV1 error)
+    {
+        draft = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (bytes.Length < SelectCardHeaderLength)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        byte actingPlayer = bytes[1];
+        if (actingPlayer > 1)
+        {
+            error = FlatPromptErrorCodeV1.InvalidParticipant;
+            return false;
+        }
+
+        byte cancelable = bytes[2];
+        if (cancelable > 1)
+        {
+            error = FlatPromptErrorCodeV1.InvalidBoolean;
+            return false;
+        }
+
+        uint minimumCount = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(3, sizeof(uint)));
+        uint maximumCount = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(7, sizeof(uint)));
+        uint occurrenceCount = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(11, sizeof(uint)));
+        if (occurrenceCount > MaximumSectionEntryCount)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (occurrenceCount == 0 ||
+            maximumCount == 0 ||
+            minimumCount > byte.MaxValue ||
+            maximumCount > byte.MaxValue ||
+            minimumCount == 0 && cancelable == 0 ||
+            minimumCount > maximumCount ||
+            maximumCount > occurrenceCount)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        ulong requiredLength;
+        try
+        {
+            requiredLength = checked(
+                (ulong)SelectCardHeaderLength +
+                checked((ulong)SelectCardEntryLength * occurrenceCount));
+        }
+        catch (OverflowException)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (requiredLength > int.MaxValue)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (requiredLength != (ulong)bytes.Length)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        FlatPromptSelectCardWireEntryV1[] entries =
+            new FlatPromptSelectCardWireEntryV1[(int)occurrenceCount];
+        int offset = SelectCardHeaderLength;
+        for (int ordinal = 0; ordinal < entries.Length; ordinal++)
+        {
+            if (!TryReadSelectCardEntry(
+                    bytes,
+                    ref offset,
+                    out entries[ordinal],
+                    out error))
+            {
+                return false;
+            }
+        }
+
+        draft = new FlatPromptSelectCardWireDraftV1(
+            actingPlayer,
+            cancelable == 1,
+            minimumCount,
+            maximumCount,
+            entries);
+        return true;
+    }
+
+    private static bool TryParseSelectTributeWireDraft(
+        ReadOnlySpan<byte> bytes,
+        out FlatPromptWireDraftV1? draft,
+        out FlatPromptErrorCodeV1 error)
+    {
+        draft = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (bytes.Length < SelectTributeHeaderLength)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        byte actingPlayer = bytes[1];
+        if (actingPlayer > 1)
+        {
+            error = FlatPromptErrorCodeV1.InvalidParticipant;
+            return false;
+        }
+
+        byte cancelable = bytes[2];
+        if (cancelable > 1)
+        {
+            error = FlatPromptErrorCodeV1.InvalidBoolean;
+            return false;
+        }
+
+        uint minimumRequiredTributeValue =
+            BinaryPrimitives.ReadUInt32LittleEndian(
+                bytes.Slice(3, sizeof(uint)));
+        uint maximumSelectedCardCount =
+            BinaryPrimitives.ReadUInt32LittleEndian(
+                bytes.Slice(7, sizeof(uint)));
+        uint occurrenceCount = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(11, sizeof(uint)));
+        if (occurrenceCount > MaximumSectionEntryCount)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (occurrenceCount == 0 ||
+            maximumSelectedCardCount == 0 ||
+            maximumSelectedCardCount > MaximumTributeCardCount ||
+            minimumRequiredTributeValue == 0 && cancelable == 0)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        ulong requiredLength;
+        try
+        {
+            requiredLength = checked(
+                (ulong)SelectTributeHeaderLength +
+                checked((ulong)SelectTributeEntryLength * occurrenceCount));
+        }
+        catch (OverflowException)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (requiredLength > int.MaxValue)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (requiredLength != (ulong)bytes.Length)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        FlatPromptSelectTributeWireEntryV1[] entries =
+            new FlatPromptSelectTributeWireEntryV1[(int)occurrenceCount];
+        int offset = SelectTributeHeaderLength;
+        for (int ordinal = 0; ordinal < entries.Length; ordinal++)
+        {
+            uint sourceCardCode = BinaryPrimitives.ReadUInt32LittleEndian(
+                bytes.Slice(offset, sizeof(uint)));
+            byte controller = bytes[offset + 4];
+            byte location = bytes[offset + 5];
+            uint sequence = BinaryPrimitives.ReadUInt32LittleEndian(
+                bytes.Slice(offset + 6, sizeof(uint)));
+            byte releaseValue = bytes[offset + 10];
+            if (releaseValue is < 1 or > 3 ||
+                !TryValidatePrivateLocation(
+                    new ModernLocInfoV1(controller, location, sequence, 0),
+                    out error))
+            {
+                if (error == FlatPromptErrorCodeV1.None)
+                {
+                    error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+                }
+
+                return false;
+            }
+
+            entries[ordinal] = new FlatPromptSelectTributeWireEntryV1(
+                sourceCardCode,
+                new ModernLocInfoV1(controller, location, sequence, 0),
+                releaseValue);
+            offset += SelectTributeEntryLength;
+        }
+
+        draft = new FlatPromptSelectTributeWireDraftV1(
+            actingPlayer,
+            cancelable == 1,
+            minimumRequiredTributeValue,
+            maximumSelectedCardCount,
+            entries);
+        return true;
+    }
+
+    private static bool TryParseSelectUnselectWireDraft(
+        ReadOnlySpan<byte> bytes,
+        out FlatPromptWireDraftV1? draft,
+        out FlatPromptErrorCodeV1 error)
+    {
+        draft = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (bytes.Length < SelectUnselectHeaderLength)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        byte actingPlayer = bytes[1];
+        if (actingPlayer > 1)
+        {
+            error = FlatPromptErrorCodeV1.InvalidParticipant;
+            return false;
+        }
+
+        byte finishable = bytes[2];
+        byte cancelable = bytes[3];
+        if (finishable > 1 || cancelable > 1)
+        {
+            error = FlatPromptErrorCodeV1.InvalidBoolean;
+            return false;
+        }
+
+        uint minimumCount = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(4, sizeof(uint)));
+        uint maximumCount = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(8, sizeof(uint)));
+        uint selectableCount = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(12, sizeof(uint)));
+        if (selectableCount > MaximumSectionEntryCount)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (minimumCount > maximumCount)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        ulong unselectableCountOffset;
+        try
+        {
+            unselectableCountOffset = checked(
+                (ulong)sizeof(byte) * 4 +
+                (ulong)sizeof(uint) * 3 +
+                checked((ulong)SelectUnselectEntryLength * selectableCount));
+        }
+        catch (OverflowException)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (unselectableCountOffset > int.MaxValue ||
+            unselectableCountOffset > (ulong)bytes.Length ||
+            bytes.Length - (int)unselectableCountOffset < sizeof(uint))
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        int unselectableCountOffsetInt = (int)unselectableCountOffset;
+        uint unselectableCount = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(unselectableCountOffsetInt, sizeof(uint)));
+        if (unselectableCount > MaximumSectionEntryCount)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (selectableCount == 0 && unselectableCount == 0)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        ulong requiredLength;
+        try
+        {
+            requiredLength = checked(
+                (ulong)SelectUnselectHeaderLength +
+                checked((ulong)SelectUnselectEntryLength *
+                    checked(selectableCount + unselectableCount)));
+        }
+        catch (OverflowException)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (requiredLength > int.MaxValue)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (requiredLength != (ulong)bytes.Length)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        FlatPromptSelectCardWireEntryV1[] selectableEntries =
+            new FlatPromptSelectCardWireEntryV1[(int)selectableCount];
+        FlatPromptSelectCardWireEntryV1[] unselectableEntries =
+            new FlatPromptSelectCardWireEntryV1[(int)unselectableCount];
+        int offset = sizeof(byte) * 4 + sizeof(uint) * 3;
+        if (!TryReadSelectCardEntries(
+                bytes,
+                ref offset,
+                selectableEntries,
+                out error))
+        {
+            return false;
+        }
+
+        offset += sizeof(uint);
+        if (!TryReadSelectCardEntries(
+                bytes,
+                ref offset,
+                unselectableEntries,
+                out error))
+        {
+            return false;
+        }
+
+        draft = new FlatPromptSelectUnselectWireDraftV1(
+            actingPlayer,
+            finishable == 1,
+            cancelable == 1,
+            minimumCount,
+            maximumCount,
+            selectableEntries,
+            unselectableEntries);
+        return true;
+    }
+
+    private static bool TryParseAnnounceNumberWireDraft(
+        ReadOnlySpan<byte> bytes,
+        out FlatPromptWireDraftV1? draft,
+        out FlatPromptErrorCodeV1 error)
+    {
+        draft = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (bytes.Length < AnnounceNumberHeaderLength)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        byte actingPlayer = bytes[1];
+        if (actingPlayer > 1)
+        {
+            error = FlatPromptErrorCodeV1.InvalidParticipant;
+            return false;
+        }
+
+        byte optionCount = bytes[2];
+        if (optionCount == 0)
+        {
+            error = FlatPromptErrorCodeV1.ZeroOptionDomain;
+            return false;
+        }
+
+        ulong requiredLength;
+        try
+        {
+            requiredLength = checked(
+                (ulong)AnnounceNumberHeaderLength +
+                checked((ulong)AnnounceNumberOptionLength * optionCount));
+        }
+        catch (OverflowException)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        if (requiredLength != (ulong)bytes.Length)
+        {
+            error = FlatPromptErrorCodeV1.MalformedPrompt;
+            return false;
+        }
+
+        ulong[] values = new ulong[optionCount];
+        int offset = AnnounceNumberHeaderLength;
+        for (int ordinal = 0; ordinal < values.Length; ordinal++)
+        {
+            values[ordinal] = BinaryPrimitives.ReadUInt64LittleEndian(
+                bytes.Slice(offset, AnnounceNumberOptionLength));
+            offset += AnnounceNumberOptionLength;
+        }
+
+        draft = new FlatPromptAnnounceNumberWireDraftV1(
+            actingPlayer,
+            values);
+        return true;
+    }
+
+    private static bool TryReadSelectCardEntry(
+        ReadOnlySpan<byte> bytes,
+        ref int offset,
+        out FlatPromptSelectCardWireEntryV1 entry,
+        out FlatPromptErrorCodeV1 error)
+    {
+        entry = default;
+        error = FlatPromptErrorCodeV1.None;
+        uint sourceCardCode = BinaryPrimitives.ReadUInt32LittleEndian(
+            bytes.Slice(offset, sizeof(uint)));
+        ReadOnlySpan<byte> locationBytes = bytes.Slice(
+            offset + sizeof(uint),
+            GameplayWirePrimitivesV1.ModernLocInfoByteLength);
+        ModernLocInfoV1 location;
+        if (IsZeroModernLocInfo(locationBytes))
+        {
+            location = new ModernLocInfoV1(0, 0, 0, 0);
+        }
+        else
+        {
+            if (!GameplayWirePrimitivesV1.TryDecodeModernLocInfo(
+                    locationBytes,
+                    out location,
+                    out GameplayErrorCode locationError))
+            {
+                error = FlatPromptErrorCodeV1.MalformedPrompt;
+                return false;
+            }
+
+            if (!TryMapLocationError(locationError, out error) ||
+                !TryValidatePrivateLocation(location, out error))
+            {
+                return false;
+            }
+        }
+
+        entry = new FlatPromptSelectCardWireEntryV1(
+            sourceCardCode,
+            location);
+        offset += SelectCardEntryLength;
+        return true;
+    }
+
+    private static bool TryReadSelectCardEntries(
+        ReadOnlySpan<byte> bytes,
+        ref int offset,
+        FlatPromptSelectCardWireEntryV1[] entries,
+        out FlatPromptErrorCodeV1 error)
+    {
+        error = FlatPromptErrorCodeV1.None;
+        foreach (int ordinal in Enumerable.Range(0, entries.Length))
+        {
+            if (!TryReadSelectCardEntry(
+                    bytes,
+                    ref offset,
+                    out entries[ordinal],
+                    out error))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsZeroModernLocInfo(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length != GameplayWirePrimitivesV1.ModernLocInfoByteLength)
+        {
+            return false;
+        }
+
+        foreach (byte value in bytes)
+        {
+            if (value != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsZeroModernLocInfo(ModernLocInfoV1 value) =>
+        value.Controller == 0 &&
+        value.Location == 0 &&
+        value.Sequence == 0 &&
+        value.Position == 0;
 
     private static bool TryParseEffectYnWireDraft(
         ReadOnlySpan<byte> bytes,
@@ -847,6 +1448,859 @@ internal static class FlatPromptProjectionV1
             hintTimingForOtherPlayer,
             entries);
         return true;
+    }
+
+    private static bool TryBuildSelectCardProjection(
+        FlatPromptSelectCardWireDraftV1 wire,
+        FlatPromptCardAuthorityContextV1? authority,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        FlatPublicCandidateDescriptorV1[] sourceCandidates =
+            new FlatPublicCandidateDescriptorV1[wire.Entries.Count];
+        for (int ordinal = 0; ordinal < wire.Entries.Count; ordinal++)
+        {
+            FlatPromptSelectCardWireEntryV1 entry = wire.Entries[ordinal];
+            if (!TryCreateI5CardCandidate(
+                    FlatPromptFamilyValueV1.MsgSelectCard,
+                    FlatPromptChoiceKindV1.Pick,
+                    FlatPromptSourceSectionV1.SelectCard,
+                    FlatPromptKeyV1.SelectCardPickPrefix,
+                    ordinal,
+                    entry.SourceCardCode,
+                    entry.SourceLocation,
+                    authority,
+                    out FlatPublicCandidateDescriptorV1? candidate,
+                    out error) ||
+                candidate is null)
+            {
+                if (error == FlatPromptErrorCodeV1.None)
+                {
+                    error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                }
+
+                return false;
+            }
+
+            sourceCandidates[ordinal] = candidate;
+        }
+
+        FlatPromptCardContinuationStateV1 state;
+        try
+        {
+            state = new FlatPromptCardContinuationStateV1(
+                FlatPromptFamilyValueV1.MsgSelectCard,
+                wire.ActingPlayer,
+                wire.MinimumCount,
+                wire.MaximumCount,
+                wire.Cancelable,
+                sourceCandidates,
+                new byte[sourceCandidates.Length],
+                Array.Empty<int>(),
+                0);
+        }
+        catch (ArgumentException)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        return TryBuildCardContinuationProjection(
+            state,
+            out projected,
+            out error);
+    }
+
+    private static bool TryBuildSelectTributeProjection(
+        FlatPromptSelectTributeWireDraftV1 wire,
+        FlatPromptCardAuthorityContextV1? authority,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        FlatPublicCandidateDescriptorV1[] sourceCandidates =
+            new FlatPublicCandidateDescriptorV1[wire.Entries.Count];
+        byte[] releaseValues = new byte[wire.Entries.Count];
+        for (int ordinal = 0; ordinal < wire.Entries.Count; ordinal++)
+        {
+            FlatPromptSelectTributeWireEntryV1 entry = wire.Entries[ordinal];
+            if ((entry.SourceLocation.Location & 0x80) != 0)
+            {
+                error = FlatPromptErrorCodeV1.UnprovenPublicReference;
+                return false;
+            }
+
+            if (!TryCreateI5CardCandidate(
+                    FlatPromptFamilyValueV1.MsgSelectTribute,
+                    FlatPromptChoiceKindV1.Pick,
+                    FlatPromptSourceSectionV1.SelectTribute,
+                    FlatPromptKeyV1.SelectTributePickPrefix,
+                    ordinal,
+                    entry.SourceCardCode,
+                    entry.SourceLocation,
+                    authority,
+                    out FlatPublicCandidateDescriptorV1? candidate,
+                    out error) ||
+                candidate is null)
+            {
+                if (error == FlatPromptErrorCodeV1.None)
+                {
+                    error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                }
+
+                return false;
+            }
+
+            sourceCandidates[ordinal] = candidate;
+
+            releaseValues[ordinal] = entry.ReleaseValue;
+        }
+
+        FlatPromptCardContinuationStateV1 state;
+        try
+        {
+            state = new FlatPromptCardContinuationStateV1(
+                FlatPromptFamilyValueV1.MsgSelectTribute,
+                wire.ActingPlayer,
+                wire.MinimumRequiredTributeValue,
+                wire.MaximumSelectedCardCount,
+                wire.Cancelable,
+                sourceCandidates,
+                releaseValues,
+                Array.Empty<int>(),
+                0);
+        }
+        catch (ArgumentException)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        return TryBuildCardContinuationProjection(
+            state,
+            out projected,
+            out error);
+    }
+
+    private static bool TryBuildSelectUnselectProjection(
+        FlatPromptSelectUnselectWireDraftV1 wire,
+        FlatPromptCardAuthorityContextV1? authority,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        List<FlatPublicCandidateDescriptorV1> candidates = new();
+        List<string> keys = new();
+        List<int> responses = new();
+        List<byte[]> responseBodies = new();
+        if (!TryAppendSelectUnselectCards(
+                wire.SelectableEntries,
+                FlatPromptChoiceKindV1.Select,
+                FlatPromptSourceSectionV1.Selectable,
+                FlatPromptKeyV1.SelectUnselectSelectPrefix,
+                0,
+                authority,
+                candidates,
+                keys,
+                responses,
+                responseBodies,
+                out error) ||
+            !TryAppendSelectUnselectCards(
+                wire.UnselectableEntries,
+                FlatPromptChoiceKindV1.Unselect,
+                FlatPromptSourceSectionV1.Unselectable,
+                FlatPromptKeyV1.SelectUnselectUnselectPrefix,
+                wire.SelectableEntries.Count,
+                authority,
+                candidates,
+                keys,
+                responses,
+                responseBodies,
+                out error))
+        {
+            return false;
+        }
+
+        if (wire.Finishable && wire.Cancelable)
+        {
+            candidates.Add(new FlatPromptFinishOrCancelPublicCandidateV1(
+                FlatPromptKeyV1.SelectUnselectFinishOrCancel));
+            keys.Add(FlatPromptKeyV1.SelectUnselectFinishOrCancel);
+            responses.Add(-1);
+            responseBodies.Add(CreateInt32Response(-1));
+        }
+        else if (wire.Finishable)
+        {
+            candidates.Add(new FlatPromptFinishPublicCandidateV1(
+                FlatPromptKeyV1.SelectUnselectFinish));
+            keys.Add(FlatPromptKeyV1.SelectUnselectFinish);
+            responses.Add(-1);
+            responseBodies.Add(CreateInt32Response(-1));
+        }
+        else if (wire.Cancelable)
+        {
+            candidates.Add(new FlatPromptCancelPublicCandidateV1(
+                FlatPromptKeyV1.SelectUnselectCancel));
+            keys.Add(FlatPromptKeyV1.SelectUnselectCancel);
+            responses.Add(-1);
+            responseBodies.Add(CreateInt32Response(-1));
+        }
+
+        if (candidates.Count == 0)
+        {
+            error = FlatPromptErrorCodeV1.ZeroOptionDomain;
+            return false;
+        }
+
+        projected = new FlatPromptProjectionDraftV1(
+            new FlatPromptSelectUnselectCardPublicContextV1(
+                wire.ActingPlayer,
+                wire.Finishable,
+                wire.Cancelable,
+                wire.MinimumCount,
+                wire.MaximumCount,
+                wire.SelectableEntries.Count,
+                wire.UnselectableEntries.Count),
+            candidates,
+            keys,
+            responses,
+            responseBodies: responseBodies);
+        return true;
+    }
+
+    private static bool TryBuildAnnounceNumberProjection(
+        FlatPromptAnnounceNumberWireDraftV1 wire,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        List<FlatPublicCandidateDescriptorV1> candidates = new();
+        List<string> keys = new();
+        List<int> responses = new();
+        List<byte[]> responseBodies = new();
+        for (int ordinal = 0; ordinal < wire.Values.Count; ordinal++)
+        {
+            if (!FlatPromptKeyV1.TryCreateOrdinalKey(
+                    FlatPromptKeyV1.AnnounceNumberOptionPrefix,
+                    ordinal,
+                    out string key))
+            {
+                error = FlatPromptErrorCodeV1.InvalidI4LocalCandidateKey;
+                return false;
+            }
+
+            candidates.Add(new FlatPromptAnnounceNumberPublicCandidateV1(
+                key,
+                ordinal,
+                wire.Values[ordinal]));
+            keys.Add(key);
+            responses.Add(ordinal);
+            responseBodies.Add(CreateInt32Response(ordinal));
+        }
+
+        projected = new FlatPromptProjectionDraftV1(
+            new FlatPromptAnnounceNumberPublicContextV1(
+                wire.ActingPlayer,
+                wire.Values.Count),
+            candidates,
+            keys,
+            responses,
+            responseBodies: responseBodies);
+        return true;
+    }
+
+    private static bool TryAppendSelectUnselectCards(
+        IReadOnlyList<FlatPromptSelectCardWireEntryV1> entries,
+        FlatPromptChoiceKindV1 choiceKind,
+        FlatPromptSourceSectionV1 sourceSection,
+        string keyPrefix,
+        int responseOffset,
+        FlatPromptCardAuthorityContextV1? authority,
+        List<FlatPublicCandidateDescriptorV1> candidates,
+        List<string> keys,
+        List<int> responses,
+        List<byte[]> responseBodies,
+        out FlatPromptErrorCodeV1 error)
+    {
+        error = FlatPromptErrorCodeV1.None;
+        for (int ordinal = 0; ordinal < entries.Count; ordinal++)
+        {
+            FlatPromptSelectCardWireEntryV1 entry = entries[ordinal];
+            if (!FlatPromptKeyV1.TryCreateOrdinalKey(
+                    keyPrefix,
+                    ordinal,
+                    out string key) ||
+                !TryCreateI5CardCandidate(
+                    FlatPromptFamilyValueV1.MsgSelectUnselectCard,
+                    choiceKind,
+                    sourceSection,
+                    keyPrefix,
+                    ordinal,
+                    entry.SourceCardCode,
+                    entry.SourceLocation,
+                    authority,
+                    out FlatPublicCandidateDescriptorV1? candidate,
+                    out error) ||
+                candidate is null)
+            {
+                if (error == FlatPromptErrorCodeV1.None)
+                {
+                    error = FlatPromptErrorCodeV1.InvalidI4LocalCandidateKey;
+                }
+
+                return false;
+            }
+
+            int combinedIndex;
+            try
+            {
+                combinedIndex = checked(responseOffset + ordinal);
+            }
+            catch (OverflowException)
+            {
+                error = FlatPromptErrorCodeV1.ArithmeticFailure;
+                return false;
+            }
+
+            candidates.Add(candidate);
+            keys.Add(key);
+            responses.Add(combinedIndex);
+            responseBodies.Add(CreateSelectUnselectResponse(combinedIndex));
+        }
+
+        return true;
+    }
+
+    private static bool TryCreateI5CardCandidate(
+        FlatPromptFamilyV1 family,
+        FlatPromptChoiceKindV1 choiceKind,
+        FlatPromptSourceSectionV1 sourceSection,
+        string keyPrefix,
+        int sourceOrdinal,
+        uint sourceCardCode,
+        ModernLocInfoV1 sourceLocation,
+        FlatPromptCardAuthorityContextV1? authority,
+        out FlatPublicCandidateDescriptorV1? candidate,
+        out FlatPromptErrorCodeV1 error)
+    {
+        candidate = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (!FlatPromptKeyV1.TryCreateOrdinalKey(
+                keyPrefix,
+                sourceOrdinal,
+                out string key))
+        {
+            error = FlatPromptErrorCodeV1.InvalidI4LocalCandidateKey;
+            return false;
+        }
+
+        PublicSemanticLocatorV1? locator = null;
+        if (authority is not null && !IsZeroModernLocInfo(sourceLocation))
+        {
+            if (FlatPromptCardCorrelationV1.TryCorrelate(
+                    authority.CapturedMirror,
+                    authority.AcceptedSnapshot,
+                    sourceCardCode,
+                    sourceLocation,
+                    out FlatPromptCardCorrelationResultV1? correlation,
+                    out _) &&
+                correlation is not null)
+            {
+                locator = correlation.AcceptedLocator;
+            }
+        }
+
+        bool hasCode = sourceCardCode != 0;
+        if (family == FlatPromptFamilyValueV1.MsgSelectCard)
+        {
+            candidate = CreateSelectCardCandidate(
+                key,
+                sourceOrdinal,
+                locator,
+                sourceCardCode,
+                hasCode);
+            return true;
+        }
+
+        if (family == FlatPromptFamilyValueV1.MsgSelectTribute)
+        {
+            candidate = CreateTributeCandidate(
+                key,
+                sourceOrdinal,
+                locator,
+                sourceCardCode,
+                hasCode);
+            return true;
+        }
+
+        if (family == FlatPromptFamilyValueV1.MsgSelectUnselectCard)
+        {
+            candidate = CreateSelectUnselectCandidate(
+                key,
+                choiceKind,
+                sourceSection,
+                sourceOrdinal,
+                locator,
+                sourceCardCode,
+                hasCode);
+            return true;
+        }
+
+        error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+        return false;
+    }
+
+    private static FlatPublicCandidateDescriptorV1 CreateSelectCardCandidate(
+        string key,
+        int ordinal,
+        PublicSemanticLocatorV1? locator,
+        uint sourceCardCode,
+        bool hasCode) =>
+        locator is not null
+            ? hasCode
+                ? new FlatPromptCardSelectionLocatorPromptCodeCandidateV1(
+                    key,
+                    ordinal,
+                    locator,
+                    sourceCardCode)
+                : new FlatPromptCardSelectionLocatorCandidateV1(
+                    key,
+                    ordinal,
+                    locator)
+            : hasCode
+                ? new FlatPromptCardSelectionPromptCodeCandidateV1(
+                    key,
+                    ordinal,
+                    sourceCardCode)
+                : new FlatPromptCardSelectionAnonymousCandidateV1(
+                    key,
+                    ordinal);
+
+    private static FlatPublicCandidateDescriptorV1 CreateTributeCandidate(
+        string key,
+        int ordinal,
+        PublicSemanticLocatorV1? locator,
+        uint sourceCardCode,
+        bool hasCode) =>
+        locator is not null
+            ? hasCode
+                ? new FlatPromptTributeSelectionLocatorPromptCodeCandidateV1(
+                    key,
+                    ordinal,
+                    locator,
+                    sourceCardCode)
+                : new FlatPromptTributeSelectionLocatorCandidateV1(
+                    key,
+                    ordinal,
+                    locator)
+            : hasCode
+                ? new FlatPromptTributeSelectionPromptCodeCandidateV1(
+                    key,
+                    ordinal,
+                    sourceCardCode)
+                : new FlatPromptTributeSelectionAnonymousCandidateV1(
+                    key,
+                    ordinal);
+
+    private static FlatPublicCandidateDescriptorV1 CreateSelectUnselectCandidate(
+        string key,
+        FlatPromptChoiceKindV1 choiceKind,
+        FlatPromptSourceSectionV1 sourceSection,
+        int ordinal,
+        PublicSemanticLocatorV1? locator,
+        uint sourceCardCode,
+        bool hasCode) =>
+        locator is not null
+            ? hasCode
+                ? new FlatPromptSelectUnselectLocatorPromptCodeCandidateV1(
+                    key,
+                    choiceKind,
+                    sourceSection,
+                    ordinal,
+                    locator,
+                    sourceCardCode)
+                : new FlatPromptSelectUnselectLocatorCandidateV1(
+                    key,
+                    choiceKind,
+                    sourceSection,
+                    ordinal,
+                    locator)
+            : hasCode
+                ? new FlatPromptSelectUnselectPromptCodeCandidateV1(
+                    key,
+                    choiceKind,
+                    sourceSection,
+                    ordinal,
+                    sourceCardCode)
+                : new FlatPromptSelectUnselectAnonymousCandidateV1(
+                    key,
+                    choiceKind,
+                    sourceSection,
+                    ordinal);
+
+    private static bool TryBuildCardContinuationProjection(
+        FlatPromptCardContinuationStateV1 state,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        List<FlatPublicCandidateDescriptorV1> candidates = new();
+        List<string> keys = new();
+        List<int> responses = new();
+        string pickPrefix = state.Family == FlatPromptFamilyValueV1.MsgSelectCard
+            ? FlatPromptKeyV1.SelectCardPickPrefix
+            : FlatPromptKeyV1.SelectTributePickPrefix;
+        for (int ordinal = state.LastSelectedOrdinal + 1;
+             ordinal < state.SourceCandidates.Count;
+             ordinal++)
+        {
+            if (!CanPick(state, ordinal))
+            {
+                continue;
+            }
+
+            FlatPublicCandidateDescriptorV1 candidate =
+                state.SourceCandidates[ordinal];
+            if (!FlatPromptKeyV1.TryCreateOrdinalKey(
+                    pickPrefix,
+                    ordinal,
+                    out string key) ||
+                !string.Equals(
+                    candidate.I4LocalCandidateKey,
+                    key,
+                    StringComparison.Ordinal))
+            {
+                error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                return false;
+            }
+
+            candidates.Add(candidate);
+            keys.Add(key);
+            responses.Add(ordinal);
+        }
+
+        if (CanFinish(state))
+        {
+            string key = state.Family == FlatPromptFamilyValueV1.MsgSelectCard
+                ? FlatPromptKeyV1.SelectCardFinish
+                : FlatPromptKeyV1.SelectTributeFinish;
+            candidates.Add(new FlatPromptFinishPublicCandidateV1(key));
+            keys.Add(key);
+            responses.Add(-1);
+        }
+
+        if (state.Cancelable)
+        {
+            string key = state.Family == FlatPromptFamilyValueV1.MsgSelectCard
+                ? FlatPromptKeyV1.SelectCardCancel
+                : FlatPromptKeyV1.SelectTributeCancel;
+            candidates.Add(new FlatPromptCancelPublicCandidateV1(key));
+            keys.Add(key);
+            responses.Add(-1);
+        }
+
+        if (candidates.Count == 0)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
+        }
+
+        FlatPromptPublicContextV1 context =
+            state.Family == FlatPromptFamilyValueV1.MsgSelectCard
+                ? new FlatPromptCardSelectionPublicContextV1(
+                    state.ActingPlayer,
+                    state.Minimum,
+                    state.Maximum,
+                    state.Cancelable)
+                : new FlatPromptTributeSelectionPublicContextV1(
+                    state.ActingPlayer,
+                    state.Minimum,
+                    state.Maximum,
+                    state.Cancelable);
+        projected = new FlatPromptProjectionDraftV1(
+            context,
+            candidates,
+            keys,
+            responses,
+            state);
+        return true;
+    }
+
+    internal static bool TryAdvanceCardContinuation(
+        FlatPromptCardContinuationStateV1 state,
+        int sourceOrdinal,
+        out FlatPromptProjectionDraftV1? projected,
+        out FlatPromptErrorCodeV1 error)
+    {
+        projected = null;
+        error = FlatPromptErrorCodeV1.None;
+        if (!CanPick(state, sourceOrdinal))
+        {
+            error = FlatPromptErrorCodeV1.InvalidContinuationAction;
+            return false;
+        }
+
+        try
+        {
+            return TryBuildCardContinuationProjection(
+                state.WithSelected(sourceOrdinal),
+                out projected,
+                out error);
+        }
+        catch (OverflowException)
+        {
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+    }
+
+    internal static bool TryEncodeCardIndexResponse(
+        IReadOnlyList<int> selectedOrdinals,
+        out byte[] responseBody,
+        out FlatPromptErrorCodeV1 error)
+    {
+        responseBody = Array.Empty<byte>();
+        error = FlatPromptErrorCodeV1.None;
+        ArgumentNullException.ThrowIfNull(selectedOrdinals);
+        int previousOrdinal = -1;
+        int maximumOrdinal = 0;
+        for (int index = 0; index < selectedOrdinals.Count; index++)
+        {
+            int ordinal = selectedOrdinals[index];
+            if (ordinal < 0 || ordinal <= previousOrdinal)
+            {
+                error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+                return false;
+            }
+
+            previousOrdinal = ordinal;
+            maximumOrdinal = ordinal;
+        }
+
+        ulong size = (ulong)selectedOrdinals.Count;
+        int responseType;
+        if (maximumOrdinal < byte.MaxValue &&
+            (ulong)maximumOrdinal >= checked(size * 8))
+        {
+            responseType = 2;
+        }
+        else if (maximumOrdinal < ushort.MaxValue &&
+                 (ulong)maximumOrdinal >= checked(size * 16))
+        {
+            responseType = 1;
+        }
+        else if ((ulong)maximumOrdinal >= checked(size * 32))
+        {
+            responseType = 0;
+        }
+        else
+        {
+            responseType = 3;
+        }
+
+        try
+        {
+            responseBody = responseType switch
+            {
+                2 => new byte[checked(sizeof(int) + sizeof(uint) +
+                    selectedOrdinals.Count)],
+                1 => new byte[checked(sizeof(int) + sizeof(uint) +
+                    sizeof(ushort) * selectedOrdinals.Count)],
+                0 => new byte[checked(sizeof(int) + sizeof(uint) +
+                    sizeof(uint) * selectedOrdinals.Count)],
+                _ => new byte[checked(sizeof(int) + sizeof(byte) +
+                    maximumOrdinal / 8)]
+            };
+        }
+        catch (OverflowException)
+        {
+            responseBody = Array.Empty<byte>();
+            error = FlatPromptErrorCodeV1.ArithmeticFailure;
+            return false;
+        }
+
+        BinaryPrimitives.WriteInt32LittleEndian(
+            responseBody,
+            responseType);
+        switch (responseType)
+        {
+            case 2:
+                BinaryPrimitives.WriteUInt32LittleEndian(
+                    responseBody.AsSpan(sizeof(int)),
+                    checked((uint)selectedOrdinals.Count));
+                for (int index = 0; index < selectedOrdinals.Count; index++)
+                {
+                    responseBody[sizeof(int) + sizeof(uint) + index] =
+                        checked((byte)selectedOrdinals[index]);
+                }
+
+                break;
+            case 1:
+                BinaryPrimitives.WriteUInt32LittleEndian(
+                    responseBody.AsSpan(sizeof(int)),
+                    checked((uint)selectedOrdinals.Count));
+                for (int index = 0; index < selectedOrdinals.Count; index++)
+                {
+                    BinaryPrimitives.WriteUInt16LittleEndian(
+                        responseBody.AsSpan(
+                            sizeof(int) + sizeof(uint) +
+                            sizeof(ushort) * index),
+                        checked((ushort)selectedOrdinals[index]));
+                }
+
+                break;
+            case 0:
+                BinaryPrimitives.WriteUInt32LittleEndian(
+                    responseBody.AsSpan(sizeof(int)),
+                    checked((uint)selectedOrdinals.Count));
+                for (int index = 0; index < selectedOrdinals.Count; index++)
+                {
+                    BinaryPrimitives.WriteUInt32LittleEndian(
+                        responseBody.AsSpan(
+                            sizeof(int) + sizeof(uint) +
+                            sizeof(uint) * index),
+                        checked((uint)selectedOrdinals[index]));
+                }
+
+                break;
+            case 3:
+                foreach (int ordinal in selectedOrdinals)
+                {
+                    int bit = checked(32 + ordinal);
+                    int byteIndex = checked(bit / 8);
+                    responseBody[byteIndex] |=
+                        (byte)(1 << (bit % 8));
+                }
+
+                break;
+        }
+
+        return true;
+    }
+
+    private static bool CanPick(
+        FlatPromptCardContinuationStateV1 state,
+        int ordinal)
+    {
+        int selectedCount = state.SelectedOrdinals.Count;
+        int afterCount = selectedCount + 1;
+        if (ordinal < 0 ||
+            ordinal >= state.SourceCandidates.Count ||
+            ordinal <= state.LastSelectedOrdinal ||
+            afterCount > state.Maximum)
+        {
+            return false;
+        }
+
+        if (state.Family == FlatPromptFamilyValueV1.MsgSelectCard)
+        {
+            int laterCount = state.SourceCandidates.Count - ordinal - 1;
+            return (ulong)afterCount + (ulong)laterCount >= state.Minimum;
+        }
+
+        uint selectedValue;
+        try
+        {
+            selectedValue = checked(
+                state.SelectedTributeValue + state.ReleaseValues[ordinal]);
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
+
+        return HasTributeCompletion(
+            state,
+            ordinal + 1,
+            afterCount,
+            selectedValue);
+    }
+
+    private static bool CanFinish(FlatPromptCardContinuationStateV1 state)
+    {
+        if (state.SelectedOrdinals.Count > state.Maximum)
+        {
+            return false;
+        }
+
+        return state.Family == FlatPromptFamilyValueV1.MsgSelectCard
+            ? (uint)state.SelectedOrdinals.Count >= state.Minimum
+            : state.SelectedTributeValue >= state.Minimum;
+    }
+
+    private static bool HasTributeCompletion(
+        FlatPromptCardContinuationStateV1 state,
+        int startOrdinal,
+        int selectedCount,
+        uint selectedValue)
+    {
+        if (selectedValue >= state.Minimum)
+        {
+            return true;
+        }
+
+        if (selectedCount >= state.Maximum || state.Minimum > 15)
+        {
+            return false;
+        }
+
+        int target = checked((int)state.Minimum);
+        int maximumAdditional = checked(
+            (int)state.Maximum - selectedCount);
+        bool[,] reachable = new bool[maximumAdditional + 1, target + 1];
+        reachable[0, checked((int)selectedValue)] = true;
+        for (int ordinal = startOrdinal;
+             ordinal < state.ReleaseValues.Count;
+             ordinal++)
+        {
+            int weight = state.ReleaseValues[ordinal];
+            for (int used = maximumAdditional - 1; used >= 0; used--)
+            {
+                for (int sum = 0; sum <= target; sum++)
+                {
+                    if (!reachable[used, sum])
+                    {
+                        continue;
+                    }
+
+                    int next = Math.Min(target, checked(sum + weight));
+                    reachable[used + 1, next] = true;
+                }
+            }
+        }
+
+        for (int used = 0; used <= maximumAdditional; used++)
+        {
+            if (reachable[used, target])
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static byte[] CreateInt32Response(int value)
+    {
+        byte[] body = new byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(body, value);
+        return body;
+    }
+
+    private static byte[] CreateSelectUnselectResponse(int combinedIndex)
+    {
+        byte[] body = new byte[sizeof(uint) * 2];
+        BinaryPrimitives.WriteUInt32LittleEndian(body, 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            body.AsSpan(sizeof(uint)),
+            checked((uint)combinedIndex));
+        return body;
     }
 
     private static bool TryBuildEffectYnProjection(

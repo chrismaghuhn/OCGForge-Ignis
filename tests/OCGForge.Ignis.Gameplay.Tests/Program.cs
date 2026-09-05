@@ -284,7 +284,13 @@ var tests = new (string Name, Action Body)[]
     ("I4D complete domains and response isolation",
         I4DFinalAcceptanceTests.TestCompleteDomainsAndResponseIsolation),
     ("I4D public/private authority determinism barrier",
-        I4DFinalAcceptanceTests.TestPublicPrivateAuthorityDeterminismBarrier)
+        I4DFinalAcceptanceTests.TestPublicPrivateAuthorityDeterminismBarrier),
+    ("I5A1 SELECT_CARD",
+        I5A1SelectionPromptTests.TestSelectCard),
+    ("I5A1 SELECT_TRIBUTE",
+        I5A1SelectionPromptTests.TestSelectTribute),
+    ("I5A1 SELECT_UNSELECT_CARD and ANNOUNCE_NUMBER",
+        I5A1SelectionPromptTests.TestSelectUnselectAndAnnounceNumber)
 };
 
 int passed = 0;
