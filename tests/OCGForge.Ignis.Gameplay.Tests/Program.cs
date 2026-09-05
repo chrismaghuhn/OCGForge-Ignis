@@ -295,7 +295,10 @@ var tests = new (string Name, Action Body)[]
         I5A2PlaceAndMaskPromptTests.TestPlaceAndDisfield),
 
     ("I5A2 ANNOUNCE_RACE and ANNOUNCE_ATTRIB",
-        I5A2PlaceAndMaskPromptTests.TestRaceAndAttribute)
+        I5A2PlaceAndMaskPromptTests.TestRaceAndAttribute),
+
+    ("I5A3 SELECT_COUNTER",
+        I5A3CounterPromptTests.TestSelectCounter)
 };
 
 int passed = 0;

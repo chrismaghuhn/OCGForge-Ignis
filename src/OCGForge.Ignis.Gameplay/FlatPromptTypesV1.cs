@@ -41,6 +41,9 @@ internal static class FlatPromptFamilyValueV1
 
     internal const FlatPromptFamilyV1 MsgAnnounceAttrib =
         (FlatPromptFamilyV1)141;
+
+    internal const FlatPromptFamilyV1 MsgSelectCounter =
+        (FlatPromptFamilyV1)22;
 }
 
 internal static class FlatPromptContractIdV1
@@ -80,7 +83,8 @@ public enum FlatPromptChoiceKindV1 : byte
     Select = 23,
     Unselect = 24,
     FinishOrCancel = 25,
-    NumberOption = 26
+    NumberOption = 26,
+    AssignAmount = 27
 }
 
 public enum FlatPromptSourceSectionV1 : byte
@@ -99,7 +103,8 @@ public enum FlatPromptSourceSectionV1 : byte
     SelectTribute = 11,
     Selectable = 12,
     Unselectable = 13,
-    NumberOptions = 14
+    NumberOptions = 14,
+    CounterSources = 15
 }
 
 public enum FlatPromptFieldZoneV1 : byte
@@ -1451,6 +1456,45 @@ internal sealed record FlatPromptAttributeWireDraftV1(
     uint AvailableMask)
     : FlatPromptWireDraftV1(FlatPromptFamilyValueV1.MsgAnnounceAttrib);
 
+internal readonly record struct FlatPromptSelectCounterWireEntryV1(
+    uint SourceCardCode,
+    byte Controller,
+    byte Location,
+    byte Sequence,
+    ushort Capacity);
+
+internal sealed record FlatPromptSelectCounterWireDraftV1
+    : FlatPromptWireDraftV1
+{
+    private readonly FlatPromptSelectCounterWireEntryV1[] entries;
+    private readonly ReadOnlyCollection<FlatPromptSelectCounterWireEntryV1>
+        entriesView;
+
+    internal FlatPromptSelectCounterWireDraftV1(
+        byte actingPlayer,
+        ushort counterType,
+        ushort requiredTotal,
+        FlatPromptSelectCounterWireEntryV1[] entries)
+        : base(FlatPromptFamilyValueV1.MsgSelectCounter)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        this.entries = entries.ToArray();
+        entriesView = Array.AsReadOnly(this.entries);
+        ActingPlayer = actingPlayer;
+        CounterType = counterType;
+        RequiredTotal = requiredTotal;
+    }
+
+    internal byte ActingPlayer { get; }
+
+    internal ushort CounterType { get; }
+
+    internal ushort RequiredTotal { get; }
+
+    internal IReadOnlyList<FlatPromptSelectCounterWireEntryV1> Entries =>
+        entriesView;
+}
+
 internal abstract class FlatPromptContinuationStateV1
 {
     protected FlatPromptContinuationStateV1(
@@ -1909,6 +1953,152 @@ internal sealed class FlatPromptMaskContinuationStateV1
     }
 }
 
+internal sealed class FlatPromptCounterContinuationStateV1
+    : FlatPromptContinuationStateV1
+{
+    private readonly FlatPromptCounterSourcePublicDescriptorV1[] sources;
+    private readonly ReadOnlyCollection<FlatPromptCounterSourcePublicDescriptorV1>
+        sourcesView;
+    private readonly ushort[] capacities;
+    private readonly int[] assignedAmounts;
+    private readonly ReadOnlyCollection<int> assignedAmountsView;
+    private readonly ulong assignedTotal;
+
+    internal FlatPromptCounterContinuationStateV1(
+        byte actingPlayer,
+        ushort counterType,
+        ushort requiredTotal,
+        IEnumerable<FlatPromptCounterSourcePublicDescriptorV1> sources,
+        IEnumerable<int> assignedAmounts,
+        int step)
+        : base(FlatPromptFamilyValueV1.MsgSelectCounter, actingPlayer, step)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        ArgumentNullException.ThrowIfNull(assignedAmounts);
+        this.sources = sources.ToArray();
+        this.assignedAmounts = assignedAmounts.ToArray();
+        if (requiredTotal == 0 ||
+            this.sources.Length <= 1 ||
+            this.assignedAmounts.Length > this.sources.Length ||
+            this.sources.Any(source => source is null) ||
+            this.sources.Select((source, index) =>
+                source.SourceOrdinal == index && source.Capacity > 0)
+                .Any(isValid => !isValid))
+        {
+            throw new ArgumentException(
+                "Counter continuation sources must be complete and valid.");
+        }
+
+        capacities = this.sources.Select(source => source.Capacity).ToArray();
+        ulong totalCapacity = Sum(capacities, 0);
+        if (requiredTotal > totalCapacity ||
+            this.assignedAmounts.Select((amount, index) =>
+                amount >= 0 && amount <= capacities[index])
+                .Any(isValid => !isValid) ||
+            !TrySumAssignedAmounts(
+                this.assignedAmounts,
+                out assignedTotal) ||
+            assignedTotal > requiredTotal)
+        {
+            throw new ArgumentException(
+                "Counter continuation amounts must be valid and feasible.");
+        }
+
+        CounterType = counterType;
+        RequiredTotal = requiredTotal;
+        sourcesView = Array.AsReadOnly(this.sources);
+        assignedAmountsView = Array.AsReadOnly(this.assignedAmounts);
+    }
+
+    internal ushort CounterType { get; }
+
+    internal ushort RequiredTotal { get; }
+
+    internal IReadOnlyList<FlatPromptCounterSourcePublicDescriptorV1> Sources =>
+        sourcesView;
+
+    internal IReadOnlyList<int> AssignedAmounts => assignedAmountsView;
+
+    internal int CurrentSourceOrdinal => assignedAmounts.Length;
+
+    internal bool IsTerminal =>
+        CurrentSourceOrdinal == sources.Length;
+
+    internal ulong AssignedTotal => assignedTotal;
+
+    internal ushort CurrentCapacity =>
+        IsTerminal ? (ushort)0 : capacities[CurrentSourceOrdinal];
+
+    internal bool IsAssignmentLegal(int amount)
+    {
+        if (IsTerminal || amount < 0 ||
+            amount > capacities[CurrentSourceOrdinal])
+        {
+            return false;
+        }
+
+        ulong afterTotal = assignedTotal + (ulong)amount;
+        if (afterTotal > RequiredTotal)
+        {
+            return false;
+        }
+
+        ulong remaining = RequiredTotal - afterTotal;
+        ulong suffixCapacity = Sum(capacities, CurrentSourceOrdinal + 1);
+        return remaining <= suffixCapacity;
+    }
+
+    internal FlatPromptCounterContinuationStateV1 WithAssignment(
+        int amount) =>
+        new(
+            ActingPlayer,
+            CounterType,
+            RequiredTotal,
+            sources,
+            assignedAmounts.Append(amount),
+            checked(Step + 1));
+
+    internal ushort[] CopyAssignedAmounts()
+    {
+        ushort[] copy = new ushort[assignedAmounts.Length];
+        for (int index = 0; index < assignedAmounts.Length; index++)
+        {
+            copy[index] = checked((ushort)assignedAmounts[index]);
+        }
+
+        return copy;
+    }
+
+    private static ulong Sum(ushort[] values, int startIndex)
+    {
+        ulong sum = 0;
+        for (int index = startIndex; index < values.Length; index++)
+        {
+            sum += values[index];
+        }
+
+        return sum;
+    }
+
+    private static bool TrySumAssignedAmounts(
+        int[] values,
+        out ulong sum)
+    {
+        sum = 0;
+        foreach (int value in values)
+        {
+            if (value < 0)
+            {
+                return false;
+            }
+
+            sum += (ulong)value;
+        }
+
+        return true;
+    }
+}
+
 internal sealed class FlatPromptContinuationStepResultV1
 {
     private readonly ReadOnlyCollection<byte> terminalResponseBodyView;
@@ -2314,6 +2504,92 @@ public sealed record FlatPromptMaskBitPublicCandidateV1
     public int BitIndex { get; }
 
     public ulong BitValue { get; }
+}
+
+public sealed record FlatPromptCounterSourcePublicDescriptorV1
+{
+    internal FlatPromptCounterSourcePublicDescriptorV1(
+        int sourceOrdinal,
+        ushort capacity,
+        PublicSemanticLocatorV1 publicSemanticCardLocator)
+    {
+        if (sourceOrdinal < 0 || capacity == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                sourceOrdinal < 0 ? nameof(sourceOrdinal) : nameof(capacity));
+        }
+
+        SourceOrdinal = sourceOrdinal;
+        Capacity = capacity;
+        PublicSemanticCardLocator = publicSemanticCardLocator ??
+            throw new ArgumentNullException(nameof(publicSemanticCardLocator));
+    }
+
+    public int SourceOrdinal { get; }
+
+    public ushort Capacity { get; }
+
+    public PublicSemanticLocatorV1 PublicSemanticCardLocator { get; }
+}
+
+public sealed record FlatPromptCounterSelectionPublicContextV1
+    : FlatPromptPublicContextV1
+{
+    private readonly FlatPromptCounterSourcePublicDescriptorV1[] sources;
+    private readonly ReadOnlyCollection<FlatPromptCounterSourcePublicDescriptorV1>
+        sourcesView;
+
+    internal FlatPromptCounterSelectionPublicContextV1(
+        byte actingPlayer,
+        ushort counterType,
+        ushort requiredTotal,
+        IEnumerable<FlatPromptCounterSourcePublicDescriptorV1> sources)
+        : base(
+            FlatPromptFamilyValueV1.MsgSelectCounter,
+            actingPlayer,
+            FlatPromptContractIdV1.Combinatorial)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        this.sources = sources.ToArray();
+        if (this.sources.Length == 0)
+        {
+            throw new ArgumentException(
+                "Counter source list must not be empty.",
+                nameof(sources));
+        }
+
+        sourcesView = Array.AsReadOnly(this.sources);
+        CounterType = counterType;
+        RequiredTotal = requiredTotal;
+    }
+
+    public ushort CounterType { get; }
+
+    public ushort RequiredTotal { get; }
+
+    public IReadOnlyList<FlatPromptCounterSourcePublicDescriptorV1> Sources =>
+        sourcesView;
+}
+
+public sealed record FlatPromptCounterAmountPublicCandidateV1
+    : FlatPublicCandidateDescriptorV1
+{
+    internal FlatPromptCounterAmountPublicCandidateV1(
+        string i4LocalCandidateKey,
+        int sourceOrdinal,
+        int amount)
+        : base(i4LocalCandidateKey, FlatPromptChoiceKindV1.AssignAmount)
+    {
+        SourceSection = FlatPromptSourceSectionV1.CounterSources;
+        SourceOrdinal = sourceOrdinal;
+        Amount = amount;
+    }
+
+    public FlatPromptSourceSectionV1 SourceSection { get; }
+
+    public int SourceOrdinal { get; }
+
+    public int Amount { get; }
 }
 
 public sealed class FlatPromptProjectionResultV1
@@ -2878,6 +3154,23 @@ internal sealed class CurrentFlatPromptBindingV1
                     candidate is FlatPromptMaskBitPublicCandidateV1 bit &&
                     mask.IsPickLegal(bit.BitIndex));
 
+            case FlatPromptCounterContinuationStateV1 counter:
+                if (counter.Family != family ||
+                    family != FlatPromptFamilyValueV1.MsgSelectCounter ||
+                    counter.Sources.Count <= 1 ||
+                    counter.IsTerminal)
+                {
+                    return false;
+                }
+
+                return candidates.All(candidate =>
+                    candidate is FlatPromptCounterAmountPublicCandidateV1 amount &&
+                    amount.ChoiceKind == FlatPromptChoiceKindV1.AssignAmount &&
+                    amount.SourceSection ==
+                        FlatPromptSourceSectionV1.CounterSources &&
+                    amount.SourceOrdinal == counter.CurrentSourceOrdinal &&
+                    counter.IsAssignmentLegal(amount.Amount));
+
             default:
                 return false;
         }
@@ -3109,9 +3402,39 @@ internal sealed class CurrentFlatPromptBindingV1
                     out expectedKey,
                     out expectedResponse);
 
+            case FlatPromptFamilyValueV1.MsgSelectCounter:
+                return TryGetCounterBinding(
+                    candidate,
+                    out expectedKey,
+                    out expectedResponse);
+
             default:
                 return false;
         }
+    }
+
+    private static bool TryGetCounterBinding(
+        FlatPublicCandidateDescriptorV1 candidate,
+        out string expectedKey,
+        out int expectedResponse)
+    {
+        expectedKey = string.Empty;
+        expectedResponse = default;
+        if (candidate.GetType() !=
+                typeof(FlatPromptCounterAmountPublicCandidateV1) ||
+            candidate is not FlatPromptCounterAmountPublicCandidateV1 amount ||
+            amount.ChoiceKind != FlatPromptChoiceKindV1.AssignAmount ||
+            amount.SourceSection != FlatPromptSourceSectionV1.CounterSources ||
+            !FlatPromptKeyV1.TryCreateCounterAmount(
+                amount.SourceOrdinal,
+                amount.Amount,
+                out expectedKey))
+        {
+            return false;
+        }
+
+        expectedResponse = 0;
+        return true;
     }
 
     private static bool TryGetPlaceBinding(
@@ -3767,6 +4090,8 @@ internal static class FlatPromptKeyV1
         "MSG_ANNOUNCE_RACE:PICK:";
     internal const string AnnounceAttribPickPrefix =
         "MSG_ANNOUNCE_ATTRIB:PICK:";
+    internal const string SelectCounterAssignAmountPrefix =
+        "MSG_SELECT_COUNTER:ASSIGN_AMOUNT:";
     internal static bool TryCreateOption(
         int sourceOrdinal,
         out string key)
@@ -3929,6 +4254,34 @@ internal static class FlatPromptKeyV1
         }
 
         key = prefix + digits;
+        return true;
+    }
+
+    internal static bool TryCreateCounterAmount(
+        int sourceOrdinal,
+        int amount,
+        out string key)
+    {
+        key = string.Empty;
+        if (sourceOrdinal < 0 ||
+            amount < 0 ||
+            amount > ushort.MaxValue)
+        {
+            return false;
+        }
+
+        string sourceDigits = sourceOrdinal.ToString(
+            CultureInfo.InvariantCulture);
+        string amountDigits = amount.ToString(
+            CultureInfo.InvariantCulture);
+        if (!IsCanonicalAsciiDecimal(sourceDigits) ||
+            !IsCanonicalAsciiDecimal(amountDigits))
+        {
+            return false;
+        }
+
+        key = SelectCounterAssignAmountPrefix + sourceDigits + ":" +
+            amountDigits;
         return true;
     }
 
