@@ -111,12 +111,12 @@ public enum FlatPromptFieldZoneV1 : byte
 internal static class FlatPromptMaskValueV1
 {
     internal const ulong RaceAllowedMask =
-        ((1UL << 33) - 1) | (1UL << 62);
+        ((1UL << 32) - 1) | (1UL << 62);
 
     internal const uint AttributeAllowedMask = 0x7F;
 
     internal static bool IsRaceBit(int bitIndex) =>
-        bitIndex is >= 0 and <= 32 or 62;
+        bitIndex is >= 0 and <= 31 or 62;
 
     internal static bool IsAttributeBit(int bitIndex) =>
         bitIndex is >= 0 and <= 6;

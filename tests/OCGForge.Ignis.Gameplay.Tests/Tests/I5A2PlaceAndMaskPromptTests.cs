@@ -479,55 +479,58 @@ internal static class I5A2PlaceAndMaskPromptTests
 
     private static void AssertRaceEdgeCases()
     {
-        FlatPromptSessionV1 bit62Session = new();
-        FlatPromptProjectionResultV1 bit62 =
-            bit62Session.TryAcceptI5Prompt(
-                RaceMessage(0, 2, (1UL << 32) | (1UL << 62)));
-        AssertSuccess(bit62, FlatPromptFamilyValueV1.MsgAnnounceRace);
+        FlatPromptSessionV1 bit31And62Session = new();
+        FlatPromptProjectionResultV1 bit31And62 =
+            bit31And62Session.TryAcceptI5Prompt(
+                RaceMessage(0, 2, (1UL << 31) | (1UL << 62)));
+        AssertSuccess(bit31And62, FlatPromptFamilyValueV1.MsgAnnounceRace);
         AssertKeys(
-            new[] { "MSG_ANNOUNCE_RACE:PICK:32" },
-            bit62.Candidates!);
-        FlatPromptMaskBitPublicCandidateV1 bit32Candidate =
-            bit62.Candidates![0] as FlatPromptMaskBitPublicCandidateV1 ??
-            throw new InvalidOperationException("expected bit 32 candidate");
-        Equal(32, bit32Candidate.BitIndex);
-        Equal(1UL << 32, bit32Candidate.BitValue);
-        FlatPromptContinuationStepResultV1 after32 =
-            bit62Session.TryApplySelection(Capture(
-                bit62Session,
-                "MSG_ANNOUNCE_RACE:PICK:32"));
+            new[] { "MSG_ANNOUNCE_RACE:PICK:31" },
+            bit31And62.Candidates!);
+        FlatPromptMaskBitPublicCandidateV1 bit31Candidate =
+            bit31And62.Candidates![0] as FlatPromptMaskBitPublicCandidateV1 ??
+            throw new InvalidOperationException("expected bit 31 candidate");
+        Equal(31, bit31Candidate.BitIndex);
+        Equal(1UL << 31, bit31Candidate.BitValue);
+        FlatPromptContinuationStepResultV1 after31 =
+            bit31And62Session.TryApplySelection(Capture(
+                bit31And62Session,
+                "MSG_ANNOUNCE_RACE:PICK:31"));
         AssertKeys(
             new[] { "MSG_ANNOUNCE_RACE:PICK:62" },
-            after32.Projection!.Candidates!);
+            after31.Projection!.Candidates!);
         FlatPromptMaskBitPublicCandidateV1 bit62Candidate =
-            after32.Projection!.Candidates![0] as
+            after31.Projection!.Candidates![0] as
                 FlatPromptMaskBitPublicCandidateV1 ??
             throw new InvalidOperationException("expected bit 62 candidate");
         Equal(62, bit62Candidate.BitIndex);
         Equal(1UL << 62, bit62Candidate.BitValue);
         FlatPromptContinuationStepResultV1 bit62Terminal =
-            bit62Session.TryApplySelection(Capture(
-                bit62Session,
+            bit31And62Session.TryApplySelection(Capture(
+                bit31And62Session,
                 "MSG_ANNOUNCE_RACE:PICK:62"));
         True(bit62Terminal.IsSuccess, bit62Terminal.Error.ToString());
         BytesEqual(
-            new byte[] { 0x00, 0x00, 0x00, 0x00,
-                0x01, 0x00, 0x00, 0x40 },
+            new byte[] { 0x00, 0x00, 0x00, 0x80,
+                0x00, 0x00, 0x00, 0x40 },
             bit62Terminal.TerminalResponseBody.ToArray());
 
         FlatPromptProjectionResultV1 kOne =
             new FlatPromptSessionV1().TryAcceptI5Prompt(
-                RaceMessage(0, 1, 1UL | (1UL << 32) | (1UL << 62)));
+                RaceMessage(0, 1, 1UL | (1UL << 31) | (1UL << 62)));
         AssertSuccess(kOne, FlatPromptFamilyValueV1.MsgAnnounceRace);
         AssertKeys(
             new[]
             {
                 "MSG_ANNOUNCE_RACE:PICK:0",
-                "MSG_ANNOUNCE_RACE:PICK:32",
+                "MSG_ANNOUNCE_RACE:PICK:31",
                 "MSG_ANNOUNCE_RACE:PICK:62"
             },
             kOne.Candidates!);
 
+        AssertFailure(
+            RaceMessage(0, 1, 1UL << 32),
+            FlatPromptErrorCodeV1.UnprovenCandidateDomain);
         AssertFailure(
             RaceMessage(0, 1, 1UL << 33),
             FlatPromptErrorCodeV1.UnprovenCandidateDomain);
@@ -815,7 +818,9 @@ internal static class I5A2PlaceAndMaskPromptTests
         FlatPromptProjectionResultV1 result,
         FlatPromptErrorCodeV1 expectedError)
     {
-        False(result.IsSuccess);
+        False(
+            result.IsSuccess,
+            $"expected failure {expectedError}, got success");
         Equal(expectedError, result.Error);
         Null(result.Context);
         Null(result.Candidates);
