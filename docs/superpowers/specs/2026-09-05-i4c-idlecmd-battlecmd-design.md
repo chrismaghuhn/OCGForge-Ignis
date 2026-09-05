@@ -65,6 +65,12 @@ The checked-in contract and vectors are the local authority:
     fixtures/gameplay/v1/i4-flat-prompt-vectors.v1.json
     fixtures/gameplay/v1/game-message-support.v1.json
 
+The BATTLECMD mixed evidence vector intentionally omits `card_code` from its
+second ATTACKABLE public descriptor. Its wire source code is different from
+the accepted public card at the same locator, so `CARD_CODE_SAFE=false` while
+the accepted locator remains proven. The vector must not publish two CardCodes
+for one accepted public locator.
+
 The current main baseline was executed before this design work:
 
     Protocol  = 20/20

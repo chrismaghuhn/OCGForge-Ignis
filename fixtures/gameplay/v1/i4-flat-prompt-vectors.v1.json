@@ -103,7 +103,6 @@
             "source_section": "ATTACKABLE",
             "source_ordinal": 1,
             "public_semantic_card_locator": "p0:MONSTER_ZONE:1",
-            "card_code": 16909060,
             "direct_attackable": 0
           },
           "private_response_binding": {
