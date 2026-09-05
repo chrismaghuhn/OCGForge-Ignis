@@ -314,6 +314,7 @@ internal static class FlatPromptProjectionV1
             if (!TryReadSelectCardEntry(
                     bytes,
                     ref offset,
+                    actingPlayer,
                     out entries[ordinal],
                     out error))
             {
@@ -374,7 +375,8 @@ internal static class FlatPromptProjectionV1
         if (occurrenceCount == 0 ||
             maximumSelectedCardCount == 0 ||
             maximumSelectedCardCount > MaximumTributeCardCount ||
-            minimumRequiredTributeValue == 0 && cancelable == 0)
+            minimumRequiredTributeValue == 0 && cancelable == 0 ||
+            minimumRequiredTributeValue > maximumSelectedCardCount)
         {
             error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
             return false;
@@ -408,6 +410,7 @@ internal static class FlatPromptProjectionV1
         FlatPromptSelectTributeWireEntryV1[] entries =
             new FlatPromptSelectTributeWireEntryV1[(int)occurrenceCount];
         int offset = SelectTributeHeaderLength;
+        uint accumulatedReleaseValue = 0;
         for (int ordinal = 0; ordinal < entries.Length; ordinal++)
         {
             uint sourceCardCode = BinaryPrimitives.ReadUInt32LittleEndian(
@@ -434,7 +437,15 @@ internal static class FlatPromptProjectionV1
                 sourceCardCode,
                 new ModernLocInfoV1(controller, location, sequence, 0),
                 releaseValue);
+            accumulatedReleaseValue = checked(
+                accumulatedReleaseValue + releaseValue);
             offset += SelectTributeEntryLength;
+        }
+
+        if (maximumSelectedCardCount > accumulatedReleaseValue)
+        {
+            error = FlatPromptErrorCodeV1.UnprovenCandidateDomain;
+            return false;
         }
 
         draft = new FlatPromptSelectTributeWireDraftV1(
@@ -563,6 +574,7 @@ internal static class FlatPromptProjectionV1
         if (!TryReadSelectCardEntries(
                 bytes,
                 ref offset,
+                actingPlayer,
                 selectableEntries,
                 out error))
         {
@@ -573,6 +585,7 @@ internal static class FlatPromptProjectionV1
         if (!TryReadSelectCardEntries(
                 bytes,
                 ref offset,
+                actingPlayer,
                 unselectableEntries,
                 out error))
         {
@@ -654,6 +667,7 @@ internal static class FlatPromptProjectionV1
     private static bool TryReadSelectCardEntry(
         ReadOnlySpan<byte> bytes,
         ref int offset,
+        byte actingPlayer,
         out FlatPromptSelectCardWireEntryV1 entry,
         out FlatPromptErrorCodeV1 error)
     {
@@ -665,7 +679,7 @@ internal static class FlatPromptProjectionV1
             offset + sizeof(uint),
             GameplayWirePrimitivesV1.ModernLocInfoByteLength);
         ModernLocInfoV1 location;
-        if (IsZeroModernLocInfo(locationBytes))
+        if (IsSelectCardCodeOnlyLocation(locationBytes, actingPlayer))
         {
             location = new ModernLocInfoV1(0, 0, 0, 0);
         }
@@ -697,6 +711,7 @@ internal static class FlatPromptProjectionV1
     private static bool TryReadSelectCardEntries(
         ReadOnlySpan<byte> bytes,
         ref int offset,
+        byte actingPlayer,
         FlatPromptSelectCardWireEntryV1[] entries,
         out FlatPromptErrorCodeV1 error)
     {
@@ -706,8 +721,30 @@ internal static class FlatPromptProjectionV1
             if (!TryReadSelectCardEntry(
                     bytes,
                     ref offset,
+                    actingPlayer,
                     out entries[ordinal],
                     out error))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsSelectCardCodeOnlyLocation(
+        ReadOnlySpan<byte> bytes,
+        byte actingPlayer)
+    {
+        if (bytes.Length != GameplayWirePrimitivesV1.ModernLocInfoByteLength ||
+            bytes[0] != actingPlayer)
+        {
+            return false;
+        }
+
+        for (int index = 1; index < bytes.Length; index++)
+        {
+            if (bytes[index] != 0)
             {
                 return false;
             }
@@ -1800,16 +1837,35 @@ internal static class FlatPromptProjectionV1
         }
 
         PublicSemanticLocatorV1? locator = null;
-        if (authority is not null && !IsZeroModernLocInfo(sourceLocation))
+        bool addressed = !IsZeroModernLocInfo(sourceLocation);
+        bool correlationRequired =
+            family == FlatPromptFamilyValueV1.MsgSelectUnselectCard &&
+            addressed;
+        if (correlationRequired && authority is null)
         {
-            if (FlatPromptCardCorrelationV1.TryCorrelate(
-                    authority.CapturedMirror,
-                    authority.AcceptedSnapshot,
-                    sourceCardCode,
-                    sourceLocation,
-                    out FlatPromptCardCorrelationResultV1? correlation,
-                    out _) &&
-                correlation is not null)
+            error = FlatPromptErrorCodeV1.UnprovenPublicReference;
+            return false;
+        }
+
+        if (addressed && authority is not null)
+        {
+            bool correlated = FlatPromptCardCorrelationV1.TryCorrelate(
+                authority.CapturedMirror,
+                authority.AcceptedSnapshot,
+                sourceCardCode,
+                sourceLocation,
+                out FlatPromptCardCorrelationResultV1? correlation,
+                out FlatPromptErrorCodeV1 correlationError);
+            if (correlationRequired &&
+                (!correlated || correlation is null))
+            {
+                error = correlationError == FlatPromptErrorCodeV1.None
+                    ? FlatPromptErrorCodeV1.UnprovenPublicReference
+                    : correlationError;
+                return false;
+            }
+
+            if (correlated && correlation is not null)
             {
                 locator = correlation.AcceptedLocator;
             }

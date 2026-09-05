@@ -35,6 +35,35 @@ internal static class I5A1SelectionPromptTests
         Null(typeof(FlatPromptCardSelectionPromptCodeCandidateV1).GetProperty(
             "PublicSemanticCardLocator"));
 
+        FlatPromptProjectionResultV1 playerOneCodes =
+            new FlatPromptSessionV1().TryAcceptI5Prompt(
+                SelectCardMessage(
+                    1,
+                    false,
+                    1,
+                    1,
+                    (0xAABBCCDDu,
+                        new ModernLocInfoV1(1, 0, 0, 0))));
+        AssertSuccess(playerOneCodes, FlatPromptFamilyValueV1.MsgSelectCard);
+        FlatPromptCardSelectionPromptCodeCandidateV1 playerOneCandidate =
+            playerOneCodes.Candidates![0] as
+                FlatPromptCardSelectionPromptCodeCandidateV1 ??
+            throw new InvalidOperationException(
+                "expected player-one prompt-local code");
+        Equal(0xAABBCCDDu, playerOneCandidate.PromptLocalCardCode);
+        Null(typeof(FlatPromptCardSelectionPromptCodeCandidateV1)
+            .GetProperty("PublicSemanticCardLocator"));
+        AssertFailure(
+            new FlatPromptSessionV1(),
+            SelectCardMessage(
+                1,
+                false,
+                1,
+                1,
+                (0xAABBCCDDu,
+                    new ModernLocInfoV1(0, 0, 0, 0))),
+            FlatPromptErrorCodeV1.InvalidLocation);
+
         FlatPromptSelectionHandleV1 initialHandle = Capture(
             session,
             "MSG_SELECT_CARD:PICK:0");
@@ -302,7 +331,7 @@ internal static class I5A1SelectionPromptTests
                     0,
                     false,
                     3,
-                    2,
+                    3,
                     (0x01010101u, new ModernLocInfoV1(0, 0x04, 0, 0),
                         (byte)2),
                     (0x02020202u, new ModernLocInfoV1(0, 0x04, 1, 0),
@@ -318,11 +347,11 @@ internal static class I5A1SelectionPromptTests
         FlatPromptSessionV1 weightedSession = new();
         AssertSuccess(
             weightedSession.TryAcceptI5Prompt(
-                SelectTributeMessage(
-                    0,
-                    false,
-                    3,
-                    2,
+                    SelectTributeMessage(
+                        0,
+                        false,
+                        3,
+                        3,
                     (0x01010101u,
                         new ModernLocInfoV1(0, 0x04, 0, 0),
                         (byte)2),
@@ -444,6 +473,28 @@ internal static class I5A1SelectionPromptTests
             SelectTributeMessage(
                 0,
                 false,
+                3,
+                2,
+                (0x07070708u,
+                    new ModernLocInfoV1(0, 0x04, 0, 0),
+                    (byte)2)),
+            FlatPromptErrorCodeV1.UnprovenCandidateDomain);
+        AssertFailure(
+            new FlatPromptSessionV1(),
+            SelectTributeMessage(
+                0,
+                false,
+                1,
+                3,
+                (0x07070709u,
+                    new ModernLocInfoV1(0, 0x04, 0, 0),
+                    (byte)1)),
+            FlatPromptErrorCodeV1.UnprovenCandidateDomain);
+        AssertFailure(
+            new FlatPromptSessionV1(),
+            SelectTributeMessage(
+                0,
+                false,
                 1,
                 1,
                 (0x08080808u,
@@ -510,20 +561,28 @@ internal static class I5A1SelectionPromptTests
         FlatPromptSelectionHandleV1 singletonHandle = Capture(
             singletonSession,
             "MSG_SELECT_TRIBUTE:PICK:0");
-        True(singletonSession.TryResolveSelection(
+        False(singletonSession.TryResolveSelection(
             singletonHandle,
-            out FlatPromptResponseResolutionV1 singletonResponse,
+            out _,
             out FlatPromptErrorCodeV1 singletonError),
             singletonError.ToString());
-        Equal(0, singletonResponse.ResponseI32);
+        Equal(
+            FlatPromptErrorCodeV1.InvalidContinuationAction,
+            singletonError);
     }
 
     internal static void TestSelectUnselectAndAnnounceNumber()
     {
+        Authority selectUnselectAuthority = CreateAuthority(
+            new CardSpec(
+                1,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05)));
         FlatPromptSessionV1 selectUnselectSession = new();
         FlatPromptProjectionResultV1 selectUnselect =
             selectUnselectSession.TryAcceptI5Prompt(
-                SelectUnselectMinimal.ToArray());
+                SelectUnselectMinimal.ToArray(),
+                selectUnselectAuthority.Mirror,
+                selectUnselectAuthority.Projection);
         AssertSuccess(
             selectUnselect,
             FlatPromptFamilyValueV1.MsgSelectUnselectCard);
@@ -555,9 +614,14 @@ internal static class I5A1SelectionPromptTests
         Equal(FlatPromptChoiceKindV1.Select, selectCandidate.ChoiceKind);
         Equal(FlatPromptSourceSectionV1.Selectable,
             selectCandidate.SourceSection);
-        Equal(1u,
-            ((FlatPromptSelectUnselectPromptCodeCandidateV1)
-                selectCandidate).PromptLocalCardCode);
+        FlatPromptSelectUnselectLocatorPromptCodeCandidateV1 selectCodeCandidate =
+            selectCandidate as
+                FlatPromptSelectUnselectLocatorPromptCodeCandidateV1 ??
+            throw new InvalidOperationException(
+                "expected correlated select candidate");
+        Equal("p0:MONSTER_ZONE:0",
+            selectCodeCandidate.PublicSemanticCardLocator.Value);
+        Equal(1u, selectCodeCandidate.PromptLocalCardCode);
         FlatPromptSelectUnselectCardCandidateBaseV1 unselectCandidate =
             selectUnselect.Candidates![1] as
                 FlatPromptSelectUnselectCardCandidateBaseV1 ??
@@ -565,9 +629,14 @@ internal static class I5A1SelectionPromptTests
         Equal(FlatPromptChoiceKindV1.Unselect, unselectCandidate.ChoiceKind);
         Equal(FlatPromptSourceSectionV1.Unselectable,
             unselectCandidate.SourceSection);
-        Equal(1u,
-            ((FlatPromptSelectUnselectPromptCodeCandidateV1)
-                unselectCandidate).PromptLocalCardCode);
+        FlatPromptSelectUnselectLocatorPromptCodeCandidateV1 unselectCodeCandidate =
+            unselectCandidate as
+                FlatPromptSelectUnselectLocatorPromptCodeCandidateV1 ??
+            throw new InvalidOperationException(
+                "expected correlated unselect candidate");
+        Equal("p0:MONSTER_ZONE:0",
+            unselectCodeCandidate.PublicSemanticCardLocator.Value);
+        Equal(1u, unselectCodeCandidate.PromptLocalCardCode);
         False(selectCandidate.GetType().GetProperties().Any(property =>
             property.Name.Contains("Combined", StringComparison.Ordinal)));
 
@@ -596,12 +665,14 @@ internal static class I5A1SelectionPromptTests
         FlatPromptSelectionHandleV1 selectHandle = Capture(
             selectUnselectSession,
             "MSG_SELECT_UNSELECT_CARD:SELECT:0");
-        True(selectUnselectSession.TryResolveSelection(
+        False(selectUnselectSession.TryResolveSelection(
             selectHandle,
-            out FlatPromptResponseResolutionV1 selectResponse,
+            out _,
             out FlatPromptErrorCodeV1 selectResponseError),
             selectResponseError.ToString());
-        Equal(0, selectResponse.ResponseI32);
+        Equal(
+            FlatPromptErrorCodeV1.InvalidContinuationAction,
+            selectResponseError);
         FlatPromptContinuationStepResultV1 selected =
             selectUnselectSession.TryApplySelection(selectHandle);
         True(selected.IsSuccess, selected.Error.ToString());
@@ -613,7 +684,10 @@ internal static class I5A1SelectionPromptTests
 
         FlatPromptSessionV1 unselectSession = new();
         AssertSuccess(
-            unselectSession.TryAcceptI5Prompt(SelectUnselectMinimal),
+            unselectSession.TryAcceptI5Prompt(
+                SelectUnselectMinimal,
+                selectUnselectAuthority.Mirror,
+                selectUnselectAuthority.Projection),
             FlatPromptFamilyValueV1.MsgSelectUnselectCard);
         FlatPromptContinuationStepResultV1 unselected =
             unselectSession.TryApplySelection(Capture(
@@ -627,7 +701,10 @@ internal static class I5A1SelectionPromptTests
 
         FlatPromptSessionV1 finishOrCancelSession = new();
         AssertSuccess(
-            finishOrCancelSession.TryAcceptI5Prompt(SelectUnselectMinimal),
+            finishOrCancelSession.TryAcceptI5Prompt(
+                SelectUnselectMinimal,
+                selectUnselectAuthority.Mirror,
+                selectUnselectAuthority.Projection),
             FlatPromptFamilyValueV1.MsgSelectUnselectCard);
         FlatPromptContinuationStepResultV1 finishOrCancel =
             finishOrCancelSession.TryApplySelection(Capture(
@@ -1127,6 +1204,10 @@ internal static class I5A1SelectionPromptTests
 
     private static void AssertSelectUnselectTerminalFlags()
     {
+        Authority authority = CreateAuthority(
+            new CardSpec(
+                0x11111111,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05)));
         byte[] oneCard = SelectUnselectMessage(
             0,
             true,
@@ -1139,7 +1220,10 @@ internal static class I5A1SelectionPromptTests
             },
             Array.Empty<(uint, ModernLocInfoV1)>());
         FlatPromptProjectionResultV1 finishOnly =
-            new FlatPromptSessionV1().TryAcceptI5Prompt(oneCard);
+            new FlatPromptSessionV1().TryAcceptI5Prompt(
+                oneCard,
+                authority.Mirror,
+                authority.Projection);
         AssertSuccess(
             finishOnly,
             FlatPromptFamilyValueV1.MsgSelectUnselectCard);
@@ -1161,7 +1245,9 @@ internal static class I5A1SelectionPromptTests
                         (0x11111111u,
                             new ModernLocInfoV1(0, 0x04, 0, 0))
                     },
-                    Array.Empty<(uint, ModernLocInfoV1)>()));
+                    Array.Empty<(uint, ModernLocInfoV1)>()),
+                authority.Mirror,
+                authority.Projection);
         AssertSuccess(
             cancelOnly,
             FlatPromptFamilyValueV1.MsgSelectUnselectCard);
@@ -1183,7 +1269,9 @@ internal static class I5A1SelectionPromptTests
                         (0x11111111u,
                             new ModernLocInfoV1(0, 0x04, 0, 0))
                     },
-                    Array.Empty<(uint, ModernLocInfoV1)>()));
+                    Array.Empty<(uint, ModernLocInfoV1)>()),
+                authority.Mirror,
+                authority.Projection);
         AssertSuccess(
             neither,
             FlatPromptFamilyValueV1.MsgSelectUnselectCard);
@@ -1267,6 +1355,9 @@ internal static class I5A1SelectionPromptTests
                 (0xABCDEF01u, new ModernLocInfoV1(0, 0x04, 0, 0))
             },
             Array.Empty<(uint, ModernLocInfoV1)>());
+        AssertFailureResult(
+            new FlatPromptSessionV1().TryAcceptI5Prompt(addressedMessage),
+            FlatPromptErrorCodeV1.UnprovenPublicReference);
         FlatPromptProjectionResultV1 addressed =
             addressedSession.TryAcceptI5Prompt(
                 addressedMessage,
@@ -1280,12 +1371,14 @@ internal static class I5A1SelectionPromptTests
         FlatPromptSelectionHandleV1 addressedHandle = Capture(
             addressedSession,
             "MSG_SELECT_UNSELECT_CARD:SELECT:0");
-        True(addressedSession.TryResolveSelection(
+        False(addressedSession.TryResolveSelection(
             addressedHandle,
-            out FlatPromptResponseResolutionV1 response,
+            out _,
             out FlatPromptErrorCodeV1 responseError),
             responseError.ToString());
-        Equal(0, response.ResponseI32);
+        Equal(
+            FlatPromptErrorCodeV1.InvalidContinuationAction,
+            responseError);
     }
 
     private static void AssertAnnounceNumberFailures()
@@ -1437,6 +1530,9 @@ internal static class I5A1SelectionPromptTests
         NotNull(result.Context);
         NotNull(result.Candidates);
         Equal(family, result.Context!.PromptFamily);
+        Equal(
+            "ocgforge-ignis.combinatorial-prompt-continuation.v1",
+            result.Context.ContractId);
     }
 
     private static void EqualKeys(

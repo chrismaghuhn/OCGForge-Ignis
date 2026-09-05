@@ -430,6 +430,15 @@ public sealed class FlatPromptSessionV1
             return false;
         }
 
+        if (currentBinding.Family is
+            FlatPromptFamilyValueV1.MsgSelectCard or
+            FlatPromptFamilyValueV1.MsgSelectTribute or
+            FlatPromptFamilyValueV1.MsgSelectUnselectCard)
+        {
+            error = FlatPromptErrorCodeV1.InvalidContinuationAction;
+            return false;
+        }
+
         if (string.IsNullOrEmpty(handle.I4LocalCandidateKey) ||
             !currentBinding.TryGetResponse(
                 handle.I4LocalCandidateKey,

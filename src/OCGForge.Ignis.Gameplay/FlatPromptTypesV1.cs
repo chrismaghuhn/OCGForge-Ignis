@@ -30,6 +30,15 @@ internal static class FlatPromptFamilyValueV1
         (FlatPromptFamilyV1)143;
 }
 
+internal static class FlatPromptContractIdV1
+{
+    internal const string FlatPrompt =
+        "ocgforge-ignis.flat-prompt-projection.v1";
+
+    internal const string Combinatorial =
+        "ocgforge-ignis.combinatorial-prompt-continuation.v1";
+}
+
 public enum FlatPromptChoiceKindV1 : byte
 {
     No = 0,
@@ -106,14 +115,13 @@ public enum FlatPromptErrorCodeV1 : byte
 
 public abstract record FlatPromptPublicContextV1
 {
-    private const string ContractIdValue =
-        "ocgforge-ignis.flat-prompt-projection.v1";
-
     protected FlatPromptPublicContextV1(
         FlatPromptFamilyV1 promptFamily,
-        byte actingPlayer)
+        byte actingPlayer,
+        string contractId = FlatPromptContractIdV1.FlatPrompt)
     {
-        ContractId = ContractIdValue;
+        ContractId = contractId ??
+            throw new ArgumentNullException(nameof(contractId));
         PromptFamily = promptFamily;
         ActingPlayer = actingPlayer;
     }
@@ -257,7 +265,10 @@ public sealed record FlatPromptCardSelectionPublicContextV1
         uint minimumCount,
         uint maximumCount,
         bool effectiveCancellation)
-        : base(FlatPromptFamilyValueV1.MsgSelectCard, actingPlayer)
+        : base(
+            FlatPromptFamilyValueV1.MsgSelectCard,
+            actingPlayer,
+            FlatPromptContractIdV1.Combinatorial)
     {
         MinimumCount = minimumCount;
         MaximumCount = maximumCount;
@@ -279,7 +290,10 @@ public sealed record FlatPromptTributeSelectionPublicContextV1
         uint minimumRequiredTributeValue,
         uint maximumSelectedCardCount,
         bool effectiveCancellation)
-        : base(FlatPromptFamilyValueV1.MsgSelectTribute, actingPlayer)
+        : base(
+            FlatPromptFamilyValueV1.MsgSelectTribute,
+            actingPlayer,
+            FlatPromptContractIdV1.Combinatorial)
     {
         MinimumRequiredTributeValue = minimumRequiredTributeValue;
         MaximumSelectedCardCount = maximumSelectedCardCount;
@@ -304,7 +318,10 @@ public sealed record FlatPromptSelectUnselectCardPublicContextV1
         uint maximumCount,
         int selectableCount,
         int unselectableCount)
-        : base(FlatPromptFamilyValueV1.MsgSelectUnselectCard, actingPlayer)
+        : base(
+            FlatPromptFamilyValueV1.MsgSelectUnselectCard,
+            actingPlayer,
+            FlatPromptContractIdV1.Combinatorial)
     {
         Finishable = finishable;
         Cancelable = cancelable;
@@ -333,7 +350,10 @@ public sealed record FlatPromptAnnounceNumberPublicContextV1
     internal FlatPromptAnnounceNumberPublicContextV1(
         byte actingPlayer,
         int optionCount)
-        : base(FlatPromptFamilyValueV1.MsgAnnounceNumber, actingPlayer)
+        : base(
+            FlatPromptFamilyValueV1.MsgAnnounceNumber,
+            actingPlayer,
+            FlatPromptContractIdV1.Combinatorial)
     {
         OptionCount = optionCount;
     }
