@@ -274,7 +274,17 @@ var tests = new (string Name, Action Body)[]
     ("I4C public private boundary",
         I4CIdleBattlePromptTests.TestI4CPublicPrivateBoundary),
     ("I4C I3 I4A I4B regression boundary",
-        I4CIdleBattlePromptTests.TestI3I4AI4BRegressionBoundary)
+        I4CIdleBattlePromptTests.TestI3I4AI4BRegressionBoundary),
+    ("I4D seven-family support and unsupported boundary",
+        I4DFinalAcceptanceTests.TestSevenFamilySupportAndUnsupportedBoundary),
+    ("I4D cross-family binding lifecycle",
+        I4DFinalAcceptanceTests.TestCrossFamilyBindingLifecycle),
+    ("I4D failure atomicity and ordinal isolation",
+        I4DFinalAcceptanceTests.TestFailureAtomicityAndOrdinalIsolation),
+    ("I4D complete domains and response isolation",
+        I4DFinalAcceptanceTests.TestCompleteDomainsAndResponseIsolation),
+    ("I4D public/private authority determinism barrier",
+        I4DFinalAcceptanceTests.TestPublicPrivateAuthorityDeterminismBarrier)
 };
 
 int passed = 0;
