@@ -107,8 +107,9 @@ Families: `SELECT_CARD`, `SELECT_TRIBUTE`, `SELECT_UNSELECT_CARD`,
     CREATE
     tests/OCGForge.Ignis.Gameplay.Tests/Tests/I5A1SelectionPromptTests.cs
 
-Use anonymous source-occurrence variants for code-only SELECT_CARD entries.
-Use the existing I4B authority overload for addressed entries. Preserve
+Use a prompt-local disclosed-CardCode variant for nonzero code-only
+SELECT_CARD entries; a zero code remains anonymous. Use the existing I4B
+authority overload only for optional persistent locator publication. Preserve
 weighted tribute values privately and use one canonical `FinishOrCancel`
 variant where SELECT_UNSELECT's two flags share the one `-1` response.
 
@@ -257,8 +258,9 @@ The implementation order is fixed:
     reproject captured mirror with accepted snapshot duel flags
     compare canonical bytes, SHA-256, and PublicProjectionId
     resolve every required source occurrence against captured mirror only
-    correlate to exactly one accepted snapshot card
-    copy locator/CardCode only from accepted snapshot
+    optionally correlate to exactly one accepted snapshot card
+    copy persistent locator/accepted-snapshot CardCode only from accepted snapshot
+    copy prompt-local CardCode only from the exact current prompt disclosure
     build the complete public current domain
     independently validate candidate/type/section/key/response binding
     commit continuation state atomically
@@ -267,7 +269,36 @@ After capture there is no live mirror access. The recomputed projection is a
 consistency proof only. POSITION's validated mask remains independent of card
 correlation and an unproven position CardCode remains structurally absent.
 
-## 7. Candidate and continuation binding checks
+## 7. Canonical continuation paths
+
+The future implementation must make path canonicalization explicit before
+building any candidate domain:
+
+    SELECT_CARD / SELECT_TRIBUTE / SELECT_SUM
+        PICK only source ordinal > last picked ordinal
+
+    SELECT_PLACE / SELECT_DISFIELD
+        PICK only semantic place index > last picked index
+
+    ANNOUNCE_RACE / ANNOUNCE_ATTRIB
+        PICK only bit index > last picked index
+
+    SELECT_COUNTER
+        ASSIGN_AMOUNT for exactly the next wire source ordinal
+
+    SORT_CARD / SORT_CHAIN
+        PICK any remaining source ordinal for the next destination position
+
+    ANNOUNCE_NUMBER / SELECT_UNSELECT_CARD
+        no continuation; one terminal external action
+
+This removes permutation duplicates only for response families whose final
+semantics are sets or masks. The implementation must prove that every legal
+set remains reachable by its ascending path. It must not apply monotonicity to
+sorting, where permutations are meaningful, or use monotonicity as a public
+card identity.
+
+## 8. Candidate and continuation binding checks
 
 For every future public candidate, validation must reconstruct the expected:
 
@@ -285,15 +316,15 @@ sum_param, mirror IDs, or source object references. A successful transition
 stales every previous-step handle. A failed transition leaves no partially
 mutated continuation or response and does not emit a network packet.
 
-## 8. Future acceptance gates
+## 9. Future acceptance gates
 
 The twelve future Gameplay registrations are fixed to these coherent groups;
 they are not added by the current documentation task:
 
 | Group | Families | Required evidence |
 | ---: | --- | --- |
-| 1 | SELECT_CARD | modern exact wire, code-only anonymous entries, min/max, duplicates, finish/cancel, index-list codec |
-| 2 | SELECT_TRIBUTE | weighted release values, count bounds, feasibility, duplicate occurrences, exact response body |
+| 1 | SELECT_CARD | modern exact wire, prompt-local code-only entries, min/max, duplicates, finish/cancel, index-list codec |
+| 2 | SELECT_TRIBUTE | minimum tribute value, maximum selected-card count, weighted feasibility, duplicate occurrences, exact response body |
 | 3 | SELECT_UNSELECT_CARD, ANNOUNCE_NUMBER | both toggle sections, shared -1 terminal rule, duplicate numbers, flat N=1 external choice |
 | 4 | SELECT_PLACE, SELECT_DISFIELD | relative field-mask groups, player transform, disabled-field distinction, canonical triples |
 | 5 | ANNOUNCE_RACE, ANNOUNCE_ATTRIB | admitted bit universes, exact popcount, duplicate-free bit steps, mask codec |
@@ -302,7 +333,7 @@ they are not added by the current documentation task:
 | 8 | SELECT_SUM | exact resolved oracle only, independent brute-force cross-check, all bounded edge vectors |
 | 9 | all applicable families | malformed/truncated/trailing lengths, overflow, invalid flags/ranges, exact response-size rejection |
 | 10 | all continuation families | instance/step/key membership, atomic transitions, stale prior-step handles, no intermediate response |
-| 11 | card-bearing families | I3D publication authority, mirror snapshot once, ambiguity, Main Deck/overlay/hidden privacy, source ownership |
+| 11 | card-bearing families | I3D persistent locator authority, prompt-local CardCode disclosure, Main Deck/no-locator, overlay/hidden privacy, source ownership |
 | 12 | all twelve families | paired privacy worlds, value-level fresh-process determinism, I4 regression, I5/I6 layer barrier |
 
 Groups 1--7 and 9--12 may be implemented before group 8 only if the final
@@ -353,7 +384,7 @@ and errors. Also require strict JSON validation, independent reconstruction of
 every vector and terminal response, `git diff --check`, and an exact tracked+
 untracked scope audit.
 
-## 9. Current-task final gate and stop boundary
+## 10. Current-task final gate and stop boundary
 
 The current blocked audit task must use these checks after the six artifacts
 are written:
@@ -381,7 +412,7 @@ contract acceptance and does not authorize a future implementation. If any
 future reviewer requires the unresolved artifact not be committed, stop with
 the worktree clean-up decision explicitly requested; never hide the finding.
 
-## 10. Commit/push protocol
+## 11. Commit/push protocol
 
 For a completed six-file audit artifact, the only permitted commit message is:
 

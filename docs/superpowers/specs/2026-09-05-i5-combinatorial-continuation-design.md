@@ -115,7 +115,7 @@ The design uses the following modules and seams:
         private resolution evidence only
 
     PublicStateProjectionResultV1
-        sole accepted public locator/CardCode authority
+        sole persistent public locator/accepted-snapshot CardCode authority
 
     future I5 continuation module
         public current-domain projection and private final-response binding
@@ -186,6 +186,22 @@ step, prior choices, current domain, and terminal status. It never includes a
 pointer, allocation address, PID, time, thread, socket, path, random UUID, or
 unordered iteration result.
 
+The continuation graph uses a canonical path rule, not arbitrary public order:
+
+| Family semantics | Canonical path |
+| --- | --- |
+| SELECT_CARD, SELECT_TRIBUTE, SELECT_SUM | pick strictly increasing original source occurrence indexes |
+| SELECT_PLACE, SELECT_DISFIELD | pick strictly increasing indexes in the explicit place order |
+| ANNOUNCE_RACE, ANNOUNCE_ATTRIB | pick strictly increasing admitted bit indexes |
+| SELECT_COUNTER | assign amounts in fixed wire source order, including zero |
+| SORT_CARD, SORT_CHAIN | choose any remaining source occurrence for the next destination position |
+| ANNOUNCE_NUMBER, SELECT_UNSELECT_CARD | no continuation path; one external terminal choice |
+
+The monotonic rule removes permutation duplicates for set-valued responses while
+preserving every legal final set. It is not a candidate sort and does not
+change the source order delivered by the core. Ordering families retain every
+meaningful permutation.
+
 ## 7. Card-bearing authority and privacy
 
 The future authority overload follows I4B exactly:
@@ -194,20 +210,31 @@ The future authority overload follows I4B exactly:
     -> reproject the captured snapshot with accepted duel flags
     -> compare canonical bytes, SHA-256, and PublicProjectionId
     -> resolve source occurrences privately against captured mirror
-    -> correlate to exactly one accepted public card
-    -> copy accepted locator/CardCode only from accepted snapshot
+    -> optionally correlate to exactly one accepted public card
+    -> copy persistent locator/accepted-snapshot CardCode only from accepted snapshot
 
 Indexed field references use the existing semantic-zone compatibility rules.
-Hand/Extra references require a proven card code and a unique public pile
-ordinal. Main Deck correlation fails closed. An overlay reference in a source
-layout without an overlay index fails before the I4B helper. The code-only
-SELECT_CARD producer is represented anonymously by source section and ordinal;
-its raw code and zero-location placeholder are never published.
+Hand/Extra references use a proven card code and a unique accepted public pile
+ordinal only when a persistent locator is needed. Main Deck correlation does
+not create a persistent locator. An overlay reference in a source layout
+without an overlay index fails before the I4B helper.
 
-`CARD_CODE_SAFE` controls only whether the separate CardCode member is present.
-A zero or mismatching source code does not destroy a proven locator. No raw
-loc_info, mirror entity ID, private continuity, or first-match choice can
-become public identity.
+The current prompt is itself a disclosure to its acting perspective. When the
+pinned EDOPro reader receives a nonzero source CardCode and binds it to the
+current selectable item, I5 may publish that exact value in a
+prompt-local-card-code variant. This applies to the location-bearing and
+zero-location SELECT_CARD paths and to the other card-selection/sorting paths
+whose reader stores the prompt code. It is candidate-local only: it expires at
+the prompt boundary, never mutates the mirror, never proves a locator, and
+never creates physical continuity. A zero code is absent. The SELECT_COUNTER
+reader explicitly discards its wire code, so that field is not independently
+published by the counter contract.
+
+`CARD_CODE_SAFE` remains a separate accepted-snapshot publication predicate.
+A zero or mismatching source code does not destroy a proven persistent locator,
+and a prompt-local code does not create one. No raw loc_info, mirror entity ID,
+private continuity, first-match choice, or raw protocol address becomes public
+identity.
 
 `SELECT_PLACE` and `SELECT_DISFIELD` are field-slot choices, not card
 locators. `POSITION` remains governed by its validated mask and must not
@@ -272,9 +299,11 @@ The companion contract draft contains the complete formulas. The audit
 decisions that must survive a later SELECT_SUM remediation are:
 
 * card selection uses occurrence indexes, min/max counts, source cancellation,
-  and a shared exact index-list codec;
-* tribute selection uses release values and a weighted completion predicate,
-  never simple selected-card count;
+  prompt-local disclosed CardCodes where the reader exposes them, and a shared
+  exact index-list codec;
+* tribute selection uses a minimum required tribute value, a maximum selected
+  card count, release values, and a weighted completion predicate, never two
+  simple card-count bounds;
 * place/disfield uses the four acting-player-relative field-slot groups and
   emits absolute player/location/sequence triples;
 * counter selection assigns a nonnegative amount to every source occurrence,
@@ -338,6 +367,25 @@ The concrete signed/unsigned `sum_param` discrepancy and truncated internal
 accumulator prevent a complete exact wire-to-domain contract. This must be
 resolved before I5A0 final pass.
 
+### Three MAJOR findings from the previous head — remediated here
+
+1. Prompt CardCodes were incorrectly treated as private in all cases. The
+   contract now distinguishes prompt-local disclosure to the acting perspective
+   from persistent I3D locator/CardCode authority. Prompt-local codes are
+   ephemeral candidate fields and never mutate mirror state or establish
+   continuity.
+2. SELECT_TRIBUTE bounds were incorrectly named as two card counts. The
+   contract now names the first bound `minimum_required_tribute_value` and the
+   second `maximum_selected_card_count`, and its feasibility rule uses
+   `release_value` plus the count bound.
+3. Unordered continuation paths were not canonicalized. The contract now
+   requires monotonic original source indexes for unordered card/tribute/sum,
+   place, and mask choices, fixed source traversal for counter amounts, and
+   full remaining-choice permutations for sorting.
+
+These three findings are closed by this docs/fixture remediation only. They do
+not change the SELECT_SUM blocker or authorize runtime implementation.
+
 ### NOTE — requested repository governance documents are absent
 
 The task requested `docs/NORMATIVE_HIERARCHY.md`,
@@ -387,8 +435,12 @@ claim of success:
     I5_NETWORK_RESPONSE_SENDING=ABSENT
     I5_PUBLIC_PRIVATE_SEAM=PASS
     I5_PUBLICATION_AUTHORITY=I3D
+    I5_PROMPT_LOCAL_CARD_DISCLOSURE=ACTING_PERSPECTIVE_CURRENT_PROMPT
+    I5_PROMPT_LOCAL_CARD_CODE_PERSISTS=NO
     I5_PRIVATE_RESPONSE_IS_MODEL_INPUT=NO
     I5_CONTINUATION_STATE_DETERMINISTIC=PASS
+    I5_UNORDERED_CANONICAL_PATHS=MONOTONIC_SOURCE_INDEXES
+    I5_SELECT_TRIBUTE_BOUND_SEMANTICS=MIN_VALUE_PLUS_MAX_COUNT
     I5_LOCAL_KEY_EQUALS_OCGFORGE_PUBLIC_ACTION_KEY=NO
     SELECT_SUM_EXACT_SEMANTICS=PASS
     SELECT_SUM_EXACT_ORACLE_CONTRACT=PASS
@@ -402,7 +454,7 @@ This I5A0 audit does not satisfy the matrix:
     BLOCKERS=1
     MAJORS=0
     MINORS=0
-    NOTES=5
+    NOTES=4
     CONTRACT_FROZEN_FAMILY_COUNT=11
     I5A0_CONTRACT_FREEZE_FINAL_PASS=NO
     I5_IMPLEMENTATION_AUTHORIZED=NO

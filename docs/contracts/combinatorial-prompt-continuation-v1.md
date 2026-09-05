@@ -32,7 +32,7 @@ The accepted I4 public-state boundary remains:
         = private source-resolution authority only
 
     accepted PublicStateProjectionResultV1.Snapshot
-        = sole public locator and CardCode publication authority
+        = sole persistent public locator and accepted-snapshot CardCode authority
 
     private response binding
         = original-protocol response authority
@@ -124,8 +124,8 @@ public shape is fixed conceptually:
 variants for:
 
 * `CardSelection` — acting player, minimum, maximum, effective cancellation;
-* `TributeSelection` — acting player, minimum tribute-card count, maximum
-  tribute-card count, effective cancellation;
+* `TributeSelection` — acting player, minimum required tribute value, maximum
+  selected-card count, effective cancellation;
 * `SumSelection` — acting player, equal/greater mode, target, optional-card
   count bounds, mandatory-card count, and optional-card count;
 * `PlaceSelection` — acting player, required place count, disabled-field mode,
@@ -141,8 +141,10 @@ variants for:
   maximum, and both source-section counts.
 
 The public context may expose a semantic value explicitly carried by the
-prompt. It never exposes raw protocol offsets, raw loc_info, raw sum_param,
-private response bytes, mirror entity IDs, or a private continuation ordinal.
+prompt, including a prompt-local CardCode when the reader exposes it to the
+acting perspective. It never exposes raw protocol offsets, raw loc_info, raw
+sum_param, private response bytes, mirror entity IDs, or a private continuation
+ordinal.
 
 ### Public candidate variants
 
@@ -151,7 +153,7 @@ families:
 
 | Variant | Public identity and fields |
 | --- | --- |
-| `PickCard` | source section, source ordinal, optional accepted public locator, optional safe CardCode |
+| `PickCard` | source section, source ordinal, optional accepted public locator, optional prompt-local disclosed CardCode, optional accepted-snapshot CardCode |
 | `Finish` | no card or response fields; present only when the current partial selection is terminal legal |
 | `Cancel` | no card or response fields; present only when the source response grammar permits cancellation |
 | `PlaceField` | absolute player, semantic field zone, sequence |
@@ -166,14 +168,21 @@ families:
 `source_ordinal` is the ordinal in its named wire section, not a public
 physical-card identity. Equal visible values remain separate candidates.
 
-Card-bearing source occurrences use the I4B authority path. A proven public
-locator is copied only from the accepted I3D snapshot. A nonzero source
-CardCode is copied only when `CARD_CODE_SAFE` holds for that same accepted
-snapshot card. Otherwise the candidate uses the closed no-CardCode variant.
-The code-only `SELECT_CARD` producer uses an anonymous source-occurrence
-variant: its zero-location placeholder cannot establish a public locator or
-CardCode, but its source occurrence can still be represented by section and
-ordinal without exposing the raw code.
+Card-bearing source occurrences have two independent disclosure channels. A
+persistent/public-state locator is copied only from the accepted I3D snapshot.
+The exact nonzero CardCode carried by the current prompt may additionally be
+published as a prompt-local disclosure when the pinned reader exposes it to
+the acting perspective. This value expires with the prompt and never proves a
+locator, mutates the mirror, creates physical continuity, or becomes a public
+state CardCode. The accepted-snapshot CardCode remains governed by
+`CARD_CODE_SAFE` and is a separate structural variant.
+
+The code-only `SELECT_CARD` producer therefore uses a prompt-local code
+variant when its nonzero code is present. Its zero-location placeholder still
+cannot establish a public locator. A zero code has no public CardCode and uses
+the anonymous source-occurrence variant. Main Deck entries follow the same
+rule: a prompt-local disclosed code may be visible without creating a Main
+Deck locator.
 
 ### Local keys and private state
 
@@ -233,6 +242,22 @@ remain later-layer responsibilities:
     I5_INTERMEDIATE_PROTOCOL_RESPONSE=ABSENT
     I5_NETWORK_RESPONSE_SENDING=ABSENT
 
+Continuation path canonicalization is family-specific and frozen:
+
+| Source semantics | Path rule |
+| --- | --- |
+| unordered card/tribute/sum selection | monotonic increasing original source occurrence indexes |
+| unordered multi-place selection | monotonic increasing indexes in the explicit place order |
+| unordered race/attribute mask selection | monotonic increasing bit indexes |
+| counter allocation | fixed source traversal order; every feasible amount including zero |
+| card/chain sorting | ordered remaining-source traversal; each meaningful permutation remains reachable |
+| flat terminal number and select/unselect | no continuation path; one external terminal action |
+
+The monotonic rules remove permutation duplicates without removing any legal
+terminal set. A lower source index is not offered after a higher index has
+been picked in an unordered family; every legal set has its unique ascending
+path. This rule is not a public identity and does not alter wire source order.
+
 ## 5. Card-reference authority
 
 For source entries that contain a physical card address, the future call
@@ -243,25 +268,33 @@ with the accepted snapshot's duel flags and comparing canonical bytes, SHA-256,
 and `PublicProjectionId` exactly. The recomputed result is a consistency proof
 only.
 
-The existing `FlatPromptCardCorrelationV1` semantics are reused:
+The existing `FlatPromptCardCorrelationV1` semantics are reused for persistent
+locator proof:
 
     captured mirror card
         -> permitted private normalized address facts
         -> exactly one accepted public snapshot card
         -> copy accepted locator
 
-The raw source CardCode controls only separate CardCode publication. A zero or
-mismatching wire code never destroys an otherwise proven locator. Main Deck
-references remain fail closed. Hand/Extra correlation requires a known proven
-mirror CardCode and a unique accepted public pile ordinal; duplicate known
-codes are ambiguous and fail closed. Overlay requires a proven overlay index;
-source layouts without that index reject an overlay reference before calling
-the existing helper. No raw sequence, physical continuity, mirror identity,
-collection order, or first matching public card may disambiguate a reference.
+The raw source CardCode has a second, prompt-local disclosure role. If the
+exact current prompt delivered a nonzero code to the acting perspective, a
+candidate may carry that code in a prompt-local structural variant. This does
+not establish a public locator, update `PerspectiveStateMirrorV1`, survive a
+prompt boundary, or authorize hidden continuity. A zero source code is absent.
 
-Source entries with a documented zero-location code-only form have no public
-card reference. They may be exposed only as anonymous source occurrences with
-no raw code. This does not create a second publication authority.
+For persistent locator publication, a zero or mismatching wire code never
+destroys an otherwise proven locator. Main Deck references have no persistent
+locator authority, but they may still expose the prompt-local disclosed code.
+Hand/Extra references use the accepted I4B rule when a persistent public
+ordinal is needed; duplicate known codes remain ambiguous for that purpose.
+Overlay requires a proven overlay index; source layouts without that index
+reject an overlay reference before calling the existing helper. No raw
+sequence, physical continuity, mirror identity, collection order, or first
+matching public card may disambiguate a persistent reference.
+
+Source entries with a zero-location code-only form have no public card
+reference. Their nonzero code is prompt-local disclosure only; their zero code
+candidate is anonymous. This does not create a second publication authority.
 
 ## 6. Shared response codec for card-index selections
 
@@ -312,20 +345,28 @@ prompt. Modern count and location widths are mandatory.
 The source domain is the n wire occurrences in wire order. The location-bearing
 producer writes its card vector after the core's card-operation ordering; the
 wire order is authoritative. The separate `SelectCardCodes` producer writes
-the same layout with a zero location placeholder. Its code is private and its
-candidate is anonymous.
+the same layout with a zero location placeholder. A nonzero code in either
+form is prompt-local disclosed data for the acting perspective; it is not a
+persistent locator or mirror fact. Its candidate has no locator and uses the
+prompt-local CardCode variant.
 
-The continuation starts with no selected occurrences. `PICK:i` is admitted
-when occurrence i is not selected, the count does not exceed maximum, and at
-least one completion remains. `FINISH` is admitted when the current count is
-between minimum and maximum. `CANCEL` is admitted when the wire cancelable
-flag is true. Selecting an occurrence does not remove any other occurrence.
+The continuation starts with no selected occurrences and uses monotonic source
+occurrence indexes to remove permutation duplicates. `PICK:i` is admitted
+when occurrence i is greater than the current last picked index, the count
+does not exceed maximum, and at least one completion remains. `FINISH` is
+admitted when the current count is between minimum and maximum. `CANCEL` is
+admitted when the wire cancelable flag is true. Selecting an occurrence does
+not remove any other occurrence.
 The final response is the shared card-index codec; cancel is `i32_le(-1)`.
 
-An addressed card occurrence must pass the accepted I4B correlation policy.
-The public descriptor is a safe locator-bearing variant when proof succeeds,
-or the anonymous zero-location variant for the code-only producer. A required
-address correlation failure rejects the entire prompt.
+An addressed card occurrence carries its prompt-local code whenever it is
+nonzero and uses the accepted I4B correlation policy for an optional
+persistent locator. A safe locator-bearing variant is added only when proof
+succeeds. Lack of a persistent Main Deck locator does not reject a prompt when
+the prompt-local occurrence can be represented by source section, ordinal, and
+the disclosed code. If the code is zero, the occurrence remains anonymous.
+No raw address is exposed and no occurrence is discarded solely because a
+persistent locator cannot be proven.
 
 ## 8. MSG_SELECT_TRIBUTE (20)
 
@@ -334,8 +375,8 @@ The modern complete message is:
     u8       message_id = 20
     u8       acting_player
     u8       cancelable
-    u32_le   minimum_card_count
-    u32_le   maximum_card_count
+    u32_le   minimum_required_tribute_value
+    u32_le   maximum_selected_card_count
     u32_le   occurrence_count = n
     repeat n:
         u32_le card_code
@@ -344,28 +385,35 @@ The modern complete message is:
         u32_le   sequence
         u8       release_value
 
-Length is `15 + 11*n`. The core normalizes the internal count bounds and caps
-the emitted maximum at five and at its accumulated release total. The wire
-flag is the effective `cancelable || minimum == 0` value. A zero maximum or
-empty source is a hint path, not a valid emitted selection prompt.
+Length is `15 + 11*n`. The first bound is a weighted tribute-value threshold,
+not a card count. The second bound is the maximum number of selected card
+occurrences. The core normalizes the internal values and caps the emitted
+maximum at five and at its accumulated release total. The wire flag is the
+effective `cancelable || minimum == 0` value. A zero maximum or empty source is
+a hint path, not a valid emitted selection prompt.
 
 The wire order is the complete source order. Equal code, location, sequence,
 or release values remain separate occurrences. `release_value` is a private
 weight used for legality; it is not automatically public card identity or a
 public raw protocol field.
 
-The continuation starts with an empty selected set. `PICK:i` is legal exactly
+The continuation starts with an empty selected set and uses monotonic source
+occurrence indexes to remove permutation duplicates. `PICK:i` is legal exactly
 when the selected count remains within the maximum and some completion can
-reach the minimum weighted total. `FINISH` is present when selected count is
-at most maximum and the sum of selected release values is at least minimum.
+reach the minimum required tribute value. `FINISH` is present when selected
+count is at most the maximum selected card count and the sum of selected
+release values is at least the minimum required tribute value.
 `CANCEL` is present when the effective wire flag is true. No count-only
 substitution for the release weights is permitted. The final selected indexes
 use the shared card-index codec; cancellation is `i32_le(-1)`.
 
-Every nonzero-location entry uses the accepted I4B card-reference authority.
-This layout carries no overlay index, so an overlay location is rejected
-before correlation. A source that cannot be uniquely and safely represented
-fails closed rather than exposing a raw address.
+Every entry carries its nonzero prompt-local CardCode, while persistent locator
+publication remains optional and uses the accepted I4B card-reference
+authority. This layout carries no overlay index, so an overlay location is
+rejected before correlation. If no persistent locator can be proven, the
+source occurrence may remain an anonymous prompt-local candidate identified
+only by its section and ordinal; no raw address is exposed and no legal source
+occurrence is removed solely because I3D has no persistent pile locator.
 
 ## 9. MSG_SELECT_SUM (23) — unresolved exact contract
 
@@ -541,9 +589,11 @@ destination positions indexed by source ordinal. It is a permutation of
 every nonterminal step because the core explicitly accepts -1 to leave the
 order unchanged. There is no early finish.
 
-The public card descriptor is safe locator/CardCode data only where accepted
-I3D correlation proves it. Anonymous source-occurrence descriptors preserve
-the sorting domain without publishing hidden deck identity.
+The public card descriptor carries the prompt-local CardCode when the source
+prompt discloses one, and carries a persistent locator/accepted-snapshot
+CardCode only where accepted I3D correlation proves it. Anonymous
+source-occurrence descriptors preserve the sorting domain when no code is
+disclosed, without publishing hidden deck identity.
 
 ## 13. MSG_ANNOUNCE_RACE (140)
 
@@ -716,7 +766,7 @@ existing error enum, but their meaning is fixed:
 | `MalformedPrompt` | length, primitive, count, endian, boolean, or trailing-byte failure |
 | `UnsupportedPromptLayout` | legacy layout, unsupported family, or unadmitted source form |
 | `UnprovenPromptSemantics` | structurally parseable but producer/legality semantics are not proven |
-| `UnprovenPublicReference` | zero or multiple private/public card correlations, Main Deck, or missing overlay proof |
+| `UnprovenPublicReference` | a required persistent private/public card correlation is zero or multiple, or a required overlay proof is missing |
 | `InvalidContinuationInstance` | stale or unknown continuation identity |
 | `StaleContinuationStep` | action belongs to a prior step or prior prompt |
 | `InvalidContinuationAction` | key is malformed, not in the current complete domain, or semantically illegal |
@@ -747,8 +797,12 @@ The intended final matrix is machine-readable in meaning:
     I5_NETWORK_RESPONSE_SENDING=ABSENT
     I5_PUBLIC_PRIVATE_SEAM=PASS
     I5_PUBLICATION_AUTHORITY=I3D
+    I5_PROMPT_LOCAL_CARD_DISCLOSURE=ACTING_PERSPECTIVE_CURRENT_PROMPT
+    I5_PROMPT_LOCAL_CARD_CODE_PERSISTS=NO
     I5_PRIVATE_RESPONSE_IS_MODEL_INPUT=NO
     I5_CONTINUATION_STATE_DETERMINISTIC=PASS
+    I5_UNORDERED_CANONICAL_PATHS=MONOTONIC_SOURCE_INDEXES
+    I5_SELECT_TRIBUTE_BOUND_SEMANTICS=MIN_VALUE_PLUS_MAX_COUNT
     I5_LOCAL_KEY_EQUALS_OCGFORGE_PUBLIC_ACTION_KEY=NO
     SELECT_SUM_EXACT_SEMANTICS=PASS
     SELECT_SUM_EXACT_ORACLE_CONTRACT=PASS

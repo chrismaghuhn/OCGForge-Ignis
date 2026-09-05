@@ -20,11 +20,20 @@
     "terminal_body_is_private": true,
     "intermediate_response": "ABSENT"
   },
+  "card_code_scope": {
+    "persistent_locator_authority": "ACCEPTED_I3D_PUBLIC_STATE_SNAPSHOT",
+    "prompt_local_disclosure_authority": "EXACT_CURRENT_PROMPT_TO_ACTING_PERSPECTIVE",
+    "prompt_local_card_code_expires_at": "PROMPT_BOUNDARY",
+    "raw_prompt_code_is_persistent_identity": false
+  },
   "canonical_order": {
     "vector_array": "explicit array order",
     "source_occurrences": "wire order",
     "duplicate_policy": "preserve every occurrence",
-    "decimal_key_policy": "ASCII invariant decimal; no sign; no leading zero except 0"
+    "decimal_key_policy": "ASCII invariant decimal; no sign; no leading zero except 0",
+    "unordered_set_paths": "monotonic original source indexes",
+    "ordered_paths": "preserve every meaningful permutation",
+    "counter_paths": "fixed source traversal"
   },
   "wire_vectors": [
     {
@@ -47,7 +56,9 @@
             "location": 0,
             "sequence": 0,
             "position": 0,
-            "public_reference": "ANONYMOUS_CODE_ONLY"
+            "prompt_local_card_code": 287454020,
+            "candidate_card_code_scope": "PROMPT_LOCAL",
+            "public_reference": "ABSENT"
           }
         ]
       },
@@ -55,6 +66,38 @@
         "initial_domain": ["MSG_SELECT_CARD:PICK:0"],
         "terminal_path": ["MSG_SELECT_CARD:PICK:0", "MSG_SELECT_CARD:FINISH"],
         "selected_source_ordinals": [0]
+      },
+      "terminal_response_body_hex": "03 00 00 00 01"
+    },
+    {
+      "case_id": "SELECT_CARD_MAIN_DECK_PROMPT_LOCAL_CODE",
+      "message_id": 15,
+      "symbolic_name": "MSG_SELECT_CARD",
+      "classification": "CONTINUATION_REQUIRED",
+      "inner_byte_length": 29,
+      "inner_hex": "0F 00 00 01 00 00 00 01 00 00 00 01 00 00 00 EF BE AD DE 00 01 05 00 00 00 00 00 00 00",
+      "wire_decoded": {
+        "acting_player": 0,
+        "cancelable": false,
+        "minimum_count": 1,
+        "maximum_count": 1,
+        "occurrence_count": 1,
+        "entries": [
+          {
+            "card_code_u32": 3735928559,
+            "controller": 0,
+            "location": 1,
+            "sequence": 5,
+            "position": 0,
+            "prompt_local_card_code": 3735928559,
+            "candidate_card_code_scope": "PROMPT_LOCAL",
+            "persistent_locator": "ABSENT_MAIN_DECK"
+          }
+        ]
+      },
+      "continuation": {
+        "initial_domain": ["MSG_SELECT_CARD:PICK:0"],
+        "terminal_path": ["MSG_SELECT_CARD:PICK:0", "MSG_SELECT_CARD:FINISH"]
       },
       "terminal_response_body_hex": "03 00 00 00 01"
     },
@@ -104,8 +147,8 @@
       "wire_decoded": {
         "acting_player": 0,
         "cancelable": false,
-        "minimum_card_count": 1,
-        "maximum_card_count": 2,
+        "minimum_required_tribute_value": 1,
+        "maximum_selected_card_count": 2,
         "occurrence_count": 2,
         "entries": [
           {"card_code_u32": 286331153, "controller": 0, "location": 4, "sequence": 0, "release_value": 1},
