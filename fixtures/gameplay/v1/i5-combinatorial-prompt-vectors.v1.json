@@ -344,7 +344,7 @@
       "inner_byte_length": 7,
       "inner_hex": "12 00 02 FE FF FF FB",
       "wire_decoded": {"acting_player": 0, "required_place_count": 2, "field_flag": "0xFBFFFFFE", "eligible_places": ["p0:MONSTER_ZONE:0", "p1:SPELL_TRAP_ZONE:2"]},
-      "continuation": {"initial_domain": ["MSG_SELECT_PLACE:PICK:0:MONSTER_ZONE:0", "MSG_SELECT_PLACE:PICK:1:SPELL_TRAP_ZONE:2"], "canonical_response_order": "acting-player-relative field groups"},
+      "continuation": {"initial_domain": ["MSG_SELECT_PLACE:PICK:0:MONSTER_ZONE:0"], "after_first_pick_domain": ["MSG_SELECT_PLACE:PICK:1:SPELL_TRAP_ZONE:2"], "terminal_after_second_pick": true, "canonical_response_order": "acting-player-relative field groups"},
       "terminal_response_body_hex": "00 04 00 01 08 02"
     },
     {
@@ -399,7 +399,7 @@
       "inner_byte_length": 11,
       "inner_hex": "8C 00 02 05 00 00 00 00 00 00 00",
       "wire_decoded": {"acting_player": 0, "required_bit_count": 2, "available_mask": "0x0000000000000005", "available_bit_indices": [0, 2]},
-      "continuation": {"initial_domain": ["MSG_ANNOUNCE_RACE:PICK:0", "MSG_ANNOUNCE_RACE:PICK:2"], "terminal_mask": "0x0000000000000005"},
+      "continuation": {"initial_domain": ["MSG_ANNOUNCE_RACE:PICK:0"], "after_first_pick_domain": ["MSG_ANNOUNCE_RACE:PICK:2"], "terminal_after_second_pick": true, "terminal_mask": "0x0000000000000005"},
       "terminal_response_body_hex": "05 00 00 00 00 00 00 00"
     },
     {
@@ -410,6 +410,7 @@
       "inner_byte_length": 7,
       "inner_hex": "8D 01 02 05 00 00 00",
       "wire_decoded": {"acting_player": 1, "required_bit_count": 2, "available_mask": "0x00000005", "available_bit_indices": [0, 2]},
+      "continuation": {"initial_domain": ["MSG_ANNOUNCE_ATTRIB:PICK:0"], "after_first_pick_domain": ["MSG_ANNOUNCE_ATTRIB:PICK:2"], "terminal_after_second_pick": true, "terminal_mask": "0x00000005"},
       "terminal_response_body_hex": "05 00 00 00"
     },
     {

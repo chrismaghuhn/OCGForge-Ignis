@@ -218,6 +218,23 @@ At every nonterminal state:
         selection is terminal legal, plus Cancel exactly when the source
         response grammar permits it.
 
+For the monotonic unordered families (`SELECT_PLACE`, `SELECT_DISFIELD`,
+`ANNOUNCE_RACE`, and `ANNOUNCE_ATTRIB`), the completion predicate is explicit.
+Let `k` be the required final selection count, `c` the number already selected,
+`j` the candidate's canonical semantic index, `last` the last selected canonical
+index (or `-1` initially), and `L` the ordered list of currently unselected
+eligible canonical indexes. Candidate `j` is in the current domain exactly when:
+
+    j > last
+    c + 1 <= k
+    count(index in L where index > j) >= k - (c + 1)
+
+The third condition means that selecting `j` must leave enough higher canonical
+indexes for at least one monotonic terminal completion. A candidate that leaves
+too few such indexes is not part of the current domain, even when it is itself
+currently eligible. This is a semantic predicate, not a greedy selection
+algorithm, candidate cap, or public exposure of the canonical index.
+
 For flat-terminal families, the initial domain contains every legal terminal
 action and one selected action completes the original prompt. `N=1` still
 requires external selection. A producer-side state that would not emit a
@@ -509,9 +526,10 @@ The semantic slot groups, relative to the acting player, are:
 
 A semantic place is eligible when its known slot bit is clear in the wire
 flag. Unused mask bits are never candidate slots and are not emitted as raw
-public data. The initial public domain is the eligible semantic places in the
-explicit acting-player-relative group order above. The prompt is unproven if
-`k` is zero or exceeds the number of eligible slots.
+public data. The current public domain is all and only currently unselected
+eligible semantic places in the explicit acting-player-relative group order
+above that satisfy the monotonic completion predicate in section 4. The prompt
+is unproven if `k` is zero or exceeds the number of eligible slots.
 
 `PICK:player:zone:sequence` selects one not-yet-selected place. There is no
 cancel or early finish; terminal state is exactly k distinct places. The
@@ -612,10 +630,12 @@ are bits 0..32 and bit 62 (`RACE_YOKAI`). The writer clamps k to the available
 popcount; zero k or an empty mask is a no-prompt path and is rejected for an
 emitted I5 prompt.
 
-The public domain contains one `PICK:<bit_index>` candidate for every
-available bit not already selected. The continuation is terminal after exactly
-k distinct bits; there is no finish or cancel. The final private body is one
-`u64_le` mask. Unknown bits, duplicate picks, and wrong popcount fail closed.
+The current public domain contains one `PICK:<bit_index>` candidate for every
+available, not-yet-selected admitted bit that satisfies the monotonic completion
+predicate in section 4. The continuation is terminal after exactly k distinct
+bits; there is no finish or cancel. The final private body is one `u64_le` mask.
+Unknown bits, duplicate picks, candidates that leave no monotonic completion,
+and wrong popcount fail closed.
 
 ## 14. MSG_ANNOUNCE_ATTRIB (141)
 
@@ -631,8 +651,10 @@ Length is exactly seven bytes. The admitted `ATTRIBUTE_ALL` values are
 available popcount. An empty mask or zero k is a no-prompt path.
 
 The continuation and public domain are the race rules with the u32 attribute
-mask and bit indexes 0..6. The final private body is one `u32_le` mask. No
-unknown bit, duplicate pick, early finish, or cancel exists.
+mask and bit indexes 0..6, including the monotonic completion predicate in
+section 4. The final private body is one `u32_le` mask. No unknown bit,
+duplicate pick, candidate that leaves no monotonic completion, early finish, or
+cancel exists.
 
 ## 15. MSG_ANNOUNCE_NUMBER (143)
 
