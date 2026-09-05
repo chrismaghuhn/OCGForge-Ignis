@@ -2590,10 +2590,10 @@
       "layout_status": "FROZEN",
       "wire_layout_id": "MSG_SELECT_SUM_COMBINATORIAL_V1",
       "perspective_effect": "PROMPT_ONLY",
-      "state_effect": "PROMPT_BOUNDARY",
-      "knowledge_effect": "DEFERRED",
-      "locator_effect": "DEFERRED",
-      "boundary_kind": "PROMPT_BOUNDARY",
+      "state_effect": "UNSUPPORTED_FAIL_CLOSED",
+      "knowledge_effect": "UNSUPPORTED",
+      "locator_effect": "UNSUPPORTED",
+      "boundary_kind": "UNSUPPORTED_FAIL_CLOSED",
       "pairing_rule": "NONE",
       "upstream_reference_ids": [
         "CORE_MESSAGE_IDS"

@@ -192,7 +192,8 @@ The continuation graph uses a canonical path rule, not arbitrary public order:
 
 | Family semantics | Canonical path |
 | --- | --- |
-| SELECT_CARD, SELECT_TRIBUTE, SELECT_SUM | pick strictly increasing original source occurrence indexes |
+| SELECT_CARD, SELECT_TRIBUTE | pick strictly increasing original source occurrence indexes |
+| SELECT_SUM | unsupported V1 family; no continuation path or oracle |
 | SELECT_PLACE, SELECT_DISFIELD | pick strictly increasing indexes in the explicit place order |
 | ANNOUNCE_RACE, ANNOUNCE_ATTRIB | pick strictly increasing admitted bit indexes |
 | SELECT_COUNTER | assign amounts in fixed wire source order, including zero |
@@ -381,7 +382,7 @@ re-admission belongs to a new contract review.
    second `maximum_selected_card_count`, and its feasibility rule uses
    `release_value` plus the count bound.
 3. Unordered continuation paths were not canonicalized. The contract now
-   requires monotonic original source indexes for unordered card/tribute/sum,
+   requires monotonic original source indexes for unordered card/tribute,
    place, and mask choices, fixed source traversal for counter amounts, and
    full remaining-choice permutations for sorting.
 

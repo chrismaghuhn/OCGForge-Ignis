@@ -126,8 +126,9 @@ variants for:
 * `CardSelection` — acting player, minimum, maximum, effective cancellation;
 * `TributeSelection` — acting player, minimum required tribute value, maximum
   selected-card count, effective cancellation;
-* `SumSelection` — acting player, equal/greater mode, target, optional-card
-  count bounds, mandatory-card count, and optional-card count;
+* `SELECT_SUM` has no admitted public context variant in V1. Its researched
+  wire fields are retained only in the explicit fail-closed unsupported
+  section below;
 * `PlaceSelection` — acting player, required place count, disabled-field mode,
   and an ordered semantic eligible-place list;
 * `CounterSelection` — acting player, counter type, required total, and an
@@ -246,7 +247,8 @@ Continuation path canonicalization is family-specific and frozen:
 
 | Source semantics | Path rule |
 | --- | --- |
-| unordered card/tribute/sum selection | monotonic increasing original source occurrence indexes |
+| unordered card/tribute selection | monotonic increasing original source occurrence indexes |
+| `SELECT_SUM` | unsupported V1 family; no continuation path or response codec |
 | unordered multi-place selection | monotonic increasing indexes in the explicit place order |
 | unordered race/attribute mask selection | monotonic increasing bit indexes |
 | counter allocation | fixed source traversal order; every feasible amount including zero |
@@ -298,7 +300,7 @@ candidate is anonymous. This does not create a second publication authority.
 
 ## 6. Shared response codec for card-index selections
 
-`SELECT_CARD`, `SELECT_TRIBUTE`, and `SELECT_SUM` use the core's card-index
+`SELECT_CARD` and `SELECT_TRIBUTE` use the core's card-index
 response grammar. A terminal non-cancel response is encoded by the exact
 EDOPro compact selection rule for the selected source indexes in accepted
 pick order. The body contains no outer packet envelope.
@@ -764,7 +766,7 @@ existing error enum, but their meaning is fixed:
 | Error | Meaning |
 | --- | --- |
 | `MalformedPrompt` | length, primitive, count, endian, boolean, or trailing-byte failure |
-| `UnsupportedPromptLayout` | legacy layout, unsupported family, or unadmitted source form |
+| `UnsupportedPromptLayout` | legacy layout or unadmitted layout/source form |
 | `UnsupportedPromptFamily` | a researched family that is deliberately outside the admitted V1 implementation scope |
 | `UnprovenPromptSemantics` | structurally parseable but producer/legality semantics are not proven |
 | `UnprovenPublicReference` | a required persistent private/public card correlation is zero or multiple, or a required overlay proof is missing |
