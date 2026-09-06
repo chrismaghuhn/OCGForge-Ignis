@@ -35,7 +35,10 @@ public enum PerspectiveSafeFrameSourceErrorCodeV1 : byte
     InvalidDeckState = 17,
     ChainLengthMismatch = 18,
     InvalidLifePointCardinality = 19,
-    CrossSectionMismatch = 20
+    CrossSectionMismatch = 20,
+    MissingMirror = 21,
+    UnprovenMirrorValue = 22,
+    InvalidMirrorSnapshot = 23
 }
 
 public readonly record struct PerspectiveSafeFrameSourceErrorV1(
@@ -141,6 +144,181 @@ internal static class PerspectiveSafeCollectionV1
         values is null
             ? Array.Empty<string>()
             : values.Select(value => value ?? string.Empty).ToArray();
+}
+
+public enum PerspectiveSafeI6C2SourceStatusV1 : byte
+{
+    Proven = 0,
+    Blocked = 1,
+    BlockedPendingI6C3 = 2,
+    BlockedPendingI6C5 = 3,
+    OutsideI6CPendingI6D = 4
+}
+
+public enum PerspectiveSafeI6C2ConstituentV1 : byte
+{
+    LifePoints = 0,
+    TurnPlayer = 1,
+    TurnCount = 2,
+    Phase = 3,
+    Terminal = 4,
+    Winner = 5,
+    WinReason = 6,
+    DuelFlags = 7,
+    PlayerToAct = 8,
+    ChainLength = 9,
+    Relationships = 10,
+    Chain = 11,
+    VisibleEvents = 12,
+    EventIndex = 13,
+    MatchContext = 14,
+    MainDeckZone = 15,
+    HandZone = 16,
+    MonsterZone = 17,
+    SpellTrapLayout = 18,
+    GraveyardZone = 19,
+    BanishedZone = 20,
+    ExtraDeckZone = 21,
+    OverlayZone = 22,
+    EntityLocator = 23,
+    EntityIdentity = 24,
+    EntityOwner = 25,
+    EntityController = 26,
+    EntitySequence = 27,
+    EntityPosition = 28,
+    EntityCurrentProperties = 29,
+    EntityPrintedProperties = 30
+}
+
+public readonly record struct PerspectiveSafeI6C2ConstituentStatusV1(
+    PerspectiveSafeI6C2ConstituentV1 Constituent,
+    PerspectiveSafeI6C2SourceStatusV1 Status);
+
+public sealed class PerspectiveSafeI6C2GlobalsV1
+{
+    private readonly uint[] lifePoints;
+    private readonly ReadOnlyCollection<uint> lifePointsView;
+
+    internal PerspectiveSafeI6C2GlobalsV1(
+        IEnumerable<uint> lifePoints,
+        byte? turnPlayer,
+        uint? turnCount,
+        uint? phase,
+        bool terminal,
+        byte? winner,
+        byte? winReason)
+    {
+        this.lifePoints = PerspectiveSafeCollectionV1.Copy(lifePoints);
+        lifePointsView = PerspectiveSafeCollectionV1.ReadOnly(this.lifePoints);
+        TurnPlayer = turnPlayer;
+        TurnCount = turnCount;
+        Phase = phase;
+        Terminal = terminal;
+        Winner = winner;
+        WinReason = winReason;
+    }
+
+    public IReadOnlyList<uint> LifePoints => lifePointsView;
+
+    public byte? TurnPlayer { get; }
+
+    public uint? TurnCount { get; }
+
+    public uint? Phase { get; }
+
+    public bool Terminal { get; }
+
+    public byte? Winner { get; }
+
+    public byte? WinReason { get; }
+}
+
+/// <summary>
+/// Partial I6C2 evidence from a committed Mirror snapshot. It is not a
+/// complete public frame and does not establish OCGForge oracle acceptance.
+/// </summary>
+public sealed class PerspectiveSafeI6C2StateSourceV1
+{
+    private readonly PerspectiveSafeZoneV1[] zones;
+    private readonly PerspectiveSafeEntityV1[] entities;
+    private readonly PerspectiveSafeI6C2ConstituentStatusV1[] statuses;
+    private readonly ReadOnlyCollection<PerspectiveSafeZoneV1> zonesView;
+    private readonly ReadOnlyCollection<PerspectiveSafeEntityV1> entitiesView;
+    private readonly ReadOnlyCollection<PerspectiveSafeI6C2ConstituentStatusV1>
+        statusesView;
+
+    internal PerspectiveSafeI6C2StateSourceV1(
+        PerspectiveSafeI6C2GlobalsV1 globals,
+        IEnumerable<PerspectiveSafeZoneV1> zones,
+        IEnumerable<PerspectiveSafeEntityV1> entities,
+        IEnumerable<PerspectiveSafeI6C2ConstituentStatusV1> statuses)
+    {
+        Globals = globals ?? throw new ArgumentNullException(nameof(globals));
+        this.zones = PerspectiveSafeCollectionV1.Copy(zones);
+        this.entities = PerspectiveSafeCollectionV1.Copy(entities);
+        this.statuses = PerspectiveSafeCollectionV1.Copy(statuses);
+        zonesView = PerspectiveSafeCollectionV1.ReadOnly(this.zones);
+        entitiesView = PerspectiveSafeCollectionV1.ReadOnly(this.entities);
+        statusesView = PerspectiveSafeCollectionV1.ReadOnly(this.statuses);
+    }
+
+    public PerspectiveSafeI6C2GlobalsV1 Globals { get; }
+
+    public IReadOnlyList<PerspectiveSafeZoneV1> Zones => zonesView;
+
+    public IReadOnlyList<PerspectiveSafeEntityV1> Entities => entitiesView;
+
+    public IReadOnlyList<PerspectiveSafeI6C2ConstituentStatusV1> Statuses =>
+        statusesView;
+
+    public bool IsComplete =>
+        statuses.All(status =>
+            status.Status == PerspectiveSafeI6C2SourceStatusV1.Proven);
+
+    public PerspectiveSafeI6C2SourceStatusV1 GetStatus(
+        PerspectiveSafeI6C2ConstituentV1 constituent)
+    {
+        foreach (PerspectiveSafeI6C2ConstituentStatusV1 status in statuses)
+        {
+            if (status.Constituent == constituent)
+            {
+                return status.Status;
+            }
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(constituent));
+    }
+}
+
+public sealed class PerspectiveSafeI6C2SourceResultV1
+{
+    private PerspectiveSafeI6C2SourceResultV1(
+        PerspectiveSafeI6C2StateSourceV1? source,
+        PerspectiveSafeFrameSourceErrorV1? error)
+    {
+        if ((source is null) == (error is null))
+        {
+            throw new ArgumentException(
+                "An I6C2 result must contain exactly one outcome.");
+        }
+
+        Source = source;
+        Error = error;
+    }
+
+    public PerspectiveSafeI6C2StateSourceV1? Source { get; }
+
+    public PerspectiveSafeFrameSourceErrorV1? Error { get; }
+
+    public bool IsSuccess => Source is not null && Error is null;
+
+    internal static PerspectiveSafeI6C2SourceResultV1 Success(
+        PerspectiveSafeI6C2StateSourceV1 source) =>
+        new(source ?? throw new ArgumentNullException(nameof(source)), null);
+
+    internal static PerspectiveSafeI6C2SourceResultV1 Failure(
+        PerspectiveSafeFrameSourceErrorV1 error) =>
+        new(null, error);
 }
 
 public sealed class PerspectiveSafeGlobalsV1
