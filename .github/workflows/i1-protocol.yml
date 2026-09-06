@@ -79,3 +79,21 @@ jobs:
           dotnet run --project tests/OCGForge.Ignis.Gameplay.Tests/OCGForge.Ignis.Gameplay.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i3a-b.txt"
           cmp -- "$RUNNER_TEMP/i3a-a.txt" "$RUNNER_TEMP/i3a-b.txt"
           cat "$RUNNER_TEMP/i3a-a.txt"
+
+      - name: Restore I6B Model tests
+        run: dotnet restore tests/OCGForge.Ignis.Model.Tests/OCGForge.Ignis.Model.Tests.csproj
+
+      - name: Build I6B Model
+        run: dotnet build src/OCGForge.Ignis.Model/OCGForge.Ignis.Model.csproj --configuration Release --no-restore
+
+      - name: Build I6B Model tests
+        run: dotnet build tests/OCGForge.Ignis.Model.Tests/OCGForge.Ignis.Model.Tests.csproj --configuration Release --no-restore
+
+      - name: Run deterministic I6B Model tests twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet run --project tests/OCGForge.Ignis.Model.Tests/OCGForge.Ignis.Model.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i6b-a.txt"
+          dotnet run --project tests/OCGForge.Ignis.Model.Tests/OCGForge.Ignis.Model.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i6b-b.txt"
+          cmp -- "$RUNNER_TEMP/i6b-a.txt" "$RUNNER_TEMP/i6b-b.txt"
+          cat "$RUNNER_TEMP/i6b-a.txt"
