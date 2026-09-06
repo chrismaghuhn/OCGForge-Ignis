@@ -1,0 +1,676 @@
+using System.Collections.ObjectModel;
+
+namespace OCGForge.Ignis.Gameplay;
+
+public enum PerspectiveSafeSourceSectionV1 : byte
+{
+    Input = 0,
+    Globals = 1,
+    Zones = 2,
+    Entities = 3,
+    Relationships = 4,
+    Chain = 5,
+    VisibleEvents = 6,
+    MatchContext = 7
+}
+
+public enum PerspectiveSafeFrameSourceErrorCodeV1 : byte
+{
+    InvalidInput = 1,
+    MissingGlobals = 2,
+    MissingZones = 3,
+    MissingEntities = 4,
+    MissingRelationships = 5,
+    MissingChain = 6,
+    MissingVisibleEvents = 7,
+    MissingMatchContext = 8,
+    InvalidPlayer = 9,
+    UnknownEnum = 10,
+    InvalidLocator = 11,
+    DuplicateLocator = 12,
+    DuplicateEventIndex = 13,
+    EventIndexNotIncreasing = 14,
+    InvalidOrdering = 15,
+    ContradictoryEntityState = 16,
+    InvalidDeckState = 17,
+    ChainLengthMismatch = 18,
+    InvalidLifePointCardinality = 19,
+    CrossSectionMismatch = 20
+}
+
+public readonly record struct PerspectiveSafeFrameSourceErrorV1(
+    PerspectiveSafeFrameSourceErrorCodeV1 Code,
+    PerspectiveSafeSourceSectionV1 Section);
+
+public enum PerspectiveSafeSemanticZoneV1 : byte
+{
+    Unknown = 0,
+    MainDeck = 1,
+    Hand = 2,
+    MonsterZone = 3,
+    SpellTrapZone = 4,
+    Graveyard = 5,
+    Banished = 6,
+    ExtraDeck = 7,
+    FieldZone = 8,
+    PendulumRelevant = 9,
+    Overlay = 10
+}
+
+public enum PerspectiveSafePositionV1 : byte
+{
+    Unknown = 0,
+    FaceUpAttack = 1,
+    FaceDownAttack = 2,
+    FaceUpDefense = 4,
+    FaceDownDefense = 8
+}
+
+public enum PerspectiveSafeLinkMarkerV1 : byte
+{
+    BottomLeft = 0,
+    Bottom = 1,
+    BottomRight = 2,
+    Left = 3,
+    Right = 4,
+    TopLeft = 5,
+    Top = 6,
+    TopRight = 7
+}
+
+public enum PerspectiveSafeRelationshipKindV1 : byte
+{
+    XyzMaterial = 0,
+    Equip = 1,
+    Target = 2
+}
+
+public enum PerspectiveSafeVisibleEventKindV1 : byte
+{
+    Unknown = 0,
+    TurnStarted = 1,
+    PhaseChanged = 2,
+    CardMoved = 3,
+    CardRevealed = 4,
+    Summoned = 5,
+    Set = 6,
+    Draw = 7,
+    Shuffle = 8,
+    RandomizationBoundary = 9,
+    LifePointsChanged = 10,
+    ChainActivated = 11,
+    ChainResolved = 12,
+    ChainEnded = 13,
+    CardDestroyed = 14,
+    CardBanished = 15,
+    CardReturned = 16,
+    PositionChanged = 17,
+    CounterChanged = 18,
+    Equipped = 19,
+    Unequipped = 20,
+    Targeted = 21,
+    Win = 22
+}
+
+public readonly record struct PerspectiveSafeCounterV1(uint Type, uint Count);
+
+public readonly record struct PerspectiveSafeZoneV1(
+    byte Player,
+    PerspectiveSafeSemanticZoneV1 Kind,
+    uint TotalCount,
+    uint PublicIdentityCount,
+    uint HiddenCount,
+    bool PlayerObservableOrder);
+
+public readonly record struct PerspectiveSafeKnowledgeV1(
+    bool OwnDecklistKnown,
+    bool OpponentDecklistKnown);
+
+internal static class PerspectiveSafeCollectionV1
+{
+    internal static T[] Copy<T>(IEnumerable<T>? values) =>
+        values is null ? Array.Empty<T>() : values.ToArray();
+
+    internal static T[]? CopyOptional<T>(IEnumerable<T>? values) =>
+        values?.ToArray();
+
+    internal static ReadOnlyCollection<T> ReadOnly<T>(T[] values) =>
+        Array.AsReadOnly(values);
+
+    internal static string[] CopyLocators(IEnumerable<string>? values) =>
+        values is null
+            ? Array.Empty<string>()
+            : values.Select(value => value ?? string.Empty).ToArray();
+}
+
+public sealed class PerspectiveSafeGlobalsV1
+{
+    private readonly uint[] lifePoints;
+    private readonly ReadOnlyCollection<uint> lifePointsView;
+
+    public PerspectiveSafeGlobalsV1(
+        ulong duelFlags,
+        IEnumerable<uint>? lifePoints,
+        byte? playerToAct = null,
+        byte? turnPlayer = null,
+        uint? turnCount = null,
+        uint? phase = null,
+        uint chainLength = 0,
+        byte? winner = null,
+        byte? winReason = null,
+        bool terminal = false)
+    {
+        DuelFlags = duelFlags;
+        this.lifePoints = PerspectiveSafeCollectionV1.Copy(lifePoints);
+        lifePointsView = PerspectiveSafeCollectionV1.ReadOnly(this.lifePoints);
+        PlayerToAct = playerToAct;
+        TurnPlayer = turnPlayer;
+        TurnCount = turnCount;
+        Phase = phase;
+        ChainLength = chainLength;
+        Winner = winner;
+        WinReason = winReason;
+        Terminal = terminal;
+    }
+
+    public ulong DuelFlags { get; }
+
+    public IReadOnlyList<uint> LifePoints => lifePointsView;
+
+    public byte? PlayerToAct { get; }
+
+    public byte? TurnPlayer { get; }
+
+    public uint? TurnCount { get; }
+
+    public uint? Phase { get; }
+
+    public uint ChainLength { get; }
+
+    public byte? Winner { get; }
+
+    public byte? WinReason { get; }
+
+    public bool Terminal { get; }
+}
+
+public sealed class PerspectiveSafeCardPropertiesV1
+{
+    private readonly PerspectiveSafeLinkMarkerV1[] linkMarkers;
+    private readonly ReadOnlyCollection<PerspectiveSafeLinkMarkerV1> linkMarkersView;
+    private readonly PerspectiveSafeCounterV1[] counters;
+    private readonly ReadOnlyCollection<PerspectiveSafeCounterV1> countersView;
+
+    public PerspectiveSafeCardPropertiesV1(
+        uint? type = null,
+        uint? attribute = null,
+        ulong? race = null,
+        int? attack = null,
+        int? defense = null,
+        int? baseAttack = null,
+        int? baseDefense = null,
+        uint? level = null,
+        uint? rank = null,
+        uint? linkRating = null,
+        IEnumerable<PerspectiveSafeLinkMarkerV1>? linkMarkers = null,
+        uint? leftScale = null,
+        uint? rightScale = null,
+        uint? statusFlags = null,
+        IEnumerable<PerspectiveSafeCounterV1>? counters = null)
+    {
+        Type = type;
+        Attribute = attribute;
+        Race = race;
+        Attack = attack;
+        Defense = defense;
+        BaseAttack = baseAttack;
+        BaseDefense = baseDefense;
+        Level = level;
+        Rank = rank;
+        LinkRating = linkRating;
+        this.linkMarkers = PerspectiveSafeCollectionV1.Copy(linkMarkers);
+        linkMarkersView = PerspectiveSafeCollectionV1.ReadOnly(this.linkMarkers);
+        LeftScale = leftScale;
+        RightScale = rightScale;
+        StatusFlags = statusFlags;
+        this.counters = PerspectiveSafeCollectionV1.Copy(counters);
+        countersView = PerspectiveSafeCollectionV1.ReadOnly(this.counters);
+    }
+
+    public uint? Type { get; }
+
+    public uint? Attribute { get; }
+
+    public ulong? Race { get; }
+
+    public int? Attack { get; }
+
+    public int? Defense { get; }
+
+    public int? BaseAttack { get; }
+
+    public int? BaseDefense { get; }
+
+    public uint? Level { get; }
+
+    public uint? Rank { get; }
+
+    public uint? LinkRating { get; }
+
+    public IReadOnlyList<PerspectiveSafeLinkMarkerV1> LinkMarkers =>
+        linkMarkersView;
+
+    public uint? LeftScale { get; }
+
+    public uint? RightScale { get; }
+
+    public uint? StatusFlags { get; }
+
+    public IReadOnlyList<PerspectiveSafeCounterV1> Counters => countersView;
+}
+
+public sealed class PerspectiveSafeEntityV1
+{
+    private readonly string locator;
+
+    public PerspectiveSafeEntityV1(
+        string? locator,
+        bool identityKnown,
+        uint? passcode,
+        byte? owner,
+        byte? controller,
+        PerspectiveSafeSemanticZoneV1 zone,
+        uint? sequence,
+        uint? overlaySequence,
+        PerspectiveSafePositionV1 position,
+        bool faceUp,
+        bool faceDown,
+        PerspectiveSafeCardPropertiesV1? printed = null,
+        PerspectiveSafeCardPropertiesV1? current = null)
+    {
+        this.locator = locator ?? string.Empty;
+        IdentityKnown = identityKnown;
+        Passcode = passcode;
+        Owner = owner;
+        Controller = controller;
+        Zone = zone;
+        Sequence = sequence;
+        OverlaySequence = overlaySequence;
+        Position = position;
+        FaceUp = faceUp;
+        FaceDown = faceDown;
+        Printed = printed;
+        Current = current;
+    }
+
+    public string Locator => locator;
+
+    public bool IdentityKnown { get; }
+
+    public uint? Passcode { get; }
+
+    public byte? Owner { get; }
+
+    public byte? Controller { get; }
+
+    public PerspectiveSafeSemanticZoneV1 Zone { get; }
+
+    public uint? Sequence { get; }
+
+    public uint? OverlaySequence { get; }
+
+    public PerspectiveSafePositionV1 Position { get; }
+
+    public bool FaceUp { get; }
+
+    public bool FaceDown { get; }
+
+    public PerspectiveSafeCardPropertiesV1? Printed { get; }
+
+    public PerspectiveSafeCardPropertiesV1? Current { get; }
+}
+
+public sealed class PerspectiveSafeRelationshipV1
+{
+    private readonly string source;
+    private readonly string target;
+
+    public PerspectiveSafeRelationshipV1(
+        PerspectiveSafeRelationshipKindV1 kind,
+        string? source,
+        string? target)
+    {
+        Kind = kind;
+        this.source = source ?? string.Empty;
+        this.target = target ?? string.Empty;
+    }
+
+    public PerspectiveSafeRelationshipKindV1 Kind { get; }
+
+    public string Source => source;
+
+    public string Target => target;
+}
+
+public sealed class PerspectiveSafeChainLinkV1
+{
+    private readonly string? source;
+    private readonly string[] targets;
+    private readonly ReadOnlyCollection<string> targetsView;
+
+    public PerspectiveSafeChainLinkV1(
+        uint index,
+        byte? activatingPlayer = null,
+        string? source = null,
+        PerspectiveSafeSemanticZoneV1? activationZone = null,
+        ulong? effectDescription = null,
+        IEnumerable<string>? targets = null)
+    {
+        Index = index;
+        ActivatingPlayer = activatingPlayer;
+        this.source = source;
+        ActivationZone = activationZone;
+        EffectDescription = effectDescription;
+        this.targets = PerspectiveSafeCollectionV1.CopyLocators(targets);
+        targetsView = PerspectiveSafeCollectionV1.ReadOnly(this.targets);
+    }
+
+    public uint Index { get; }
+
+    public byte? ActivatingPlayer { get; }
+
+    public string? Source => source;
+
+    public PerspectiveSafeSemanticZoneV1? ActivationZone { get; }
+
+    public ulong? EffectDescription { get; }
+
+    public IReadOnlyList<string> Targets => targetsView;
+}
+
+public sealed class PerspectiveSafeChainStateV1
+{
+    private readonly PerspectiveSafeChainLinkV1[] links;
+    private readonly ReadOnlyCollection<PerspectiveSafeChainLinkV1> linksView;
+
+    public PerspectiveSafeChainStateV1(
+        uint length,
+        IEnumerable<PerspectiveSafeChainLinkV1>? links)
+    {
+        Length = length;
+        this.links = PerspectiveSafeCollectionV1.Copy(links);
+        linksView = PerspectiveSafeCollectionV1.ReadOnly(this.links);
+    }
+
+    public uint Length { get; }
+
+    public IReadOnlyList<PerspectiveSafeChainLinkV1> Links => linksView;
+}
+
+public sealed class PerspectiveSafeVisibleEventV1
+{
+    private readonly string? entityLocator;
+    private readonly string[] targets;
+    private readonly ReadOnlyCollection<string> targetsView;
+
+    public PerspectiveSafeVisibleEventV1(
+        ulong eventIndex,
+        PerspectiveSafeVisibleEventKindV1 kind,
+        byte? player = null,
+        string? entityLocator = null,
+        uint? publicPasscode = null,
+        PerspectiveSafeSemanticZoneV1? fromZone = null,
+        PerspectiveSafeSemanticZoneV1? toZone = null,
+        uint? count = null,
+        int? amount = null,
+        uint? counterType = null,
+        uint? phase = null,
+        byte? winner = null,
+        byte? winReason = null,
+        ulong? effectDescription = null,
+        IEnumerable<string>? targets = null)
+    {
+        EventIndex = eventIndex;
+        Kind = kind;
+        Player = player;
+        this.entityLocator = entityLocator;
+        PublicPasscode = publicPasscode;
+        FromZone = fromZone;
+        ToZone = toZone;
+        Count = count;
+        Amount = amount;
+        CounterType = counterType;
+        Phase = phase;
+        Winner = winner;
+        WinReason = winReason;
+        EffectDescription = effectDescription;
+        this.targets = PerspectiveSafeCollectionV1.CopyLocators(targets);
+        targetsView = PerspectiveSafeCollectionV1.ReadOnly(this.targets);
+    }
+
+    public ulong EventIndex { get; }
+
+    public PerspectiveSafeVisibleEventKindV1 Kind { get; }
+
+    public byte? Player { get; }
+
+    public string? EntityLocator => entityLocator;
+
+    public uint? PublicPasscode { get; }
+
+    public PerspectiveSafeSemanticZoneV1? FromZone { get; }
+
+    public PerspectiveSafeSemanticZoneV1? ToZone { get; }
+
+    public uint? Count { get; }
+
+    public int? Amount { get; }
+
+    public uint? CounterType { get; }
+
+    public uint? Phase { get; }
+
+    public byte? Winner { get; }
+
+    public byte? WinReason { get; }
+
+    public ulong? EffectDescription { get; }
+
+    public IReadOnlyList<string> Targets => targetsView;
+}
+
+public sealed class PerspectiveSafeDeckV1
+{
+    private readonly uint[] mainDeck;
+    private readonly uint[] extraDeck;
+    private readonly ReadOnlyCollection<uint> mainDeckView;
+    private readonly ReadOnlyCollection<uint> extraDeckView;
+
+    public PerspectiveSafeDeckV1(
+        bool known,
+        IEnumerable<uint>? mainDeck = null,
+        IEnumerable<uint>? extraDeck = null)
+    {
+        Known = known;
+        this.mainDeck = PerspectiveSafeCollectionV1.Copy(mainDeck);
+        this.extraDeck = PerspectiveSafeCollectionV1.Copy(extraDeck);
+        mainDeckView = PerspectiveSafeCollectionV1.ReadOnly(this.mainDeck);
+        extraDeckView = PerspectiveSafeCollectionV1.ReadOnly(this.extraDeck);
+    }
+
+    public bool Known { get; }
+
+    public IReadOnlyList<uint> MainDeck => mainDeckView;
+
+    public IReadOnlyList<uint> ExtraDeck => extraDeckView;
+}
+
+public sealed class PerspectiveSafeMatchContextV1
+{
+    public PerspectiveSafeMatchContextV1(
+        byte perspectivePlayer,
+        ulong duelFlags,
+        PerspectiveSafeKnowledgeV1 knowledge,
+        PerspectiveSafeDeckV1 ownDeck,
+        PerspectiveSafeDeckV1 opponentDeck)
+    {
+        PerspectivePlayer = perspectivePlayer;
+        DuelFlags = duelFlags;
+        Knowledge = knowledge;
+        OwnDeck = ownDeck ?? throw new ArgumentNullException(nameof(ownDeck));
+        OpponentDeck = opponentDeck ??
+            throw new ArgumentNullException(nameof(opponentDeck));
+    }
+
+    public byte PerspectivePlayer { get; }
+
+    public ulong DuelFlags { get; }
+
+    public PerspectiveSafeKnowledgeV1 Knowledge { get; }
+
+    public PerspectiveSafeDeckV1 OwnDeck { get; }
+
+    public PerspectiveSafeDeckV1 OpponentDeck { get; }
+}
+
+public sealed class PerspectiveSafeFrameSourceInputV1
+{
+    private readonly PerspectiveSafeZoneV1[]? zones;
+    private readonly PerspectiveSafeEntityV1[]? entities;
+    private readonly PerspectiveSafeRelationshipV1[]? relationships;
+    private readonly PerspectiveSafeVisibleEventV1[]? visibleEvents;
+    private readonly ReadOnlyCollection<PerspectiveSafeZoneV1>? zonesView;
+    private readonly ReadOnlyCollection<PerspectiveSafeEntityV1>? entitiesView;
+    private readonly ReadOnlyCollection<PerspectiveSafeRelationshipV1>?
+        relationshipsView;
+    private readonly ReadOnlyCollection<PerspectiveSafeVisibleEventV1>?
+        visibleEventsView;
+
+    public PerspectiveSafeFrameSourceInputV1(
+        PerspectiveSafeGlobalsV1? globals,
+        IEnumerable<PerspectiveSafeZoneV1>? zones,
+        IEnumerable<PerspectiveSafeEntityV1>? entities,
+        IEnumerable<PerspectiveSafeRelationshipV1>? relationships,
+        PerspectiveSafeChainStateV1? chain,
+        IEnumerable<PerspectiveSafeVisibleEventV1>? visibleEvents,
+        PerspectiveSafeMatchContextV1? matchContext)
+    {
+        Globals = globals;
+        this.zones = PerspectiveSafeCollectionV1.CopyOptional(zones);
+        this.entities = PerspectiveSafeCollectionV1.CopyOptional(entities);
+        this.relationships =
+            PerspectiveSafeCollectionV1.CopyOptional(relationships);
+        Chain = chain;
+        this.visibleEvents =
+            PerspectiveSafeCollectionV1.CopyOptional(visibleEvents);
+        MatchContext = matchContext;
+        zonesView = this.zones is null
+            ? null
+            : PerspectiveSafeCollectionV1.ReadOnly(this.zones);
+        entitiesView = this.entities is null
+            ? null
+            : PerspectiveSafeCollectionV1.ReadOnly(this.entities);
+        relationshipsView = this.relationships is null
+            ? null
+            : PerspectiveSafeCollectionV1.ReadOnly(this.relationships);
+        visibleEventsView = this.visibleEvents is null
+            ? null
+            : PerspectiveSafeCollectionV1.ReadOnly(this.visibleEvents);
+    }
+
+    public PerspectiveSafeGlobalsV1? Globals { get; }
+
+    public IReadOnlyList<PerspectiveSafeZoneV1>? Zones => zonesView;
+
+    public IReadOnlyList<PerspectiveSafeEntityV1>? Entities => entitiesView;
+
+    public IReadOnlyList<PerspectiveSafeRelationshipV1>? Relationships =>
+        relationshipsView;
+
+    public PerspectiveSafeChainStateV1? Chain { get; }
+
+    public IReadOnlyList<PerspectiveSafeVisibleEventV1>? VisibleEvents =>
+        visibleEventsView;
+
+    public PerspectiveSafeMatchContextV1? MatchContext { get; }
+}
+
+/// <summary>
+/// A structurally accepted, immutable source container. This type does not
+/// establish runtime provenance or OCGForge oracle compatibility.
+/// </summary>
+public sealed class PerspectiveSafeFrameV1
+{
+    private readonly PerspectiveSafeZoneV1[] zones;
+    private readonly PerspectiveSafeEntityV1[] entities;
+    private readonly PerspectiveSafeRelationshipV1[] relationships;
+    private readonly PerspectiveSafeVisibleEventV1[] visibleEvents;
+    private readonly ReadOnlyCollection<PerspectiveSafeZoneV1> zonesView;
+    private readonly ReadOnlyCollection<PerspectiveSafeEntityV1> entitiesView;
+    private readonly ReadOnlyCollection<PerspectiveSafeRelationshipV1>
+        relationshipsView;
+    private readonly ReadOnlyCollection<PerspectiveSafeVisibleEventV1>
+        visibleEventsView;
+
+    internal PerspectiveSafeFrameV1(PerspectiveSafeFrameSourceInputV1 input)
+    {
+        Globals = input.Globals!;
+        zones = input.Zones!.ToArray();
+        entities = input.Entities!.ToArray();
+        relationships = input.Relationships!.ToArray();
+        Chain = input.Chain!;
+        visibleEvents = input.VisibleEvents!.ToArray();
+        MatchContext = input.MatchContext!;
+        zonesView = PerspectiveSafeCollectionV1.ReadOnly(zones);
+        entitiesView = PerspectiveSafeCollectionV1.ReadOnly(entities);
+        relationshipsView = PerspectiveSafeCollectionV1.ReadOnly(relationships);
+        visibleEventsView = PerspectiveSafeCollectionV1.ReadOnly(visibleEvents);
+    }
+
+    public PerspectiveSafeGlobalsV1 Globals { get; }
+
+    public IReadOnlyList<PerspectiveSafeZoneV1> Zones => zonesView;
+
+    public IReadOnlyList<PerspectiveSafeEntityV1> Entities => entitiesView;
+
+    public IReadOnlyList<PerspectiveSafeRelationshipV1> Relationships =>
+        relationshipsView;
+
+    public PerspectiveSafeChainStateV1 Chain { get; }
+
+    public IReadOnlyList<PerspectiveSafeVisibleEventV1> VisibleEvents =>
+        visibleEventsView;
+
+    public PerspectiveSafeMatchContextV1 MatchContext { get; }
+}
+
+public sealed class PerspectiveSafeFrameSourceResultV1
+{
+    private PerspectiveSafeFrameSourceResultV1(
+        PerspectiveSafeFrameV1? frame,
+        PerspectiveSafeFrameSourceErrorV1? error)
+    {
+        if ((frame is null) == (error is null))
+        {
+            throw new ArgumentException(
+                "A source result must contain exactly one outcome.");
+        }
+
+        Frame = frame;
+        Error = error;
+    }
+
+    public PerspectiveSafeFrameV1? Frame { get; }
+
+    public PerspectiveSafeFrameSourceErrorV1? Error { get; }
+
+    public bool IsSuccess => Frame is not null && Error is null;
+
+    internal static PerspectiveSafeFrameSourceResultV1 Success(
+        PerspectiveSafeFrameV1 frame) =>
+        new(frame ?? throw new ArgumentNullException(nameof(frame)), null);
+
+    internal static PerspectiveSafeFrameSourceResultV1 Failure(
+        PerspectiveSafeFrameSourceErrorV1 error) =>
+        new(null, error);
+}
