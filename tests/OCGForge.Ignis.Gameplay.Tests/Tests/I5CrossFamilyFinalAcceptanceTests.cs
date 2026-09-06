@@ -1,5 +1,7 @@
 using System.Collections;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using OCGForge.Ignis.Gameplay;
 using static OCGForge.Ignis.Gameplay.Tests.GameplayMessageFixtures;
 using static OCGForge.Ignis.Gameplay.Tests.MirrorFixtures;
@@ -45,6 +47,27 @@ internal static class I5CrossFamilyFinalAcceptanceTests
         AssertFailureResult(
             new FlatPromptSessionV1().TryAcceptI5Prompt(new byte[] { 142 }),
             FlatPromptErrorCodeV1.UnsupportedPromptLayout);
+
+        FlatPromptSessionV1 sumSession = new();
+        AssertFailureResult(
+            sumSession.TryAcceptI5Prompt(new byte[] { 23 }),
+            FlatPromptErrorCodeV1.UnsupportedPromptFamily);
+        False(sumSession.TryCaptureSelection(
+                "MSG_SELECT_SUM:PICK:0",
+                out FlatPromptSelectionHandleV1? sumHandle,
+                out FlatPromptErrorCodeV1 sumBindingError));
+        Null(sumHandle);
+        Equal(
+            FlatPromptErrorCodeV1.InvalidI4LocalCandidateKey,
+            sumBindingError);
+        PromptCase validAfterSum = cases[0];
+        FlatPromptProjectionResultV1 afterSum = Accept(
+            sumSession,
+            validAfterSum);
+        AssertSuccess(afterSum, validAfterSum.Family);
+        Equal(
+            0UL,
+            Capture(sumSession, validAfterSum.FirstKey).PromptInstanceOrdinal);
     }
 
     internal static void TestCrossFamilyBindingLifecycle()
@@ -57,6 +80,27 @@ internal static class I5CrossFamilyFinalAcceptanceTests
         {
             FlatPromptProjectionResultV1 result = Accept(session, testCase);
             AssertSuccess(result, testCase.Family);
+            FlatPromptSelectionHandleV1 current = Capture(
+                session,
+                testCase.FirstKey);
+            FlatPromptFamilyV1 wrongFamily = testCase.Family ==
+                FlatPromptFamilyValueV1.MsgSelectCard
+                    ? FlatPromptFamilyValueV1.MsgSelectTribute
+                    : FlatPromptFamilyValueV1.MsgSelectCard;
+            FlatPromptSelectionHandleV1 wrongFamilyHandle =
+                new(
+                    current.PromptInstanceOrdinal,
+                    wrongFamily,
+                    current.I4LocalCandidateKey,
+                    current.OrderedDomain,
+                    current.ContinuationStep);
+            FlatPromptContinuationStepResultV1 wrongFamilyResult =
+                session.TryApplySelection(wrongFamilyHandle);
+            False(wrongFamilyResult.IsSuccess,
+                "a current-domain handle with the wrong family was accepted");
+            Equal(
+                FlatPromptErrorCodeV1.InvalidContinuationInstance,
+                wrongFamilyResult.Error);
             if (previous is not null)
             {
                 FlatPromptContinuationStepResultV1 stale =
@@ -68,7 +112,7 @@ internal static class I5CrossFamilyFinalAcceptanceTests
                     stale.Error);
             }
 
-            previous = Capture(session, testCase.FirstKey);
+            previous = current;
         }
     }
 
@@ -318,6 +362,48 @@ internal static class I5CrossFamilyFinalAcceptanceTests
             }
         }
 
+        string firstValueFingerprint = BuildValueFingerprint(cases);
+        string secondValueFingerprint = BuildValueFingerprint(cases);
+        Equal(firstValueFingerprint, secondValueFingerprint);
+        Console.WriteLine(
+            "I5A5_VALUE_FINGERPRINT=" + Digest(firstValueFingerprint));
+
+        const uint hiddenWorldACode = 0x13572468;
+        const uint hiddenWorldBCode = 0x24681357;
+        Authority worldA = CreateAuthorityWithHiddenOpponent(
+            hiddenWorldACode);
+        Authority worldB = CreateAuthorityWithHiddenOpponent(
+            hiddenWorldBCode);
+        BytesEqual(
+            worldA.Projection.CanonicalBytes.Span,
+            worldB.Projection.CanonicalBytes.Span);
+        Equal(worldA.Projection.Sha256, worldB.Projection.Sha256);
+        Equal(
+            worldA.Projection.PublicProjectionId,
+            worldB.Projection.PublicProjectionId);
+        byte[] pairedPrompt = SortMessage(
+            25,
+            0,
+            new SortEntry(0x11111111, 0, 0x04, 0));
+        FlatPromptSessionV1 worldASession = new();
+        FlatPromptSessionV1 worldBSession = new();
+        FlatPromptProjectionResultV1 worldAResult =
+            Accept(worldASession, pairedPrompt, worldA);
+        FlatPromptProjectionResultV1 worldBResult =
+            Accept(worldBSession, pairedPrompt, worldB);
+        AssertSuccess(worldAResult, FlatPromptFamilyValueV1.MsgSortCard);
+        AssertSuccess(worldBResult, FlatPromptFamilyValueV1.MsgSortCard);
+        Equal(PublicSignature(worldAResult), PublicSignature(worldBResult));
+        FlatPromptContinuationStepResultV1 worldAStep =
+            worldASession.TryApplySelection(Capture(
+                worldASession,
+                "MSG_SORT_CARD:PLACE:0"));
+        FlatPromptContinuationStepResultV1 worldBStep =
+            worldBSession.TryApplySelection(Capture(
+                worldBSession,
+                "MSG_SORT_CARD:PLACE:0"));
+        Equal(StepSignature(worldAStep), StepSignature(worldBStep));
+
         FlatPromptSessionV1 promptLocalSession = new();
         PromptCase firstMainDeck = new(
             "main deck one",
@@ -415,6 +501,43 @@ internal static class I5CrossFamilyFinalAcceptanceTests
             $"expected keys [{string.Join(",", expected)}]; actual keys " +
             $"[{string.Join(",", actual)}]");
     }
+
+    private static string BuildValueFingerprint(
+        IReadOnlyList<PromptCase> cases) =>
+        string.Join(
+            "\n",
+            cases.Select(testCase =>
+            {
+                FlatPromptSessionV1 session = new();
+                FlatPromptProjectionResultV1 result = Accept(
+                    session,
+                    testCase);
+                AssertSuccess(result, testCase.Family);
+                FlatPromptContinuationStepResultV1 step =
+                    session.TryApplySelection(Capture(
+                        session,
+                        testCase.FirstKey));
+                True(step.IsSuccess, step.Error.ToString());
+                return testCase.Name + "=" +
+                    PublicSignature(result) + "=" +
+                    StepSignature(step);
+            }));
+
+    private static string StepSignature(
+        FlatPromptContinuationStepResultV1 step) =>
+        string.Join(
+            "|",
+            step.IsSuccess,
+            step.Error,
+            step.IsTerminal,
+            Convert.ToHexString(step.TerminalResponseBody.ToArray()),
+            step.Projection is null
+                ? "null"
+                : PublicSignature(step.Projection));
+
+    private static string Digest(string value) =>
+        Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
     private static PromptCase[] BuildCases(Authority authority) =>
         new[]
@@ -818,6 +941,12 @@ internal static class I5CrossFamilyFinalAcceptanceTests
     }
 
     private static Authority CreateAuthority()
+        => CreateAuthorityCore(null);
+
+    private static Authority CreateAuthorityWithHiddenOpponent(uint hiddenCode)
+        => CreateAuthorityCore(hiddenCode);
+
+    private static Authority CreateAuthorityCore(uint? hiddenOpponentCode)
     {
         (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
             CreateMirror(
@@ -827,6 +956,18 @@ internal static class I5CrossFamilyFinalAcceptanceTests
                 deckCount1: 8,
                 extraCount1: 8);
         ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        if (hiddenOpponentCode is uint code)
+        {
+            MirrorApplyResult hidden = mirror.Apply(DecodeMessage(
+                decoder,
+                MoveMessage(
+                    code,
+                    empty,
+                    new ModernLocInfoV1(1, 0x01, 0, 0x08),
+                    0)));
+            True(hidden.IsSuccess, hidden.Error.ToString());
+        }
+
         CardSpec[] cards =
         {
             new(0x11111111, new ModernLocInfoV1(0, 0x04, 0, 0x05)),
