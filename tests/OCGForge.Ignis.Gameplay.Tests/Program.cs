@@ -301,7 +301,22 @@ var tests = new (string Name, Action Body)[]
         I5A3CounterPromptTests.TestSelectCounter),
 
     ("I5A4 SORT_CARD and SORT_CHAIN",
-        I5A4SortPromptTests.TestSortPrompts)
+        I5A4SortPromptTests.TestSortPrompts),
+
+    ("I5A5 supported-family dispatch and unsupported boundary",
+        I5CrossFamilyFinalAcceptanceTests.TestSupportedFamilyDispatchAndUnsupportedBoundary),
+
+    ("I5A5 cross-family binding lifecycle",
+        I5CrossFamilyFinalAcceptanceTests.TestCrossFamilyBindingLifecycle),
+
+    ("I5A5 failure atomicity and ordinal isolation",
+        I5CrossFamilyFinalAcceptanceTests.TestFailureAtomicityAndOrdinalIsolation),
+
+    ("I5A5 complete domains and response isolation",
+        I5CrossFamilyFinalAcceptanceTests.TestCompleteDomainsAndResponseIsolation),
+
+    ("I5A5 public/private authority determinism barrier",
+        I5CrossFamilyFinalAcceptanceTests.TestPublicPrivateAuthorityDeterminismBarrier)
 };
 
 int passed = 0;
