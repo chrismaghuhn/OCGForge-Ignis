@@ -79,6 +79,27 @@ public static class PerspectiveSafePublicFrameSourceV1
             return PerspectiveSafeFrameSourceResultV1.Failure(error);
         }
 
+        if (input.Globals.LifePoints.Count != 2)
+        {
+            return Failure(
+                PerspectiveSafeFrameSourceErrorCodeV1.InvalidLifePointCardinality,
+                PerspectiveSafeSourceSectionV1.Globals);
+        }
+
+        if (input.Globals.ChainLength != input.Chain.Length)
+        {
+            return Failure(
+                PerspectiveSafeFrameSourceErrorCodeV1.CrossSectionMismatch,
+                PerspectiveSafeSourceSectionV1.Chain);
+        }
+
+        if (input.Globals.DuelFlags != input.MatchContext.DuelFlags)
+        {
+            return Failure(
+                PerspectiveSafeFrameSourceErrorCodeV1.CrossSectionMismatch,
+                PerspectiveSafeSourceSectionV1.MatchContext);
+        }
+
         return PerspectiveSafeFrameSourceResultV1.Success(
             new PerspectiveSafeFrameV1(input));
     }
@@ -159,7 +180,7 @@ public static class PerspectiveSafePublicFrameSourceV1
                 return false;
             }
 
-            if (string.IsNullOrEmpty(entity.Locator))
+            if (!IsLocator(entity.Locator))
             {
                 error = Error(
                     PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator,
@@ -348,26 +369,36 @@ public static class PerspectiveSafePublicFrameSourceV1
                 return false;
             }
 
-            if (!IsPlayer(link.ActivatingPlayer) ||
-                (link.Source is not null && !IsLocator(link.Source)) ||
-                (link.ActivationZone.HasValue &&
-                 !IsSemanticZone(link.ActivationZone.Value, allowUnknown: false)) ||
-                !ValidateSortedLocators(
+            if (!IsPlayer(link.ActivatingPlayer))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidPlayer,
+                    PerspectiveSafeSourceSectionV1.Chain);
+                return false;
+            }
+
+            if (link.Source is not null && !IsLocator(link.Source))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator,
+                    PerspectiveSafeSourceSectionV1.Chain);
+                return false;
+            }
+
+            if (link.ActivationZone.HasValue &&
+                !IsSemanticZone(link.ActivationZone.Value, allowUnknown: false))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnknownEnum,
+                    PerspectiveSafeSourceSectionV1.Chain);
+                return false;
+            }
+
+            if (!ValidateSortedLocators(
                     link.Targets,
                     PerspectiveSafeSourceSectionV1.Chain,
                     out error))
             {
-                if (error.Code == 0)
-                {
-                    error = Error(
-                        link.ActivatingPlayer is > 1
-                            ? PerspectiveSafeFrameSourceErrorCodeV1.InvalidPlayer
-                            : link.ActivationZone.HasValue
-                                ? PerspectiveSafeFrameSourceErrorCodeV1.UnknownEnum
-                                : PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator,
-                        PerspectiveSafeSourceSectionV1.Chain);
-                }
-
                 return false;
             }
         }
@@ -402,32 +433,54 @@ public static class PerspectiveSafePublicFrameSourceV1
                 return false;
             }
 
-            if (!IsPlayer(visibleEvent.Player) ||
-                !IsPlayer(visibleEvent.Winner) ||
-                (visibleEvent.EntityLocator is not null &&
-                 !IsLocator(visibleEvent.EntityLocator)) ||
-                (visibleEvent.FromZone.HasValue &&
-                 !IsSemanticZone(visibleEvent.FromZone.Value, allowUnknown: false)) ||
-                (visibleEvent.ToZone.HasValue &&
-                 !IsSemanticZone(visibleEvent.ToZone.Value, allowUnknown: false)) ||
-                !ValidateSortedLocators(
+            if (!IsPlayer(visibleEvent.Player))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidPlayer,
+                    PerspectiveSafeSourceSectionV1.VisibleEvents);
+                return false;
+            }
+
+            if (!IsPlayer(visibleEvent.Winner))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidPlayer,
+                    PerspectiveSafeSourceSectionV1.VisibleEvents);
+                return false;
+            }
+
+            if (visibleEvent.EntityLocator is not null &&
+                !IsLocator(visibleEvent.EntityLocator))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator,
+                    PerspectiveSafeSourceSectionV1.VisibleEvents);
+                return false;
+            }
+
+            if (visibleEvent.FromZone.HasValue &&
+                !IsSemanticZone(visibleEvent.FromZone.Value, allowUnknown: false))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnknownEnum,
+                    PerspectiveSafeSourceSectionV1.VisibleEvents);
+                return false;
+            }
+
+            if (visibleEvent.ToZone.HasValue &&
+                !IsSemanticZone(visibleEvent.ToZone.Value, allowUnknown: false))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnknownEnum,
+                    PerspectiveSafeSourceSectionV1.VisibleEvents);
+                return false;
+            }
+
+            if (!ValidateSortedLocators(
                     visibleEvent.Targets,
                     PerspectiveSafeSourceSectionV1.VisibleEvents,
                     out error))
             {
-                if (error.Code == 0)
-                {
-                    error = Error(
-                        !IsPlayer(visibleEvent.Player) ||
-                        !IsPlayer(visibleEvent.Winner)
-                            ? PerspectiveSafeFrameSourceErrorCodeV1.InvalidPlayer
-                            : visibleEvent.FromZone.HasValue ||
-                              visibleEvent.ToZone.HasValue
-                                ? PerspectiveSafeFrameSourceErrorCodeV1.UnknownEnum
-                                : PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator,
-                        PerspectiveSafeSourceSectionV1.VisibleEvents);
-                }
-
                 return false;
             }
 
@@ -548,7 +601,23 @@ public static class PerspectiveSafePublicFrameSourceV1
 
     private static bool IsPlayer(byte? value) => !value.HasValue || value <= 1;
 
-    private static bool IsLocator(string value) => !string.IsNullOrEmpty(value);
+    private static bool IsLocator(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return false;
+        }
+
+        foreach (char character in value)
+        {
+            if (character < '\u0020' || character == '\u007f')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private static bool IsSemanticZone(
         PerspectiveSafeSemanticZoneV1 value,

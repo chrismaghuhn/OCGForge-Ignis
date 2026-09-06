@@ -18,6 +18,9 @@ internal static class I6CPublicFrameSourceTests
         Run("read-only public collections", AssertReadOnlyCollections);
         Run("equivalent values are deterministic", AssertEquivalentValuesAreDeterministic);
         Run("structured failures contain no sensitive data", AssertStructuredFailureSurface);
+        Run("locator bytes are printable", AssertPrintableLocatorBoundaries);
+        Run("cross-section invariants are enforced", AssertCrossSectionInvariants);
+        Run("first invalid invariant is diagnosed", AssertFirstInvalidInvariant);
         Run("public surface has no private escape hatch", AssertPublicSurface);
     }
 
@@ -262,9 +265,10 @@ internal static class I6CPublicFrameSourceTests
     {
         PerspectiveSafeFrameSourceInputV1 absent = CreateInput(
             new PerspectiveSafeGlobalsV1(
-                duelFlags: 0,
+                duelFlags: 0x1234,
                 lifePoints: new uint[] { 8000, 7000 },
-                turnPlayer: 0),
+                turnPlayer: 0,
+                chainLength: 1),
             CreateValidZones(),
             CreateValidEntities(),
             CreateValidRelationships(),
@@ -273,10 +277,11 @@ internal static class I6CPublicFrameSourceTests
             CreateValidMatchContext());
         PerspectiveSafeFrameSourceInputV1 presentZero = CreateInput(
             new PerspectiveSafeGlobalsV1(
-                duelFlags: 0,
+                duelFlags: 0x1234,
                 lifePoints: new uint[] { 8000, 7000 },
                 playerToAct: 0,
-                turnPlayer: 0),
+                turnPlayer: 0,
+                chainLength: 1),
             CreateValidZones(),
             CreateValidEntities(),
             CreateValidRelationships(),
@@ -516,6 +521,163 @@ internal static class I6CPublicFrameSourceTests
                 BindingFlags.Public | BindingFlags.Instance);
         Equal(2, properties.Length);
         True(properties.All(property => property.PropertyType.IsEnum));
+    }
+
+    private static void AssertPrintableLocatorBoundaries()
+    {
+        PerspectiveSafeEntityV1 controlEntity = new(
+            "entity-\n",
+            identityKnown: false,
+            passcode: null,
+            owner: null,
+            controller: 0,
+            zone: PerspectiveSafeSemanticZoneV1.Hand,
+            sequence: null,
+            overlaySequence: null,
+            position: PerspectiveSafePositionV1.Unknown,
+            faceUp: false,
+            faceDown: false);
+        AssertFailure(
+            CreateInput(
+                CreateValidGlobals(),
+                CreateValidZones(),
+                new[] { controlEntity },
+                CreateValidRelationships(),
+                CreateValidChain(),
+                CreateValidEvents(),
+                CreateValidMatchContext()),
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator);
+
+        PerspectiveSafeRelationshipV1 controlRelationship = new(
+            PerspectiveSafeRelationshipKindV1.Target,
+            "source\r",
+            "target");
+        AssertFailure(
+            CreateInput(
+                CreateValidGlobals(),
+                CreateValidZones(),
+                CreateValidEntities(),
+                new[] { controlRelationship },
+                CreateValidChain(),
+                CreateValidEvents(),
+                CreateValidMatchContext()),
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator);
+
+        PerspectiveSafeChainLinkV1 controlChainLink = new(
+            index: 0,
+            source: "source\0",
+            targets: new[] { "target" });
+        AssertFailure(
+            CreateInput(
+                CreateValidGlobals(),
+                CreateValidZones(),
+                CreateValidEntities(),
+                CreateValidRelationships(),
+                new PerspectiveSafeChainStateV1(1, new[] { controlChainLink }),
+                CreateValidEvents(),
+                CreateValidMatchContext()),
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator);
+
+        PerspectiveSafeVisibleEventV1 controlEvent = new(
+            0,
+            PerspectiveSafeVisibleEventKindV1.CardRevealed,
+            entityLocator: "entity\u007f");
+        AssertFailure(
+            CreateInput(
+                CreateValidGlobals(),
+                CreateValidZones(),
+                CreateValidEntities(),
+                CreateValidRelationships(),
+                CreateValidChain(),
+                new[] { controlEvent },
+                CreateValidMatchContext()),
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator);
+    }
+
+    private static void AssertCrossSectionInvariants()
+    {
+        PerspectiveSafeFrameSourceInputV1 wrongLifePointCardinality = CreateInput(
+            new PerspectiveSafeGlobalsV1(
+                duelFlags: 0x1234,
+                lifePoints: new uint[] { 8000 },
+                turnPlayer: 0,
+                chainLength: 1),
+            CreateValidZones(),
+            CreateValidEntities(),
+            CreateValidRelationships(),
+            CreateValidChain(),
+            CreateValidEvents(),
+            CreateValidMatchContext());
+        AssertFailure(
+            wrongLifePointCardinality,
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidLifePointCardinality);
+
+        PerspectiveSafeFrameSourceInputV1 wrongChainLength = CreateInput(
+            new PerspectiveSafeGlobalsV1(
+                duelFlags: 0x1234,
+                lifePoints: new uint[] { 8000, 7000 },
+                turnPlayer: 0,
+                chainLength: 2),
+            CreateValidZones(),
+            CreateValidEntities(),
+            CreateValidRelationships(),
+            CreateValidChain(),
+            CreateValidEvents(),
+            CreateValidMatchContext());
+        AssertFailure(
+            wrongChainLength,
+            PerspectiveSafeFrameSourceErrorCodeV1.CrossSectionMismatch);
+
+        PerspectiveSafeFrameSourceInputV1 wrongDuelFlags = CreateInput(
+            CreateValidGlobals(),
+            CreateValidZones(),
+            CreateValidEntities(),
+            CreateValidRelationships(),
+            CreateValidChain(),
+            CreateValidEvents(),
+            new PerspectiveSafeMatchContextV1(
+                perspectivePlayer: 0,
+                duelFlags: 0x4321,
+                knowledge: new(true, false),
+                ownDeck: new(true, new uint[] { 1, 2 }, new uint[] { 3 }),
+                opponentDeck: new(false)));
+        AssertFailure(
+            wrongDuelFlags,
+            PerspectiveSafeFrameSourceErrorCodeV1.CrossSectionMismatch);
+    }
+
+    private static void AssertFirstInvalidInvariant()
+    {
+        PerspectiveSafeVisibleEventV1 invalidLocatorWithZone = new(
+            0,
+            PerspectiveSafeVisibleEventKindV1.CardMoved,
+            entityLocator: "entity\n",
+            fromZone: PerspectiveSafeSemanticZoneV1.Hand);
+        AssertFailure(
+            CreateInput(
+                CreateValidGlobals(),
+                CreateValidZones(),
+                CreateValidEntities(),
+                CreateValidRelationships(),
+                CreateValidChain(),
+                new[] { invalidLocatorWithZone },
+                CreateValidMatchContext()),
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator);
+
+        PerspectiveSafeChainLinkV1 invalidSourceWithZone = new(
+            index: 0,
+            source: "source\r",
+            activationZone: PerspectiveSafeSemanticZoneV1.Hand);
+        AssertFailure(
+            CreateInput(
+                CreateValidGlobals(),
+                CreateValidZones(),
+                CreateValidEntities(),
+                CreateValidRelationships(),
+                new PerspectiveSafeChainStateV1(1, new[] { invalidSourceWithZone }),
+                CreateValidEvents(),
+                CreateValidMatchContext()),
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator);
     }
 
     private static PerspectiveSafeFrameV1 Accept(

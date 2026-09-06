@@ -33,7 +33,9 @@ public enum PerspectiveSafeFrameSourceErrorCodeV1 : byte
     InvalidOrdering = 15,
     ContradictoryEntityState = 16,
     InvalidDeckState = 17,
-    ChainLengthMismatch = 18
+    ChainLengthMismatch = 18,
+    InvalidLifePointCardinality = 19,
+    CrossSectionMismatch = 20
 }
 
 public readonly record struct PerspectiveSafeFrameSourceErrorV1(
