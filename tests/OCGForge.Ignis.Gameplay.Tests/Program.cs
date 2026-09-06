@@ -316,7 +316,10 @@ var tests = new (string Name, Action Body)[]
         I5CrossFamilyFinalAcceptanceTests.TestCompleteDomainsAndResponseIsolation),
 
     ("I5A5 public/private authority determinism barrier",
-        I5CrossFamilyFinalAcceptanceTests.TestPublicPrivateAuthorityDeterminismBarrier)
+        I5CrossFamilyFinalAcceptanceTests.TestPublicPrivateAuthorityDeterminismBarrier),
+
+    ("I6C1 source types and fail-closed container",
+        I6CPublicFrameSourceTests.TestI6C1SourceContainer)
 };
 
 int passed = 0;
