@@ -120,7 +120,12 @@ public static class PerspectiveSafePublicFrameSourceV1
                     PerspectiveSafeSourceSectionV1.Input));
         }
 
-        MirrorSnapshotV1 snapshot = mirror.Snapshot;
+        return TryCreateI6C2(mirror.Snapshot);
+    }
+
+    private static PerspectiveSafeI6C2SourceResultV1 TryCreateI6C2(
+        MirrorSnapshotV1 snapshot)
+    {
         if (!TryCreateI6C2Globals(
                 snapshot,
                 out PerspectiveSafeI6C2GlobalsV1? globals,
@@ -157,6 +162,954 @@ public static class PerspectiveSafePublicFrameSourceV1
             new(globals!, zones, entities, statuses);
         return PerspectiveSafeI6C2SourceResultV1.Success(source);
     }
+
+    /// <summary>
+    /// Extracts the I6C3 current relation, overlay, and chain facts from one
+    /// committed Mirror snapshot. The returned source remains partial when a
+    /// later I6 slice owns a required configuration seam.
+    /// </summary>
+    public static PerspectiveSafeI6C3SourceResultV1 TryCreateI6C3(
+        PerspectiveStateMirrorV1? mirror)
+    {
+        if (mirror is null)
+        {
+            return PerspectiveSafeI6C3SourceResultV1.Failure(
+                Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.MissingMirror,
+                    PerspectiveSafeSourceSectionV1.Input));
+        }
+
+        MirrorSnapshotV1 snapshot = mirror.Snapshot;
+        PerspectiveSafeI6C2SourceResultV1 baseResult = TryCreateI6C2(snapshot);
+        if (!baseResult.IsSuccess)
+        {
+            return PerspectiveSafeI6C3SourceResultV1.Failure(
+                baseResult.Error!.Value);
+        }
+
+        PerspectiveSafeFrameSourceErrorV1 error;
+        if (!TryCreateI6C3Entities(
+                snapshot,
+                baseResult.Source!,
+                out PerspectiveSafeZoneV1[] zones,
+                out PerspectiveSafeEntityV1[] entities,
+                out Dictionary<MirrorEntityIdV1, string> locatorById,
+                out Dictionary<MirrorEntityIdV1, MirrorCardSnapshotV1> cardsById,
+                out error,
+                out bool overlayProof,
+                out bool overlayIdentityBlocked,
+                out bool overlayCurrentPropertiesBlocked))
+        {
+            return PerspectiveSafeI6C3SourceResultV1.Failure(error);
+        }
+
+        if (!TryCreateI6C3Relationships(
+                snapshot,
+                locatorById,
+                cardsById,
+                out PerspectiveSafeRelationshipV1[] relationships,
+                out bool targetPending,
+                out bool equipPending,
+                out bool relationshipEndpointPending,
+                out error))
+        {
+            return PerspectiveSafeI6C3SourceResultV1.Failure(error);
+        }
+
+        if (!TryCreateI6C3Chain(
+                snapshot,
+                locatorById,
+                cardsById,
+                entities,
+                relationships,
+                targetPending,
+                out PerspectiveSafeChainStateV1 chain,
+                out bool chainPending,
+                out bool activationZonePending,
+                out error))
+        {
+            return PerspectiveSafeI6C3SourceResultV1.Failure(error);
+        }
+
+        PerspectiveSafeI6C3ConstituentStatusV1[] statuses =
+            CreateI6C3Statuses(
+                overlayProof,
+                overlayIdentityBlocked,
+                overlayCurrentPropertiesBlocked,
+                targetPending,
+                equipPending,
+                relationshipEndpointPending,
+                chainPending,
+                activationZonePending);
+        PerspectiveSafeI6C3StateSourceV1 source =
+            new(
+                baseResult.Source!,
+                zones,
+                entities,
+                relationships,
+                chain,
+                statuses);
+        return PerspectiveSafeI6C3SourceResultV1.Success(source);
+    }
+
+    private static bool TryCreateI6C3Entities(
+        MirrorSnapshotV1 snapshot,
+        PerspectiveSafeI6C2StateSourceV1 baseSource,
+        out PerspectiveSafeZoneV1[] zones,
+        out PerspectiveSafeEntityV1[] entities,
+        out Dictionary<MirrorEntityIdV1, string> locatorById,
+        out Dictionary<MirrorEntityIdV1, MirrorCardSnapshotV1> cardsById,
+        out PerspectiveSafeFrameSourceErrorV1 error,
+        out bool overlayProof,
+        out bool overlayIdentityBlocked,
+        out bool overlayCurrentPropertiesBlocked)
+    {
+        zones = Array.Empty<PerspectiveSafeZoneV1>();
+        entities = Array.Empty<PerspectiveSafeEntityV1>();
+        locatorById = new();
+        cardsById = new();
+        overlayProof = false;
+        overlayIdentityBlocked = false;
+        overlayCurrentPropertiesBlocked = false;
+        if (!TryGetAbsolutePerspective(snapshot, out byte perspectivePlayer))
+        {
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                PerspectiveSafeSourceSectionV1.Entities);
+            return false;
+        }
+
+        Dictionary<string, PerspectiveSafeEntityV1> baseEntities =
+            baseSource.Entities.ToDictionary(
+                entity => entity.Locator,
+                StringComparer.Ordinal);
+        List<I6C3OrdinalCandidate> ordinalCandidates = new();
+        foreach (MirrorCardSnapshotV1 card in snapshot.Cards)
+        {
+            if (!cardsById.TryAdd(card.EntityId, card))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                    PerspectiveSafeSourceSectionV1.Entities);
+                return false;
+            }
+
+            if (card.IsOverlay ||
+                !TryMapOrdinaryZone(card.Zone, out PerspectiveSafeSemanticZoneV1 semanticZone))
+            {
+                continue;
+            }
+
+            if (!TryGetAbsolutePlayer(
+                    snapshot,
+                    card.Controller,
+                    out byte absoluteController,
+                    out error) ||
+                !TryReadCardCode(
+                    card.CardCode,
+                    out uint? cardCode,
+                    out error) ||
+                !TryReadOwner(
+                    snapshot,
+                    card.Owner,
+                    out byte? owner,
+                    out error))
+            {
+                return false;
+            }
+
+            bool ownerIsPerspective =
+                (owner ?? absoluteController) == perspectivePlayer;
+            bool publicIdentity = card.CardCode.IsKnown &&
+                card.CardCode.Provenance is
+                    MirrorProvenanceV1.PublicProtocolFact or
+                    MirrorProvenanceV1.DerivedFromProvenPublicFacts;
+            bool identityVisible = ownerIsPerspective || publicIdentity;
+            bool pile = semanticZone is
+                PerspectiveSafeSemanticZoneV1.Hand or
+                PerspectiveSafeSemanticZoneV1.ExtraDeck;
+            if (pile && !identityVisible)
+            {
+                continue;
+            }
+
+            if (pile && !cardCode.HasValue)
+            {
+                continue;
+            }
+
+            bool sequenceVisible = semanticZone switch
+            {
+                PerspectiveSafeSemanticZoneV1.Hand => ownerIsPerspective,
+                PerspectiveSafeSemanticZoneV1.ExtraDeck => false,
+                _ => true
+            };
+            if (sequenceVisible)
+            {
+                if (!TryMapPublicLocatorZone(
+                        semanticZone,
+                        out PublicSemanticZoneV1 locatorZone) ||
+                    !PublicSemanticLocatorV1.TryCreateIndexed(
+                        absoluteController,
+                        locatorZone,
+                        card.Sequence,
+                        out PublicSemanticLocatorV1? locator))
+                {
+                    error = Error(
+                        PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                        PerspectiveSafeSourceSectionV1.Entities);
+                    return false;
+                }
+
+                if (baseEntities.ContainsKey(locator!.Value))
+                {
+                    locatorById[card.EntityId] = locator.Value;
+                }
+            }
+            else if (cardCode.HasValue)
+            {
+                ordinalCandidates.Add(new(
+                    card,
+                    absoluteController,
+                    semanticZone,
+                    cardCode.Value,
+                    card.Sequence));
+            }
+        }
+
+        ordinalCandidates.Sort(static (left, right) =>
+        {
+            int result = left.Controller.CompareTo(right.Controller);
+            if (result != 0)
+            {
+                return result;
+            }
+
+            result = OrdinalPileRank(left.Zone).CompareTo(OrdinalPileRank(right.Zone));
+            return result != 0
+                ? result
+                : left.SourceSequence.CompareTo(right.SourceSequence);
+        });
+        Dictionary<(byte Controller, uint CardCode), uint> ordinalCounters = new();
+        foreach (I6C3OrdinalCandidate candidate in ordinalCandidates)
+        {
+            (byte Controller, uint CardCode) key =
+                (candidate.Controller, candidate.CardCode);
+            if (!ordinalCounters.TryGetValue(key, out uint ordinal))
+            {
+                ordinal = 0;
+            }
+
+            if (!PublicSemanticLocatorV1.TryCreatePublicOrdinal(
+                    candidate.Controller,
+                    ToPublicOrdinalZone(candidate.Zone),
+                    candidate.CardCode,
+                    ordinal,
+                    out PublicSemanticLocatorV1? locator))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    PerspectiveSafeSourceSectionV1.Entities);
+                return false;
+            }
+
+            if (baseEntities.ContainsKey(locator!.Value))
+            {
+                locatorById[candidate.Card.EntityId] = locator.Value;
+            }
+
+            if (ordinal == uint.MaxValue)
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    PerspectiveSafeSourceSectionV1.Entities);
+                return false;
+            }
+
+            ordinalCounters[key] = ordinal + 1;
+        }
+
+        List<PerspectiveSafeEntityV1> entityValues =
+            baseSource.Entities.ToList();
+        Dictionary<MirrorEntityIdV1, List<MirrorRelationSnapshotV1>>
+            overlayRelationsByMaterial = new();
+        foreach (MirrorRelationSnapshotV1 relation in snapshot.OverlayRelations)
+        {
+            if (!cardsById.TryGetValue(relation.Source, out MirrorCardSnapshotV1? parent) ||
+                !cardsById.TryGetValue(relation.Target, out MirrorCardSnapshotV1? material) ||
+                material is null ||
+                !material.IsOverlay ||
+                parent is null ||
+                parent.IsOverlay ||
+                parent.Zone != MirrorZoneV1.MonsterZone ||
+                material.Zone != MirrorZoneV1.MonsterZone ||
+                parent.Controller != material.Controller ||
+                parent.Sequence != material.Sequence)
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                    PerspectiveSafeSourceSectionV1.Relationships);
+                return false;
+            }
+
+            if (!overlayRelationsByMaterial.TryGetValue(
+                    relation.Target,
+                    out List<MirrorRelationSnapshotV1>? relations))
+            {
+                relations = new();
+                overlayRelationsByMaterial.Add(relation.Target, relations);
+            }
+
+            relations.Add(relation);
+        }
+
+        uint[] overlayTotals = new uint[2];
+        uint[] overlayPublic = new uint[2];
+        HashSet<string> publicLocators =
+            new(entityValues.Select(entity => entity.Locator), StringComparer.Ordinal);
+        foreach (MirrorCardSnapshotV1 material in cardsById.Values
+                     .Where(card => card.IsOverlay)
+                     .OrderBy(card => card.Controller)
+                     .ThenBy(card => card.Sequence)
+                     .ThenBy(card => card.OverlayIndex))
+        {
+            overlayIdentityBlocked = true;
+            if (!overlayRelationsByMaterial.TryGetValue(
+                    material.EntityId,
+                    out List<MirrorRelationSnapshotV1>? relations) ||
+                relations.Count != 1)
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                    PerspectiveSafeSourceSectionV1.Relationships);
+                return false;
+            }
+
+            MirrorRelationSnapshotV1 relation = relations[0];
+            MirrorCardSnapshotV1 parent = cardsById[relation.Source];
+            if (!TryGetAbsolutePlayer(
+                    snapshot,
+                    material.Controller,
+                    out byte absoluteController,
+                    out error) ||
+                !locatorById.TryGetValue(parent.EntityId, out string? parentLocator) ||
+                !PublicSemanticLocatorV1.TryCreateOverlay(
+                    absoluteController,
+                    parent.Sequence,
+                    material.OverlayIndex,
+                    out PublicSemanticLocatorV1? locator) ||
+                !publicLocators.Add(locator!.Value))
+            {
+                if (error.Code == 0)
+                {
+                    error = Error(
+                        PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                        PerspectiveSafeSourceSectionV1.Entities);
+                }
+
+                return false;
+            }
+
+            if (!baseEntities.TryGetValue(parentLocator!, out PerspectiveSafeEntityV1? parentEntity))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    PerspectiveSafeSourceSectionV1.Entities);
+                return false;
+            }
+
+            if (!TryReadCardCode(
+                    material.CardCode,
+                    out uint? materialCode,
+                    out error) ||
+                !TryReadPosition(
+                    material.Position,
+                    out _,
+                    out PerspectiveSafePositionV1 position,
+                    out error) ||
+                !TryReadOwner(
+                    snapshot,
+                    material.Owner,
+                    out byte? owner,
+                    out error))
+            {
+                return false;
+            }
+
+            bool identityVisible = parentEntity.IdentityKnown && materialCode.HasValue;
+            PerspectiveSafeCardPropertiesV1? current = null;
+            if (identityVisible)
+            {
+                overlayCurrentPropertiesBlocked = true;
+            }
+
+            entityValues.Add(new PerspectiveSafeEntityV1(
+                locator.Value,
+                identityVisible,
+                identityVisible ? materialCode : null,
+                owner,
+                absoluteController,
+                PerspectiveSafeSemanticZoneV1.Overlay,
+                parent.Sequence,
+                material.OverlayIndex,
+                position,
+                position is
+                    PerspectiveSafePositionV1.FaceUpAttack or
+                    PerspectiveSafePositionV1.FaceUpDefense,
+                position is
+                    PerspectiveSafePositionV1.FaceDownAttack or
+                    PerspectiveSafePositionV1.FaceDownDefense,
+                printed: null,
+                current));
+            locatorById[material.EntityId] = locator.Value;
+            overlayTotals[absoluteController] = checked(overlayTotals[absoluteController] + 1);
+            if (identityVisible)
+            {
+                overlayPublic[absoluteController] =
+                    checked(overlayPublic[absoluteController] + 1);
+            }
+        }
+
+        if (snapshot.OverlayRelations.Count !=
+            cardsById.Values.Count(card => card.IsOverlay))
+        {
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                PerspectiveSafeSourceSectionV1.Relationships);
+            return false;
+        }
+
+        entityValues.Sort(static (left, right) =>
+            StringComparer.Ordinal.Compare(left.Locator, right.Locator));
+        if (entityValues.Select(entity => entity.Locator).Distinct(StringComparer.Ordinal).Count() !=
+            entityValues.Count)
+        {
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                PerspectiveSafeSourceSectionV1.Entities);
+            return false;
+        }
+
+        List<PerspectiveSafeZoneV1> zoneValues = baseSource.Zones.ToList();
+        for (byte player = 0; player < 2; player++)
+        {
+            zoneValues.Add(new(
+                player,
+                PerspectiveSafeSemanticZoneV1.Overlay,
+                overlayTotals[player],
+                overlayPublic[player],
+                overlayTotals[player] - overlayPublic[player],
+                false));
+        }
+
+        zoneValues.Sort(CompareZones);
+        zones = zoneValues.ToArray();
+        entities = entityValues.ToArray();
+        overlayProof = true;
+        error = default;
+        return true;
+    }
+
+    private static bool TryCreateI6C3Relationships(
+        MirrorSnapshotV1 snapshot,
+        Dictionary<MirrorEntityIdV1, string> locatorById,
+        Dictionary<MirrorEntityIdV1, MirrorCardSnapshotV1> cardsById,
+        out PerspectiveSafeRelationshipV1[] relationships,
+        out bool targetPending,
+        out bool equipPending,
+        out bool endpointPending,
+        out PerspectiveSafeFrameSourceErrorV1 error)
+    {
+        List<PerspectiveSafeRelationshipV1> values = new();
+        HashSet<(PerspectiveSafeRelationshipKindV1 Kind, string Source, string Target)>
+            seen = new();
+        targetPending = false;
+        equipPending = false;
+        endpointPending = false;
+
+        foreach (MirrorRelationSnapshotV1 relation in snapshot.OverlayRelations)
+        {
+            if (!locatorById.TryGetValue(relation.Source, out string? parentLocator) ||
+                !locatorById.TryGetValue(relation.Target, out string? materialLocator))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    PerspectiveSafeSourceSectionV1.Relationships);
+                relationships = Array.Empty<PerspectiveSafeRelationshipV1>();
+                return false;
+            }
+
+            if (!seen.Add((
+                    PerspectiveSafeRelationshipKindV1.XyzMaterial,
+                    materialLocator,
+                    parentLocator)))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                    PerspectiveSafeSourceSectionV1.Relationships);
+                relationships = Array.Empty<PerspectiveSafeRelationshipV1>();
+                return false;
+            }
+
+            values.Add(new(
+                PerspectiveSafeRelationshipKindV1.XyzMaterial,
+                materialLocator,
+                parentLocator));
+        }
+
+        foreach (MirrorRelationSnapshotV1 relation in snapshot.EquipmentRelations)
+        {
+            I6C3EndpointResolution sourceResolution = TryResolveI6C3Endpoint(
+                snapshot,
+                relation.Source,
+                locatorById,
+                cardsById,
+                out string? source,
+                out PerspectiveSafeFrameSourceErrorV1 sourceError);
+            I6C3EndpointResolution targetResolution = TryResolveI6C3Endpoint(
+                snapshot,
+                relation.Target,
+                locatorById,
+                cardsById,
+                out string? target,
+                out PerspectiveSafeFrameSourceErrorV1 targetError);
+            if (sourceResolution == I6C3EndpointResolution.Unproven ||
+                targetResolution == I6C3EndpointResolution.Unproven)
+            {
+                error = sourceResolution == I6C3EndpointResolution.Unproven
+                    ? sourceError
+                    : targetError;
+                relationships = Array.Empty<PerspectiveSafeRelationshipV1>();
+                return false;
+            }
+
+            if (sourceResolution == I6C3EndpointResolution.PendingI6C5 ||
+                targetResolution == I6C3EndpointResolution.PendingI6C5)
+            {
+                equipPending = true;
+                endpointPending = true;
+                continue;
+            }
+
+            if (sourceResolution == I6C3EndpointResolution.Hidden ||
+                targetResolution == I6C3EndpointResolution.Hidden)
+            {
+                continue;
+            }
+
+            if (!seen.Add((PerspectiveSafeRelationshipKindV1.Equip, source!, target!)))
+            {
+                continue;
+            }
+
+            values.Add(new(
+                PerspectiveSafeRelationshipKindV1.Equip,
+                source,
+                target));
+        }
+
+        foreach (MirrorRelationSnapshotV1 relation in snapshot.TargetRelations)
+        {
+            I6C3EndpointResolution sourceResolution = TryResolveI6C3Endpoint(
+                snapshot,
+                relation.Source,
+                locatorById,
+                cardsById,
+                out string? source,
+                out PerspectiveSafeFrameSourceErrorV1 sourceError);
+            I6C3EndpointResolution targetResolution = TryResolveI6C3Endpoint(
+                snapshot,
+                relation.Target,
+                locatorById,
+                cardsById,
+                out string? target,
+                out PerspectiveSafeFrameSourceErrorV1 targetError);
+            if (sourceResolution == I6C3EndpointResolution.Unproven ||
+                targetResolution == I6C3EndpointResolution.Unproven)
+            {
+                error = sourceResolution == I6C3EndpointResolution.Unproven
+                    ? sourceError
+                    : targetError;
+                relationships = Array.Empty<PerspectiveSafeRelationshipV1>();
+                return false;
+            }
+
+            if (sourceResolution == I6C3EndpointResolution.PendingI6C5 ||
+                targetResolution == I6C3EndpointResolution.PendingI6C5)
+            {
+                targetPending = true;
+                endpointPending = true;
+                continue;
+            }
+
+            if (sourceResolution == I6C3EndpointResolution.Hidden ||
+                targetResolution == I6C3EndpointResolution.Hidden)
+            {
+                continue;
+            }
+
+            if (!seen.Add((PerspectiveSafeRelationshipKindV1.Target, source!, target!)))
+            {
+                continue;
+            }
+
+            values.Add(new(
+                PerspectiveSafeRelationshipKindV1.Target,
+                source,
+                target));
+        }
+
+        values.Sort(CompareRelationships);
+        relationships = values.ToArray();
+        error = default;
+        return true;
+    }
+
+    private static bool TryCreateI6C3Chain(
+        MirrorSnapshotV1 snapshot,
+        Dictionary<MirrorEntityIdV1, string> locatorById,
+        Dictionary<MirrorEntityIdV1, MirrorCardSnapshotV1> cardsById,
+        IReadOnlyList<PerspectiveSafeEntityV1> entities,
+        IReadOnlyList<PerspectiveSafeRelationshipV1> relationships,
+        bool targetRelationshipsPending,
+        out PerspectiveSafeChainStateV1 chain,
+        out bool chainPending,
+        out bool activationZonePending,
+        out PerspectiveSafeFrameSourceErrorV1 error)
+    {
+        chain = new PerspectiveSafeChainStateV1(0, Array.Empty<PerspectiveSafeChainLinkV1>());
+        chainPending = targetRelationshipsPending;
+        activationZonePending = false;
+        List<MirrorChainSnapshotV1> sourceChains = snapshot.Chains.ToList();
+        if (snapshot.PendingChainSource is not null)
+        {
+            sourceChains.Add(snapshot.PendingChainSource);
+        }
+
+        Dictionary<string, PerspectiveSafeEntityV1> entitiesByLocator =
+            entities.ToDictionary(entity => entity.Locator, StringComparer.Ordinal);
+        List<PerspectiveSafeChainLinkV1> links = new(sourceChains.Count);
+        for (int index = 0; index < sourceChains.Count; index++)
+        {
+            MirrorChainSnapshotV1 sourceChain = sourceChains[index];
+            uint expectedSize = checked((uint)index + 1);
+            if (sourceChain.ChainSize != expectedSize ||
+                sourceChain.TriggeringController > 1 ||
+                !cardsById.TryGetValue(sourceChain.Card, out MirrorCardSnapshotV1? sourceCard))
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                    PerspectiveSafeSourceSectionV1.Chain);
+                return false;
+            }
+
+            if (!TryGetAbsolutePlayer(
+                    snapshot,
+                    sourceCard.Controller,
+                    out byte absoluteController,
+                    out error))
+            {
+                return false;
+            }
+
+            if (!TryMapChainActivationZone(
+                    sourceCard,
+                    out PerspectiveSafeSemanticZoneV1? activationZone,
+                    out bool activationPending,
+                    out error))
+            {
+                return false;
+            }
+
+            activationZonePending |= activationPending;
+            if (activationPending)
+            {
+                chainPending = true;
+            }
+
+            I6C3EndpointResolution sourceResolution = TryResolveI6C3Endpoint(
+                snapshot,
+                sourceChain.Card,
+                locatorById,
+                cardsById,
+                out string? sourceLocator,
+                out error);
+            if (sourceResolution == I6C3EndpointResolution.Unproven)
+            {
+                return false;
+            }
+
+            if (sourceResolution == I6C3EndpointResolution.PendingI6C5)
+            {
+                sourceLocator = null;
+                chainPending = true;
+            }
+            else if (sourceResolution == I6C3EndpointResolution.Hidden)
+            {
+                sourceLocator = null;
+            }
+
+            PerspectiveSafeEntityV1? sourceEntity = sourceLocator is null
+                ? null
+                : entitiesByLocator[sourceLocator];
+            bool sourcePublic = sourceEntity?.IdentityKnown == true;
+            if (!sourcePublic)
+            {
+                sourceLocator = null;
+            }
+
+            ulong? effectDescription = sourcePublic
+                ? sourceChain.Description
+                : null;
+            List<string> targets = new();
+            if (sourcePublic)
+            {
+                targets.AddRange(
+                    relationships
+                        .Where(relation =>
+                            relation.Kind == PerspectiveSafeRelationshipKindV1.Target &&
+                            relation.Source == sourceLocator)
+                        .Select(relation => relation.Target)
+                        .Distinct(StringComparer.Ordinal));
+                targets.Sort(StringComparer.Ordinal);
+            }
+
+            links.Add(new PerspectiveSafeChainLinkV1(
+                (uint)index,
+                sourceChain.TriggeringController,
+                sourceLocator,
+                activationPending ? null : activationZone,
+                effectDescription,
+                targets));
+        }
+
+        chain = new PerspectiveSafeChainStateV1(
+            (uint)links.Count,
+            links);
+        error = default;
+        return true;
+    }
+
+    private static I6C3EndpointResolution TryResolveI6C3Endpoint(
+        MirrorSnapshotV1 snapshot,
+        MirrorEntityIdV1 id,
+        Dictionary<MirrorEntityIdV1, string> locatorById,
+        Dictionary<MirrorEntityIdV1, MirrorCardSnapshotV1> cardsById,
+        out string? locator,
+        out PerspectiveSafeFrameSourceErrorV1 error)
+    {
+        locator = null;
+        if (locatorById.TryGetValue(id, out string? resolved))
+        {
+            locator = resolved;
+            error = default;
+            return I6C3EndpointResolution.Resolved;
+        }
+
+        if (!cardsById.TryGetValue(id, out MirrorCardSnapshotV1? card))
+        {
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                PerspectiveSafeSourceSectionV1.Relationships);
+            return I6C3EndpointResolution.Unproven;
+        }
+
+        if (card.IsOverlay)
+        {
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                PerspectiveSafeSourceSectionV1.Relationships);
+            return I6C3EndpointResolution.Unproven;
+        }
+
+        if (card.Zone == MirrorZoneV1.SpellTrapZone)
+        {
+            error = default;
+            return I6C3EndpointResolution.PendingI6C5;
+        }
+
+        if (card.Zone == MirrorZoneV1.MainDeck)
+        {
+            error = default;
+            return I6C3EndpointResolution.Hidden;
+        }
+
+        if (card.Zone is MirrorZoneV1.Hand or MirrorZoneV1.ExtraDeck)
+        {
+            if (!TryGetAbsolutePlayer(
+                    snapshot,
+                    card.Controller,
+                    out byte absoluteController,
+                    out error) ||
+                !TryReadOwner(
+                    snapshot,
+                    card.Owner,
+                    out byte? owner,
+                    out error) ||
+                !TryReadCardCode(
+                    card.CardCode,
+                    out uint? cardCode,
+                    out error))
+            {
+                return I6C3EndpointResolution.Unproven;
+            }
+
+            bool visible =
+                (owner ?? absoluteController) == snapshot.Perspective.PlayerType ||
+                (cardCode.HasValue && card.CardCode.Provenance is
+                    MirrorProvenanceV1.PublicProtocolFact or
+                    MirrorProvenanceV1.DerivedFromProvenPublicFacts);
+            if (visible)
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    PerspectiveSafeSourceSectionV1.Relationships);
+                return I6C3EndpointResolution.Unproven;
+            }
+
+            error = default;
+            return I6C3EndpointResolution.Hidden;
+        }
+
+        error = Error(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            PerspectiveSafeSourceSectionV1.Relationships);
+        return I6C3EndpointResolution.Unproven;
+    }
+
+    private static bool TryMapChainActivationZone(
+        MirrorCardSnapshotV1 source,
+        out PerspectiveSafeSemanticZoneV1? zone,
+        out bool pendingI6C5,
+        out PerspectiveSafeFrameSourceErrorV1 error)
+    {
+        pendingI6C5 = false;
+        if (source.IsOverlay)
+        {
+            zone = PerspectiveSafeSemanticZoneV1.Overlay;
+            error = default;
+            return true;
+        }
+
+        if (TryMapOrdinaryZone(source.Zone, out PerspectiveSafeSemanticZoneV1 ordinary))
+        {
+            zone = ordinary;
+            error = default;
+            return true;
+        }
+
+        if (source.Zone == MirrorZoneV1.SpellTrapZone)
+        {
+            zone = null;
+            pendingI6C5 = true;
+            error = default;
+            return true;
+        }
+
+        zone = null;
+        error = Error(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            PerspectiveSafeSourceSectionV1.Chain);
+        return false;
+    }
+
+    private static PerspectiveSafeI6C3ConstituentStatusV1[] CreateI6C3Statuses(
+        bool overlayProof,
+        bool overlayIdentityBlocked,
+        bool overlayCurrentPropertiesBlocked,
+        bool targetPending,
+        bool equipPending,
+        bool endpointPending,
+        bool chainPending,
+        bool activationZonePending) =>
+        new[]
+        {
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.OverlayZone,
+                overlayProof
+                    ? PerspectiveSafeI6C3SourceStatusV1.Proven
+                    : PerspectiveSafeI6C3SourceStatusV1.Blocked),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.OverlayEntities,
+                overlayCurrentPropertiesBlocked
+                    ? PerspectiveSafeI6C3SourceStatusV1.Blocked
+                    : overlayProof
+                    ? PerspectiveSafeI6C3SourceStatusV1.Proven
+                    : PerspectiveSafeI6C3SourceStatusV1.Blocked),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.OverlayLocators,
+                overlayProof
+                    ? PerspectiveSafeI6C3SourceStatusV1.Proven
+                    : PerspectiveSafeI6C3SourceStatusV1.Blocked),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.OverlayIdentity,
+                overlayIdentityBlocked
+                    ? PerspectiveSafeI6C3SourceStatusV1.Blocked
+                    : overlayProof
+                    ? PerspectiveSafeI6C3SourceStatusV1.Proven
+                    : PerspectiveSafeI6C3SourceStatusV1.Blocked),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.OverlayCurrentProperties,
+                overlayCurrentPropertiesBlocked
+                    ? PerspectiveSafeI6C3SourceStatusV1.Blocked
+                    : PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.XyzMaterialRelationships,
+                PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.EquipRelationships,
+                equipPending
+                    ? PerspectiveSafeI6C3SourceStatusV1.BlockedPendingI6C5
+                    : PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.TargetRelationships,
+                targetPending
+                    ? PerspectiveSafeI6C3SourceStatusV1.BlockedPendingI6C5
+                    : PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.RelationshipEndpoints,
+                endpointPending
+                    ? PerspectiveSafeI6C3SourceStatusV1.BlockedPendingI6C5
+                    : PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.RelationshipOrdering,
+                PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.ChainTriggerMetadata,
+                PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.ChainLength,
+                PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.ChainIndexMapping,
+                PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.ChainLinkOrder,
+                PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.ChainActivatingPlayer,
+                PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.ChainSourceLocator,
+                chainPending
+                    ? PerspectiveSafeI6C3SourceStatusV1.BlockedPendingI6C5
+                    : PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.ChainActivationZone,
+                activationZonePending
+                    ? PerspectiveSafeI6C3SourceStatusV1.BlockedPendingI6C5
+                    : PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.ChainEffectDescription,
+                chainPending
+                    ? PerspectiveSafeI6C3SourceStatusV1.BlockedPendingI6C5
+                    : PerspectiveSafeI6C3SourceStatusV1.Proven),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.ChainTargets,
+                chainPending
+                    ? PerspectiveSafeI6C3SourceStatusV1.BlockedPendingI6C5
+                    : PerspectiveSafeI6C3SourceStatusV1.Proven)
+        };
 
     private static PerspectiveSafeFrameSourceResultV1 Failure(
         PerspectiveSafeFrameSourceErrorCodeV1 code,
@@ -2088,6 +3041,30 @@ public static class PerspectiveSafePublicFrameSourceV1
         Error(
             PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
             PerspectiveSafeSourceSectionV1.Entities);
+
+    private enum I6C3EndpointResolution : byte
+    {
+        Resolved = 0,
+        Hidden = 1,
+        PendingI6C5 = 2,
+        Unproven = 3
+    }
+
+    private readonly record struct I6C3OrdinalCandidate(
+        MirrorCardSnapshotV1 Card,
+        byte Controller,
+        PerspectiveSafeSemanticZoneV1 Zone,
+        uint CardCode,
+        uint SourceSequence);
+
+    private static int OrdinalPileRank(PerspectiveSafeSemanticZoneV1 zone) =>
+        zone == PerspectiveSafeSemanticZoneV1.Hand ? 0 : 1;
+
+    private static PublicSemanticZoneV1 ToPublicOrdinalZone(
+        PerspectiveSafeSemanticZoneV1 zone) =>
+        zone == PerspectiveSafeSemanticZoneV1.Hand
+            ? PublicSemanticZoneV1.Hand
+            : PublicSemanticZoneV1.ExtraDeck;
 
     private static bool IsKnownValue(MirrorProvenanceV1 provenance) =>
         provenance is MirrorProvenanceV1.PublicProtocolFact or

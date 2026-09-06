@@ -462,7 +462,12 @@ internal static class I6CPublicFrameSourceTests
             typeof(PerspectiveSafeI6C2ConstituentStatusV1),
             typeof(PerspectiveSafeI6C2GlobalsV1),
             typeof(PerspectiveSafeI6C2StateSourceV1),
-            typeof(PerspectiveSafeI6C2SourceResultV1)
+            typeof(PerspectiveSafeI6C2SourceResultV1),
+            typeof(PerspectiveSafeI6C3SourceStatusV1),
+            typeof(PerspectiveSafeI6C3ConstituentV1),
+            typeof(PerspectiveSafeI6C3ConstituentStatusV1),
+            typeof(PerspectiveSafeI6C3StateSourceV1),
+            typeof(PerspectiveSafeI6C3SourceResultV1)
         };
         string[] forbidden =
         {
@@ -707,6 +712,21 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C2 semantic ordering", AssertI6C2SemanticOrdering);
         Run("I6C2 cross-pile ordinal continuity", AssertI6C2CrossPileOrdinalContinuity);
         Run("I6C2 transport chunking", AssertI6C2TransportChunking);
+        Run("I6C3 overlay and XyzMaterial source", AssertI6C3OverlayRelationSource);
+        Run("I6C3 preserves I6C2 source", AssertI6C3PreservesI6C2Source);
+        Run("I6C3 overlay lifecycle", AssertI6C3OverlayLifecycle);
+        Run("I6C3 hidden overlay privacy", AssertI6C3HiddenOverlayPrivacy);
+        Run("I6C3 hidden-only unrelated privacy", AssertI6C3HiddenOnlyPrivacy);
+        Run("I6C3 relation lifecycle", AssertI6C3RelationLifecycle);
+        Run("I6C3 chain target source separation", AssertI6C3ChainTargetSourceSeparation);
+        Run("I6C3 visible opponent overlay identity", AssertI6C3VisibleOpponentOverlayIdentity);
+        Run("I6C3 overlay raw position and fresh properties", AssertI6C3OverlayPositionAndFreshProperties);
+        Run("I6C3 unresolved public endpoint fails closed", AssertI6C3UnresolvedPublicEndpoint);
+        Run("I6C3 relation ordering and privacy", AssertI6C3RelationOrderingAndPrivacy);
+        Run("I6C3 chain lifecycle", AssertI6C3ChainLifecycle);
+        Run("I6C3 SZONE chain boundary", AssertI6C3SzoneChainBoundary);
+        Run("I6C3 failed chain apply atomicity", AssertI6C3FailedChainApplyAtomicity);
+        Run("I6C3 transport chunking", AssertI6C3TransportChunking);
     }
 
     private static void AssertI6C2MissingMirror()
@@ -1213,6 +1233,558 @@ internal static class I6CPublicFrameSourceTests
             FindEntity(source, "p1:EXTRA_DECK:public:256:1").Passcode!.Value);
     }
 
+    private static void AssertI6C3OverlayRelationSource()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 parent = new(0, 0x04, 2, 0x05);
+        ModernLocInfoV1 material = new(0, 0x84, 2, 0);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x1111, empty, parent, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x2222, empty, material, 0));
+
+        PerspectiveSafeI6C3SourceResultV1 result =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C3(mirror);
+        True(result.IsSuccess, result.Error?.ToString() ?? "I6C3 source failed");
+        NotNull(result.Source);
+        Equal(
+            1,
+            result.Source!.Zones.Count(zone =>
+                zone.Player == 0 &&
+                zone.Kind == PerspectiveSafeSemanticZoneV1.Overlay));
+        Equal(
+            1,
+            result.Source.Entities.Count(entity =>
+                entity.Locator == "p0:OVERLAY:2:0"));
+        True(result.Source.Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.XyzMaterial &&
+            relation.Source == "p0:OVERLAY:2:0" &&
+            relation.Target == "p0:MONSTER_ZONE:2"));
+        False(result.Source.Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.XyzMaterial &&
+            relation.Source == "p0:MONSTER_ZONE:2" &&
+            relation.Target == "p0:OVERLAY:2:0"));
+    }
+
+    private static void AssertI6C3OverlayLifecycle()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 parent = new(0, 0x04, 2, 0x05);
+        ModernLocInfoV1 first = new(0, 0x84, 2, 0);
+        ModernLocInfoV1 second = new(0, 0x84, 2, 1);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x1111, empty, parent, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x2222, empty, first, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x3333, empty, second, 0));
+
+        PerspectiveSafeI6C3StateSourceV1 initial = GetI6C3Source(mirror);
+        PerspectiveSafeZoneV1 overlay = FindI6C3Zone(
+            initial,
+            0,
+            PerspectiveSafeSemanticZoneV1.Overlay);
+        Equal((uint)2, overlay.TotalCount);
+        Equal((uint)2, overlay.PublicIdentityCount);
+        Equal((uint)0, overlay.HiddenCount);
+        False(overlay.PlayerObservableOrder);
+        Equal((uint)0x2222, FindI6C3Entity(
+            initial,
+            "p0:OVERLAY:2:0").Passcode!.Value);
+        Equal((uint)0x3333, FindI6C3Entity(
+            initial,
+            "p0:OVERLAY:2:1").Passcode!.Value);
+        PerspectiveSafeEntityV1 initialSecond = FindI6C3Entity(
+            initial,
+            "p0:OVERLAY:2:1");
+        Equal(PerspectiveSafePositionV1.FaceUpAttack, initialSecond.Position);
+        True(initialSecond.FaceUp);
+        False(initialSecond.FaceDown);
+
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            MoveMessage(
+                0x2222,
+                first,
+                new ModernLocInfoV1(0, 0x10, 0, 0x04),
+                0));
+        PerspectiveSafeI6C3StateSourceV1 afterDetach = GetI6C3Source(mirror);
+        PerspectiveSafeZoneV1 remaining = FindI6C3Zone(
+            afterDetach,
+            0,
+            PerspectiveSafeSemanticZoneV1.Overlay);
+        Equal((uint)1, remaining.TotalCount);
+        Equal((uint)0x3333, FindI6C3Entity(
+            afterDetach,
+            "p0:OVERLAY:2:0").Passcode!.Value);
+        PerspectiveSafeEntityV1 reindexedSecond = FindI6C3Entity(
+            afterDetach,
+            "p0:OVERLAY:2:0");
+        Equal(PerspectiveSafePositionV1.Unknown, reindexedSecond.Position);
+        False(reindexedSecond.FaceUp);
+        False(reindexedSecond.FaceDown);
+        False(afterDetach.Entities.Any(entity =>
+            entity.Locator == "p0:OVERLAY:2:1"));
+        True(afterDetach.Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.XyzMaterial &&
+            relation.Source == "p0:OVERLAY:2:0" &&
+            relation.Target == "p0:MONSTER_ZONE:2"));
+    }
+
+    private static void AssertI6C3PreservesI6C2Source()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 parent = new(0, 0x04, 2, 0x05);
+        ModernLocInfoV1 material = new(0, 0x84, 2, 0);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x1400, empty, parent, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x1401, empty, material, 0));
+        string before = I6C2Signature(GetI6C2Source(mirror));
+        PerspectiveSafeI6C3StateSourceV1 source = GetI6C3Source(mirror);
+        Equal(before, I6C2Signature(source.BaseSource));
+        Equal(before, I6C2Signature(GetI6C2Source(mirror)));
+    }
+
+    private static void AssertI6C3HiddenOverlayPrivacy()
+    {
+        PerspectiveSafeI6C3StateSourceV1 first =
+            GetI6C3Source(CreateHiddenOverlayWorld(0x8100, 0x8200));
+        PerspectiveSafeI6C3StateSourceV1 second =
+            GetI6C3Source(CreateHiddenOverlayWorld(0x9100, 0x9200));
+        Equal(I6C3Signature(first), I6C3Signature(second));
+        PerspectiveSafeZoneV1 overlay = FindI6C3Zone(
+            first,
+            1,
+            PerspectiveSafeSemanticZoneV1.Overlay);
+        Equal((uint)1, overlay.TotalCount);
+        Equal((uint)0, overlay.PublicIdentityCount);
+        Equal((uint)1, overlay.HiddenCount);
+        PerspectiveSafeEntityV1 material = FindI6C3Entity(
+            first,
+            "p1:OVERLAY:2:0");
+        False(material.IdentityKnown);
+        True(material.Passcode is null);
+        True(first.Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.XyzMaterial &&
+            relation.Source == "p1:OVERLAY:2:0" &&
+            relation.Target == "p1:MONSTER_ZONE:2"));
+    }
+
+    private static void AssertI6C3RelationLifecycle()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 source = new(0, 0x04, 0, 0x05);
+        ModernLocInfoV1 target = new(0, 0x04, 1, 0x05);
+        ModernLocInfoV1 retarget = new(0, 0x04, 2, 0x05);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x1000, empty, source, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x2000, empty, target, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x3000, empty, retarget, 0));
+
+        ApplyMirrorMessage(mirror, decoder, CardTargetMessage(source, target));
+        PerspectiveSafeI6C3StateSourceV1 targeted = GetI6C3Source(mirror);
+        Equal(1, targeted.Relationships.Count(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target));
+        True(targeted.Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target &&
+            relation.Source == "p0:MONSTER_ZONE:0" &&
+            relation.Target == "p0:MONSTER_ZONE:1"));
+
+        string beforeInvalidCancel = I6C3Signature(targeted);
+        MirrorApplyResult invalidCancel = mirror.Apply(
+            DecodeMessage(decoder, CardTargetMessage(source, retarget, cancel: true)));
+        False(invalidCancel.IsSuccess);
+        Equal(beforeInvalidCancel, I6C3Signature(GetI6C3Source(mirror)));
+
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            CardTargetMessage(source, target, cancel: true));
+        False(GetI6C3Source(mirror).Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target));
+
+        ApplyMirrorMessage(mirror, decoder, EquipMessage(source, target));
+        True(GetI6C3Source(mirror).Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Equip &&
+            relation.Target == "p0:MONSTER_ZONE:1"));
+        ApplyMirrorMessage(mirror, decoder, EquipMessage(source, retarget));
+        PerspectiveSafeI6C3StateSourceV1 retargeted = GetI6C3Source(mirror);
+        Equal(1, retargeted.Relationships.Count(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Equip));
+        True(retargeted.Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Equip &&
+            relation.Source == "p0:MONSTER_ZONE:0" &&
+            relation.Target == "p0:MONSTER_ZONE:2"));
+        ApplyMirrorMessage(mirror, decoder, UnequipMessage(source));
+        False(GetI6C3Source(mirror).Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Equip));
+    }
+
+    private static void AssertI6C3HiddenOnlyPrivacy()
+    {
+        Equal(
+            I6C3Signature(GetI6C3Source(CreateHiddenWorld(0xA100))),
+            I6C3Signature(GetI6C3Source(CreateHiddenWorld(0xB100))));
+    }
+
+    private static void AssertI6C3RelationOrderingAndPrivacy()
+    {
+        Equal(
+            I6C3Signature(GetI6C3Source(CreateRelationOrderMirror(reverse: false))),
+            I6C3Signature(GetI6C3Source(CreateRelationOrderMirror(reverse: true))));
+
+        Equal(
+            I6C3Signature(GetI6C3Source(CreateHiddenTargetWorld(0xAAAA))),
+            I6C3Signature(GetI6C3Source(CreateHiddenTargetWorld(0xBBBB))));
+        Equal(
+            I6C3Signature(GetI6C3Source(CreateOverlayWorld(consumeEntityId: false))),
+            I6C3Signature(GetI6C3Source(CreateOverlayWorld(consumeEntityId: true))));
+    }
+
+    private static void AssertI6C3UnresolvedPublicEndpoint()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 ownHand = new(0, 0x02, 0, 0x08);
+        ModernLocInfoV1 target = new(0, 0x04, 1, 0x05);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0, empty, ownHand, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7400, empty, target, 0));
+        ApplyMirrorMessage(mirror, decoder, CardTargetMessage(ownHand, target));
+
+        PerspectiveSafeI6C3SourceResultV1 result =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C3(mirror);
+        False(result.IsSuccess);
+        Null(result.Source);
+        NotNull(result.Error);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            result.Error!.Value.Code);
+        Equal(
+            PerspectiveSafeSourceSectionV1.Relationships,
+            result.Error.Value.Section);
+    }
+
+    private static void AssertI6C3ChainTargetSourceSeparation()
+    {
+        (PerspectiveStateMirrorV1 becomeOnlyMirror, GameplayMessageDecoderV1 becomeOnlyDecoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 source = new(0, 0x04, 0, 0x05);
+        ModernLocInfoV1 target = new(0, 0x04, 1, 0x05);
+        ApplyMirrorMessage(
+            becomeOnlyMirror,
+            becomeOnlyDecoder,
+            MoveMessage(0x7500, empty, source, 0));
+        ApplyMirrorMessage(
+            becomeOnlyMirror,
+            becomeOnlyDecoder,
+            MoveMessage(0x7501, empty, target, 0));
+        ApplyMirrorMessage(
+            becomeOnlyMirror,
+            becomeOnlyDecoder,
+            ChainingMessage(source, 1, 0x7500));
+        ApplyMirrorMessage(
+            becomeOnlyMirror,
+            becomeOnlyDecoder,
+            BecomeTargetMessage(target));
+        PerspectiveSafeI6C3StateSourceV1 becomeOnly = GetI6C3Source(becomeOnlyMirror);
+        False(becomeOnly.Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target));
+        Equal(0, becomeOnly.Chain.Links[0].Targets.Count);
+
+        ApplyMirrorMessage(
+            becomeOnlyMirror,
+            becomeOnlyDecoder,
+            CardTargetMessage(source, target));
+        PerspectiveSafeI6C3StateSourceV1 combined = GetI6C3Source(becomeOnlyMirror);
+        Equal(1, combined.Relationships.Count(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target));
+        Equal(1, combined.Chain.Links[0].Targets.Count);
+        Equal("p0:MONSTER_ZONE:1", combined.Chain.Links[0].Targets[0]);
+
+        (PerspectiveStateMirrorV1 cardTargetOnlyMirror, GameplayMessageDecoderV1 cardTargetOnlyDecoder) =
+            CreateMirror(0);
+        ApplyMirrorMessage(
+            cardTargetOnlyMirror,
+            cardTargetOnlyDecoder,
+            MoveMessage(0x7600, empty, source, 0));
+        ApplyMirrorMessage(
+            cardTargetOnlyMirror,
+            cardTargetOnlyDecoder,
+            MoveMessage(0x7601, empty, target, 0));
+        ApplyMirrorMessage(
+            cardTargetOnlyMirror,
+            cardTargetOnlyDecoder,
+            ChainingMessage(source, 1, 0x7600));
+        ApplyMirrorMessage(
+            cardTargetOnlyMirror,
+            cardTargetOnlyDecoder,
+            CardTargetMessage(source, target));
+        PerspectiveSafeI6C3StateSourceV1 cardTargetOnly =
+            GetI6C3Source(cardTargetOnlyMirror);
+        Equal(1, cardTargetOnly.Relationships.Count(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target));
+        Equal(1, cardTargetOnly.Chain.Links[0].Targets.Count);
+        Equal("p0:MONSTER_ZONE:1", cardTargetOnly.Chain.Links[0].Targets[0]);
+    }
+
+    private static void AssertI6C3VisibleOpponentOverlayIdentity()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 parent = new(1, 0x04, 2, 0x05);
+        ModernLocInfoV1 material = new(1, 0x84, 2, 0);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7700, empty, parent, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7701, empty, material, 0));
+
+        PerspectiveSafeEntityV1 projected = FindI6C3Entity(
+            GetI6C3Source(mirror),
+            "p1:OVERLAY:2:0");
+        True(projected.IdentityKnown);
+        Equal((uint)0x7701, projected.Passcode!.Value);
+        Equal(
+            PerspectiveSafeI6C3SourceStatusV1.Blocked,
+            GetI6C3Source(mirror).GetStatus(
+                PerspectiveSafeI6C3ConstituentV1.OverlayIdentity));
+    }
+
+    private static void AssertI6C3OverlayPositionAndFreshProperties()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 parent = new(0, 0x04, 2, 0x05);
+        ModernLocInfoV1 firstMaterial = new(0, 0x84, 2, 0);
+        ModernLocInfoV1 staleFieldCard = new(0, 0x04, 3, 0x05);
+        ModernLocInfoV1 secondMaterial = new(0, 0x84, 2, 1);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7800, empty, parent, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7801, empty, firstMaterial, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7802, empty, staleFieldCard, 0));
+        ModernQueryV1 staleQuery = DecodeQuery(
+            QueryRecord(QueryFlagV1.Attack, I32(123)),
+            QueryEnd());
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            UpdateCardMessage(0, 0x04, 3, staleQuery));
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            MoveMessage(0x7802, staleFieldCard, secondMaterial, 0));
+
+        PerspectiveSafeEntityV1 projected = FindI6C3Entity(
+            GetI6C3Source(mirror),
+            "p0:OVERLAY:2:1");
+        Equal(PerspectiveSafePositionV1.FaceUpAttack, projected.Position);
+        True(projected.FaceUp);
+        Null(projected.Current);
+        Equal(
+            PerspectiveSafeI6C3SourceStatusV1.Blocked,
+            GetI6C3Source(mirror).GetStatus(
+                PerspectiveSafeI6C3ConstituentV1.OverlayCurrentProperties));
+        Equal(
+            PerspectiveSafeI6C3SourceStatusV1.Blocked,
+            GetI6C3Source(mirror).GetStatus(
+                PerspectiveSafeI6C3ConstituentV1.OverlayEntities));
+    }
+
+    private static void AssertI6C3ChainLifecycle()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 source = new(0, 0x04, 0, 0x05);
+        ModernLocInfoV1 secondSource = new(0, 0x04, 1, 0x05);
+        ModernLocInfoV1 target = new(0, 0x04, 2, 0x05);
+        ModernLocInfoV1 secondTarget = new(0, 0x04, 3, 0x05);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x1000, empty, source, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x2000, empty, secondSource, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x3000, empty, target, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x3001, empty, secondTarget, 0));
+
+        ApplyMirrorMessage(mirror, decoder, ChainingMessage(source, 1, 0x1000));
+        True(mirror.Snapshot.PendingChainSource is not null);
+        Equal((byte)0, mirror.Snapshot.PendingChainSource!.TriggeringController);
+        Equal((byte)0x04, mirror.Snapshot.PendingChainSource.TriggeringLocation);
+        Equal((uint)0, mirror.Snapshot.PendingChainSource.TriggeringSequence);
+        PerspectiveSafeI6C3StateSourceV1 pending = GetI6C3Source(mirror);
+        Equal((uint)1, pending.Chain.Length);
+        Equal((uint)0, pending.Chain.Links[0].Index);
+        Equal((byte)0, pending.Chain.Links[0].ActivatingPlayer!.Value);
+        Equal("p0:MONSTER_ZONE:0", pending.Chain.Links[0].Source!);
+        Equal(PerspectiveSafeSemanticZoneV1.MonsterZone, pending.Chain.Links[0].ActivationZone!.Value);
+        Equal((ulong)0x0102030405060708, pending.Chain.Links[0].EffectDescription!.Value);
+
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            BecomeTargetMessage(target));
+        ApplyMirrorMessage(mirror, decoder, CardTargetMessage(source, target));
+        ApplyMirrorMessage(mirror, decoder, CardTargetMessage(source, secondTarget));
+        PerspectiveSafeI6C3StateSourceV1 withTarget = GetI6C3Source(mirror);
+        Equal(2, withTarget.Chain.Links[0].Targets.Count);
+        Equal("p0:MONSTER_ZONE:2", withTarget.Chain.Links[0].Targets[0]);
+        Equal("p0:MONSTER_ZONE:3", withTarget.Chain.Links[0].Targets[1]);
+        True(withTarget.Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target &&
+            relation.Source == "p0:MONSTER_ZONE:0" &&
+            relation.Target == "p0:MONSTER_ZONE:2"));
+        True(withTarget.Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target &&
+            relation.Source == "p0:MONSTER_ZONE:0" &&
+            relation.Target == "p0:MONSTER_ZONE:3"));
+
+        ApplyMirrorMessage(mirror, decoder, new byte[] { 71, 1 });
+        Equal((byte)0, mirror.Snapshot.Chains[0].TriggeringController);
+        string beforeStatus = I6C3Signature(GetI6C3Source(mirror));
+        ApplyMirrorMessage(mirror, decoder, new byte[] { 72, 1 });
+        ApplyMirrorMessage(mirror, decoder, new byte[] { 73, 1 });
+        Equal(beforeStatus, I6C3Signature(GetI6C3Source(mirror)));
+
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            ChainingMessage(secondSource, 2, 0x2000));
+        PerspectiveSafeI6C3StateSourceV1 twoLinks = GetI6C3Source(mirror);
+        Equal((uint)2, twoLinks.Chain.Length);
+        Equal((uint)0, twoLinks.Chain.Links[0].Index);
+        Equal((uint)1, twoLinks.Chain.Links[1].Index);
+        Equal("p0:MONSTER_ZONE:1", twoLinks.Chain.Links[1].Source!);
+
+        ApplyMirrorMessage(mirror, decoder, new byte[] { 71, 2 });
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            CardTargetMessage(source, target, cancel: true));
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            CardTargetMessage(source, secondTarget, cancel: true));
+        ApplyMirrorMessage(mirror, decoder, new byte[] { 74 });
+        PerspectiveSafeI6C3StateSourceV1 ended = GetI6C3Source(mirror);
+        Equal((uint)0, ended.Chain.Length);
+        Equal(0, ended.Chain.Links.Count);
+        False(ended.Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target));
+
+        (PerspectiveStateMirrorV1 playerOneMirror, GameplayMessageDecoderV1 playerOneDecoder) =
+            CreateMirror(1);
+        ModernLocInfoV1 playerOneSource = new(1, 0x04, 0, 0x05);
+        ApplyMirrorMessage(
+            playerOneMirror,
+            playerOneDecoder,
+            MoveMessage(0x4000, empty, playerOneSource, 0));
+        ApplyMirrorMessage(
+            playerOneMirror,
+            playerOneDecoder,
+            ChainingMessage(playerOneSource, 1, 0x4000));
+        Equal((byte)1, GetI6C3Source(playerOneMirror).Chain.Links[0].ActivatingPlayer!.Value);
+    }
+
+    private static void AssertI6C3SzoneChainBoundary()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 source = new(0, 0x08, 0, 0x05);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x5000, empty, source, 0));
+        ApplyMirrorMessage(mirror, decoder, ChainingMessage(source, 1, 0x5000));
+
+        PerspectiveSafeI6C3StateSourceV1 result = GetI6C3Source(mirror);
+        PerspectiveSafeChainLinkV1 link = result.Chain.Links[0];
+        Null(link.Source);
+        Null(link.ActivationZone);
+        Equal(
+            PerspectiveSafeI6C3SourceStatusV1.BlockedPendingI6C5,
+            result.GetStatus(PerspectiveSafeI6C3ConstituentV1.ChainActivationZone));
+        Equal(
+            PerspectiveSafeI6C3SourceStatusV1.BlockedPendingI6C5,
+            result.GetStatus(PerspectiveSafeI6C3ConstituentV1.ChainSourceLocator));
+    }
+
+    private static void AssertI6C3FailedChainApplyAtomicity()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 source = new(0, 0x04, 0, 0x05);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x6000, empty, source, 0));
+        ApplyMirrorMessage(mirror, decoder, ChainingMessage(source, 1, 0x6000));
+        string beforeMirror = mirror.Snapshot.ToDeterministicString();
+        string beforeSource = I6C3Signature(GetI6C3Source(mirror));
+        MirrorApplyResult invalid = mirror.Apply(
+            DecodeMessage(decoder, new byte[] { 71, 2 }));
+        False(invalid.IsSuccess);
+        Equal(GameplayErrorCode.InvalidChainState, invalid.Error);
+        Equal(beforeMirror, mirror.Snapshot.ToDeterministicString());
+        Equal(beforeSource, I6C3Signature(GetI6C3Source(mirror)));
+    }
+
+    private static void AssertI6C3TransportChunking()
+    {
+        byte[][] whole = BuildI6C3TranscriptChunks(new[] { 4096 });
+        byte[][] fragmented = BuildI6C3TranscriptChunks(new[] { 1, 2, 5, 3, 7 });
+        Equal(
+            RunChunkedI6C3Source(whole),
+            RunChunkedI6C3Source(fragmented));
+    }
+
+    private static byte[][] BuildI6C3TranscriptChunks(int[] sizes)
+    {
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 source = new(0, 0x04, 0, 0x05);
+        ModernLocInfoV1 target = new(0, 0x04, 1, 0x05);
+        byte[] stream = Join(
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.GameMsg,
+                CreateStartBytes(0)),
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.GameMsg,
+                MoveMessage(0x8000, empty, source, 0)),
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.GameMsg,
+                MoveMessage(0x8001, empty, target, 0)),
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.GameMsg,
+                ChainingMessage(source, 1, 0x8000)),
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.GameMsg,
+                BecomeTargetMessage(target)));
+        return Split(stream, sizes);
+    }
+
+    private static string RunChunkedI6C3Source(byte[][] chunks)
+    {
+        TestTransport transport = new(chunks);
+        GameplayHandoffAcquireResult acquired =
+            GameplayHandoffConsumerV1.TryCreate(
+                CreateHandoff(transport, Array.Empty<byte>()));
+        True(acquired.IsSuccess);
+        GameplayPumpResult start = acquired.Consumer!.PumpAsync(
+            CancellationToken.None).GetAwaiter().GetResult();
+        True(start.IsSuccess, start.Error.ToString());
+        MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
+            start.Message!,
+            start.Perspective!);
+        True(created.IsSuccess, created.Error.ToString());
+        GameplayMirrorSessionV1 session = new(start.Session!, created.Mirror!);
+        for (int index = 0; index < 4; index++)
+        {
+            GameplayMirrorPumpResult step = session.PumpAsync(
+                CancellationToken.None).GetAwaiter().GetResult();
+            True(step.IsSuccess, step.Error.ToString());
+        }
+
+        string signature = I6C3Signature(GetI6C3Source(session.Mirror));
+        session.DisposeAsync().GetAwaiter().GetResult();
+        acquired.Consumer.DisposeAsync().GetAwaiter().GetResult();
+        return signature;
+    }
+
     private static byte[][] BuildI6C2TranscriptChunks(int[] sizes)
     {
         ModernLocInfoV1 empty = new(0, 0, 0, 0);
@@ -1298,6 +1870,17 @@ internal static class I6CPublicFrameSourceTests
         return result.Source!;
     }
 
+    private static PerspectiveSafeI6C3StateSourceV1 GetI6C3Source(
+        PerspectiveStateMirrorV1 mirror)
+    {
+        PerspectiveSafeI6C3SourceResultV1 result =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C3(mirror);
+        True(result.IsSuccess, result.Error?.ToString() ?? "I6C3 source failed");
+        NotNull(result.Source);
+        Null(result.Error);
+        return result.Source!;
+    }
+
     private static MirrorApplyResult ApplyMirrorMessage(
         PerspectiveStateMirrorV1 mirror,
         GameplayMessageDecoderV1 decoder,
@@ -1316,6 +1899,17 @@ internal static class I6CPublicFrameSourceTests
 
     private static PerspectiveSafeEntityV1 FindEntity(
         PerspectiveSafeI6C2StateSourceV1 source,
+        string locator) =>
+        source.Entities.Single(entity => entity.Locator == locator);
+
+    private static PerspectiveSafeZoneV1 FindI6C3Zone(
+        PerspectiveSafeI6C3StateSourceV1 source,
+        byte player,
+        PerspectiveSafeSemanticZoneV1 kind) =>
+        source.Zones.Single(zone => zone.Player == player && zone.Kind == kind);
+
+    private static PerspectiveSafeEntityV1 FindI6C3Entity(
+        PerspectiveSafeI6C3StateSourceV1 source,
         string locator) =>
         source.Entities.Single(entity => entity.Locator == locator);
 
@@ -1355,6 +1949,134 @@ internal static class I6CPublicFrameSourceTests
             entity.Current?.Type?.ToString() ?? "absent",
             entity.Current?.Attack?.ToString() ?? "absent")));
         return string.Join("|", values);
+    }
+
+    private static string I6C3Signature(
+        PerspectiveSafeI6C3StateSourceV1 source)
+    {
+        List<string> values = new()
+        {
+            I6C2Signature(source.BaseSource),
+            string.Join(
+                ",",
+                source.Zones.Select(zone => string.Join(
+                    ":",
+                    zone.Player,
+                    (byte)zone.Kind,
+                    zone.TotalCount,
+                    zone.PublicIdentityCount,
+                    zone.HiddenCount,
+                    zone.PlayerObservableOrder))),
+            string.Join(
+                ",",
+                source.Entities.Select(entity => string.Join(
+                    ":",
+                    entity.Locator,
+                    entity.IdentityKnown,
+                    entity.Passcode?.ToString() ?? "absent",
+                    entity.Owner?.ToString() ?? "absent",
+                    entity.Controller?.ToString() ?? "absent",
+                    (byte)entity.Zone,
+                    entity.Sequence?.ToString() ?? "absent",
+                    entity.OverlaySequence?.ToString() ?? "absent",
+                    (byte)entity.Position,
+                    entity.FaceUp,
+                    entity.FaceDown,
+                    DescribeProperties(entity.Current)))),
+            string.Join(
+                ",",
+                source.Relationships.Select(relation => string.Join(
+                    ":",
+                    (byte)relation.Kind,
+                    relation.Source,
+                    relation.Target))),
+            source.Chain.Length.ToString(),
+            string.Join(
+                ",",
+                source.Chain.Links.Select(link => string.Join(
+                    ":",
+                    link.Index,
+                    link.ActivatingPlayer?.ToString() ?? "absent",
+                    link.Source ?? "absent",
+                    link.ActivationZone?.ToString() ?? "absent",
+                    link.EffectDescription?.ToString() ?? "absent",
+                    string.Join("/", link.Targets))))
+        };
+        return string.Join("|", values);
+    }
+
+    private static PerspectiveStateMirrorV1 CreateRelationOrderMirror(bool reverse)
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 source = new(0, 0x04, 0, 0x05);
+        ModernLocInfoV1 target = new(0, 0x04, 1, 0x05);
+        ModernLocInfoV1 secondTarget = new(0, 0x04, 2, 0x05);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7000, empty, source, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7001, empty, target, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7002, empty, secondTarget, 0));
+        if (reverse)
+        {
+            ApplyMirrorMessage(mirror, decoder, EquipMessage(source, secondTarget));
+            ApplyMirrorMessage(mirror, decoder, CardTargetMessage(source, target));
+        }
+        else
+        {
+            ApplyMirrorMessage(mirror, decoder, CardTargetMessage(source, target));
+            ApplyMirrorMessage(mirror, decoder, EquipMessage(source, secondTarget));
+        }
+
+        return mirror;
+    }
+
+    private static PerspectiveStateMirrorV1 CreateHiddenTargetWorld(uint hiddenCode)
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 source = new(0, 0x04, 0, 0x05);
+        ModernLocInfoV1 hiddenTarget = new(1, 0x04, 1, 0x08);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7100, empty, source, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(hiddenCode, empty, hiddenTarget, 0));
+        ApplyMirrorMessage(mirror, decoder, CardTargetMessage(source, hiddenTarget));
+        return mirror;
+    }
+
+    private static PerspectiveStateMirrorV1 CreateOverlayWorld(bool consumeEntityId)
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        if (consumeEntityId)
+        {
+            ModernLocInfoV1 temporary = new(0, 0x04, 0, 0x05);
+            ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7200, empty, temporary, 0));
+            ApplyMirrorMessage(
+                mirror,
+                decoder,
+                MoveMessage(0x7200, temporary, empty, 0));
+        }
+
+        ModernLocInfoV1 parent = new(0, 0x04, 2, 0x05);
+        ModernLocInfoV1 material = new(0, 0x84, 2, 0);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7300, empty, parent, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7301, empty, material, 0));
+        return mirror;
+    }
+
+    private static PerspectiveStateMirrorV1 CreateHiddenOverlayWorld(
+        uint parentCode,
+        uint materialCode)
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 parent = new(1, 0x04, 2, 0x08);
+        ModernLocInfoV1 material = new(1, 0x84, 2, 0);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(parentCode, empty, parent, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(materialCode, empty, material, 0));
+        return mirror;
     }
 
     private static PerspectiveSafeFrameV1 Accept(

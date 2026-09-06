@@ -321,6 +321,145 @@ public sealed class PerspectiveSafeI6C2SourceResultV1
         new(null, error);
 }
 
+public enum PerspectiveSafeI6C3SourceStatusV1 : byte
+{
+    Proven = 0,
+    Blocked = 1,
+    BlockedPendingI6C5 = 2
+}
+
+public enum PerspectiveSafeI6C3ConstituentV1 : byte
+{
+    OverlayZone = 0,
+    OverlayEntities = 1,
+    OverlayLocators = 2,
+    OverlayIdentity = 3,
+    OverlayCurrentProperties = 4,
+    XyzMaterialRelationships = 5,
+    EquipRelationships = 6,
+    TargetRelationships = 7,
+    RelationshipEndpoints = 8,
+    RelationshipOrdering = 9,
+    ChainTriggerMetadata = 10,
+    ChainLength = 11,
+    ChainIndexMapping = 12,
+    ChainLinkOrder = 13,
+    ChainActivatingPlayer = 14,
+    ChainSourceLocator = 15,
+    ChainActivationZone = 16,
+    ChainEffectDescription = 17,
+    ChainTargets = 18
+}
+
+public readonly record struct PerspectiveSafeI6C3ConstituentStatusV1(
+    PerspectiveSafeI6C3ConstituentV1 Constituent,
+    PerspectiveSafeI6C3SourceStatusV1 Status);
+
+/// <summary>
+/// Partial I6C3 evidence layered over the accepted I6C2 source. It contains
+/// current relation, overlay, and chain values only; it is not a complete
+/// OCGForge public frame or an event-history source.
+/// </summary>
+public sealed class PerspectiveSafeI6C3StateSourceV1
+{
+    private readonly PerspectiveSafeZoneV1[] zones;
+    private readonly PerspectiveSafeEntityV1[] entities;
+    private readonly PerspectiveSafeRelationshipV1[] relationships;
+    private readonly PerspectiveSafeI6C3ConstituentStatusV1[] statuses;
+    private readonly ReadOnlyCollection<PerspectiveSafeZoneV1> zonesView;
+    private readonly ReadOnlyCollection<PerspectiveSafeEntityV1> entitiesView;
+    private readonly ReadOnlyCollection<PerspectiveSafeRelationshipV1>
+        relationshipsView;
+    private readonly ReadOnlyCollection<PerspectiveSafeI6C3ConstituentStatusV1>
+        statusesView;
+
+    internal PerspectiveSafeI6C3StateSourceV1(
+        PerspectiveSafeI6C2StateSourceV1 baseSource,
+        IEnumerable<PerspectiveSafeZoneV1> zones,
+        IEnumerable<PerspectiveSafeEntityV1> entities,
+        IEnumerable<PerspectiveSafeRelationshipV1> relationships,
+        PerspectiveSafeChainStateV1 chain,
+        IEnumerable<PerspectiveSafeI6C3ConstituentStatusV1> statuses)
+    {
+        BaseSource = baseSource ?? throw new ArgumentNullException(nameof(baseSource));
+        this.zones = PerspectiveSafeCollectionV1.Copy(zones);
+        this.entities = PerspectiveSafeCollectionV1.Copy(entities);
+        this.relationships = PerspectiveSafeCollectionV1.Copy(relationships);
+        Chain = chain ?? throw new ArgumentNullException(nameof(chain));
+        this.statuses = PerspectiveSafeCollectionV1.Copy(statuses);
+        zonesView = PerspectiveSafeCollectionV1.ReadOnly(this.zones);
+        entitiesView = PerspectiveSafeCollectionV1.ReadOnly(this.entities);
+        relationshipsView = PerspectiveSafeCollectionV1.ReadOnly(this.relationships);
+        statusesView = PerspectiveSafeCollectionV1.ReadOnly(this.statuses);
+    }
+
+    public PerspectiveSafeI6C2StateSourceV1 BaseSource { get; }
+
+    public PerspectiveSafeI6C2GlobalsV1 Globals => BaseSource.Globals;
+
+    public IReadOnlyList<PerspectiveSafeZoneV1> Zones => zonesView;
+
+    public IReadOnlyList<PerspectiveSafeEntityV1> Entities => entitiesView;
+
+    public IReadOnlyList<PerspectiveSafeRelationshipV1> Relationships =>
+        relationshipsView;
+
+    public PerspectiveSafeChainStateV1 Chain { get; }
+
+    public IReadOnlyList<PerspectiveSafeI6C3ConstituentStatusV1> Statuses =>
+        statusesView;
+
+    public bool IsComplete =>
+        BaseSource.IsComplete &&
+        statuses.All(status =>
+            status.Status == PerspectiveSafeI6C3SourceStatusV1.Proven);
+
+    public PerspectiveSafeI6C3SourceStatusV1 GetStatus(
+        PerspectiveSafeI6C3ConstituentV1 constituent)
+    {
+        foreach (PerspectiveSafeI6C3ConstituentStatusV1 status in statuses)
+        {
+            if (status.Constituent == constituent)
+            {
+                return status.Status;
+            }
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(constituent));
+    }
+}
+
+public sealed class PerspectiveSafeI6C3SourceResultV1
+{
+    private PerspectiveSafeI6C3SourceResultV1(
+        PerspectiveSafeI6C3StateSourceV1? source,
+        PerspectiveSafeFrameSourceErrorV1? error)
+    {
+        if ((source is null) == (error is null))
+        {
+            throw new ArgumentException(
+                "An I6C3 result must contain exactly one outcome.");
+        }
+
+        Source = source;
+        Error = error;
+    }
+
+    public PerspectiveSafeI6C3StateSourceV1? Source { get; }
+
+    public PerspectiveSafeFrameSourceErrorV1? Error { get; }
+
+    public bool IsSuccess => Source is not null && Error is null;
+
+    internal static PerspectiveSafeI6C3SourceResultV1 Success(
+        PerspectiveSafeI6C3StateSourceV1 source) =>
+        new(source ?? throw new ArgumentNullException(nameof(source)), null);
+
+    internal static PerspectiveSafeI6C3SourceResultV1 Failure(
+        PerspectiveSafeFrameSourceErrorV1 error) =>
+        new(null, error);
+}
+
 public sealed class PerspectiveSafeGlobalsV1
 {
     private readonly uint[] lifePoints;
