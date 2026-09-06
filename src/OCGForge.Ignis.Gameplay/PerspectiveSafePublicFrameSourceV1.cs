@@ -188,6 +188,7 @@ public static class PerspectiveSafePublicFrameSourceV1
             if (!TryGetParticipant(snapshot, role, out MirrorParticipantSnapshotV1? participant) ||
                 !TryReadKnownMirrorValue(
                     participant!.LifePoints,
+                    PerspectiveSafeSourceSectionV1.Globals,
                     out lifePoints[absolutePlayer],
                     out error))
             {
@@ -342,12 +343,36 @@ public static class PerspectiveSafePublicFrameSourceV1
                 return false;
             }
 
-            if (!TryReadKnownMirrorValue(mainDeck!.Count, out uint mainCount, out error) ||
-                !TryReadKnownMirrorValue(hand!.Count, out uint handCount, out error) ||
-                !TryReadKnownMirrorValue(monster!.Count, out uint monsterCount, out error) ||
-                !TryReadKnownMirrorValue(graveyard!.Count, out uint graveCount, out error) ||
-                !TryReadKnownMirrorValue(banished!.Count, out uint banishedCount, out error) ||
-                !TryReadKnownMirrorValue(extraDeck!.Count, out uint extraCount, out error))
+            if (!TryReadKnownMirrorValue(
+                    mainDeck!.Count,
+                    PerspectiveSafeSourceSectionV1.Zones,
+                    out uint mainCount,
+                    out error) ||
+                !TryReadKnownMirrorValue(
+                    hand!.Count,
+                    PerspectiveSafeSourceSectionV1.Zones,
+                    out uint handCount,
+                    out error) ||
+                !TryReadKnownMirrorValue(
+                    monster!.Count,
+                    PerspectiveSafeSourceSectionV1.Zones,
+                    out uint monsterCount,
+                    out error) ||
+                !TryReadKnownMirrorValue(
+                    graveyard!.Count,
+                    PerspectiveSafeSourceSectionV1.Zones,
+                    out uint graveCount,
+                    out error) ||
+                !TryReadKnownMirrorValue(
+                    banished!.Count,
+                    PerspectiveSafeSourceSectionV1.Zones,
+                    out uint banishedCount,
+                    out error) ||
+                !TryReadKnownMirrorValue(
+                    extraDeck!.Count,
+                    PerspectiveSafeSourceSectionV1.Zones,
+                    out uint extraCount,
+                    out error))
             {
                 return false;
             }
@@ -621,31 +646,18 @@ public static class PerspectiveSafePublicFrameSourceV1
         List<I6C2EntityCandidate> ordinalCandidates = candidates
             .Where(candidate => candidate.NeedsPublicOrdinal)
             .OrderBy(candidate => candidate.AbsoluteController)
-            .ThenBy(candidate => candidate.SemanticZone)
-            .ThenBy(candidate => candidate.CardCode!.Value)
+            .ThenBy(candidate => candidate.SemanticZone ==
+                PerspectiveSafeSemanticZoneV1.Hand ? 0 : 1)
             .ThenBy(candidate => candidate.SourceSequence)
             .ToList();
-        byte previousController = 0;
-        PerspectiveSafeSemanticZoneV1 previousZone = default;
-        uint previousCode = 0;
-        bool haveGroup = false;
-        uint ordinal = 0;
+        Dictionary<(byte Controller, uint CardCode), uint> ordinalCounters = new();
         foreach (I6C2EntityCandidate candidate in ordinalCandidates)
         {
-            if (!haveGroup ||
-                candidate.AbsoluteController != previousController ||
-                candidate.SemanticZone != previousZone ||
-                candidate.CardCode!.Value != previousCode)
+            (byte Controller, uint CardCode) key =
+                (candidate.AbsoluteController, candidate.CardCode!.Value);
+            if (!ordinalCounters.TryGetValue(key, out uint ordinal))
             {
-                previousController = candidate.AbsoluteController;
-                previousZone = candidate.SemanticZone;
-                previousCode = candidate.CardCode!.Value;
                 ordinal = 0;
-                haveGroup = true;
-            }
-            else
-            {
-                ordinal++;
             }
 
             if (!TryMapPublicLocatorZone(
@@ -665,6 +677,15 @@ public static class PerspectiveSafePublicFrameSourceV1
             }
 
             candidate.Locator = locator!.Value;
+            if (ordinal == uint.MaxValue)
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    PerspectiveSafeSourceSectionV1.Entities);
+                return false;
+            }
+
+            ordinalCounters[key] = ordinal + 1;
         }
 
         candidates.Sort(static (left, right) =>
@@ -734,8 +755,16 @@ public static class PerspectiveSafePublicFrameSourceV1
                     participant!,
                     MirrorZoneV1.ExtraDeck,
                     out MirrorZoneSnapshotV1? extraDeck) ||
-                !TryReadKnownMirrorValue(hand!.Count, out uint handCount, out error) ||
-                !TryReadKnownMirrorValue(extraDeck!.Count, out uint extraCount, out error))
+                !TryReadKnownMirrorValue(
+                    hand!.Count,
+                    PerspectiveSafeSourceSectionV1.Entities,
+                    out uint handCount,
+                    out error) ||
+                !TryReadKnownMirrorValue(
+                    extraDeck!.Count,
+                    PerspectiveSafeSourceSectionV1.Entities,
+                    out uint extraCount,
+                    out error))
             {
                 if (error.Code == 0)
                 {
@@ -1686,6 +1715,7 @@ public static class PerspectiveSafePublicFrameSourceV1
 
     private static bool TryReadKnownMirrorValue<T>(
         MirrorValueV1<T> value,
+        PerspectiveSafeSourceSectionV1 section,
         out T result,
         out PerspectiveSafeFrameSourceErrorV1 error)
     {
@@ -1694,7 +1724,7 @@ public static class PerspectiveSafePublicFrameSourceV1
         {
             error = Error(
                 PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
-                PerspectiveSafeSourceSectionV1.Globals);
+                section);
             return false;
         }
 

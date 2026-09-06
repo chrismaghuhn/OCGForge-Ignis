@@ -705,6 +705,7 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C2 current properties", AssertI6C2CurrentProperties);
         Run("I6C2 layout and overlay boundaries", AssertI6C2DeferredBoundaries);
         Run("I6C2 semantic ordering", AssertI6C2SemanticOrdering);
+        Run("I6C2 cross-pile ordinal continuity", AssertI6C2CrossPileOrdinalContinuity);
         Run("I6C2 transport chunking", AssertI6C2TransportChunking);
     }
 
@@ -1178,6 +1179,38 @@ internal static class I6CPublicFrameSourceTests
         Equal(
             RunChunkedI6C2Source(whole),
             RunChunkedI6C2Source(fragmented));
+    }
+
+    private static void AssertI6C2CrossPileOrdinalContinuity()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0, deckCount1: 2, extraCount1: 1);
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            DrawMessage(
+                1,
+                (0x100u, 0x04u),
+                (0x200u, 0x04u)));
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            MoveMessage(
+                0x100,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(1, 0x40, 0, 0x05),
+                0));
+
+        PerspectiveSafeI6C2StateSourceV1 source = GetI6C2Source(mirror);
+        Equal(
+            (uint)0x100,
+            FindEntity(source, "p1:HAND:public:256:0").Passcode!.Value);
+        Equal(
+            (uint)0x200,
+            FindEntity(source, "p1:HAND:public:512:0").Passcode!.Value);
+        Equal(
+            (uint)0x100,
+            FindEntity(source, "p1:EXTRA_DECK:public:256:1").Passcode!.Value);
     }
 
     private static byte[][] BuildI6C2TranscriptChunks(int[] sizes)
