@@ -286,8 +286,28 @@ supervision, and Task7 sample materialization have no separate per-value
 identity beyond the explicitly listed bytes/source associations.
 
 Strings use exact UTF-8 with a `u32be` byte length. Integers are unsigned
-big-endian. The registry vector order above is semantic and must not be
-derived from directory, reflection, map, or enum ordering. Repository-relative
+big-endian. Every canonical vector uses the following primitive grammar:
+
+```text
+vector<T> = u32be element_count || T[0] || ... || T[element_count - 1]
+```
+
+Therefore this manifest encodes its registry as:
+
+```text
+vector<registry_entry>
+    = u32be(15)
+    || registry_entry[0]
+    || ...
+    || registry_entry[14]
+```
+
+The `element_count` is part of the canonical bytes and MUST equal `15` for
+this manifest. An entries-only encoding, an omitted count, any other count,
+or trailing bytes is invalid; knowledge of the fixed registry size does not
+permit omitting the count. The registry vector order above is semantic and
+must not be derived from directory, reflection, map, or enum ordering.
+Repository-relative
 source paths are audit references only and are not manifest identity inputs.
 No filesystem path, timestamp, PID, process topology, allocation order, or
 framework/device value is included.
