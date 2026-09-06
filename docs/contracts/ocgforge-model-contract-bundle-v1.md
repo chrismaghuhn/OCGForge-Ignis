@@ -5,11 +5,18 @@ authorized by this document.
 
 Audit date: 2026-09-06
 
-Audited OCGForge source snapshot:
+Original I6A audited OCGForge source snapshot (historical):
 
 ```text
 repository = https://github.com/chrismaghuhn/OCGForge
 main       = 3edfcabf51dd914f96adc4df903b1ac2a9d20e5f
+```
+
+Current reconciled OCGForge source binding:
+
+```text
+repository = https://github.com/chrismaghuhn/OCGForge
+main       = f929de0b4d4157327dba003067d2e21e42f7ad75
 ```
 
 Audited OCGForge-Ignis source snapshot:
@@ -219,7 +226,7 @@ another:
 identity_domain = ocgforge-ignis.i6.model-contract-bundle.v1
 schema_id       = ocgforge-ignis.i6.model-contract-bundle.v1
 ocgforge_source_commit =
-    3edfcabf51dd914f96adc4df903b1ac2a9d20e5f
+    f929de0b4d4157327dba003067d2e21e42f7ad75
 p5_acceptance_execution_head =
     3c99e86c487361fc4e0f5f12678b4867e59232b7
 ignis_runtime_contract_id = ocgforge-ignis.runtime-bundle-identity.v1

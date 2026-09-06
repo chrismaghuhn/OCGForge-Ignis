@@ -364,10 +364,17 @@ Gameplay code changes. Fresh-process comparisons must include stdout, stderr,
 exit code, public values, event indexes, and canonical bytes where available.
 
 No future slice may claim full I6 compatibility from source presence alone.
-The accepted OCGForge source snapshot remains:
+The I6C0 audit-time OCGForge source snapshot was the following historical
+reference:
 
 ```text
 3edfcabf51dd914f96adc4df903b1ac2a9d20e5f
+```
+
+The current reconciled OCGForge source binding is:
+
+```text
+f929de0b4d4157327dba003067d2e21e42f7ad75
 ```
 
 The known project blockers remain explicit:

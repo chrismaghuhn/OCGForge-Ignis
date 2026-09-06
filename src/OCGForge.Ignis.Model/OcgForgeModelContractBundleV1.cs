@@ -148,7 +148,7 @@ public sealed class OcgForgeModelContractBundlePreflightResultV1
 public sealed class OcgForgeModelContractBundleV1
 {
     private const string FrozenIdentityDomain = "ocgforge-ignis.i6.model-contract-bundle.v1";
-    private const string FrozenOcgForgeSourceCommit = "3edfcabf51dd914f96adc4df903b1ac2a9d20e5f";
+    private const string FrozenOcgForgeSourceCommit = "f929de0b4d4157327dba003067d2e21e42f7ad75";
     private const string FrozenP5AcceptanceExecutionHead = "3c99e86c487361fc4e0f5f12678b4867e59232b7";
     private const string FrozenTask7MaterializationConfigIdentity =
         "phase6_task7_input_materialization_config.v1.20f394c888e959446fa263c3520f3dd3b1f48b3a23e58373da7153a691ab1e7a";
