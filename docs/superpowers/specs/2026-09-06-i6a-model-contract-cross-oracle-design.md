@@ -112,13 +112,14 @@ same rules-domain trajectory or checkpoint compatibility.
 
 ```text
 I6_RULES_DOMAIN_COMPATIBILITY=DIFFERENT_OR_UNPROVEN
-I6_CHECKPOINT_COMPATIBILITY=BLOCKED
+I6_CHECKPOINT_COMPATIBILITY=NOT_AN_I6_FINAL_GATE
+I7_CHECKPOINT_COMPATIBILITY=UNRESOLVED
 ```
 
 Owning correction layer: a later explicit runtime-bundle compatibility audit;
 no pin changes are permitted in I6A.
 
-### MAJOR 2 — Task7 materialization is not an accepted final data/checkpoint path
+### Task7 materialization status — separate conditional dependency
 
 The OCGForge Task7 non-smoke materialization contract is accepted and the
 materialization implementation/tests are present on live `main` through the
@@ -131,8 +132,11 @@ phase6_task7_input_materialization_config.v1.20f394c888e959446fa263c3520f3dd3b1f
 
 However, the live Task7 records still state `TASK7_READINESS=BLOCKED`,
 `TASK7_AUTHORIZED=NO`, and no accepted dataset authority / meaningful
-checkpoint exists. The Task7 materializer is therefore a conditional oracle
-stage, not evidence that I6 can bind a checkpoint or trusted dataset today.
+checkpoint exists. The Task7 materializer is therefore a conditional physical
+oracle stage, not evidence that I6 can bind a checkpoint or trusted dataset
+today. This does not block a materialization-only I6F vector once the accepted
+Task7 semantics, implementation/source, configuration identity, and native
+oracle vectors are available.
 
 Its source association is also physical/materialization-only: it does not
 contain a `ModelSupervisionSampleV1`, selected public key, candidate ordinal,
@@ -146,6 +150,7 @@ I6_TASK7_CONTRACT=ACCEPTED
 I6_TASK7_SOURCE_IMPLEMENTATION=PRESENT_ON_MAIN
 I6_TASK7_FINAL_ACCEPTANCE=NOT_PROVEN
 I6_TASK7_DATASET_AUTHORITY=PROPOSED_NOT_READY
+I6F_DATASET_CHECKPOINT_DEPENDENCY=NO
 ```
 
 ## 4. Authority model
@@ -179,9 +184,10 @@ later scorer/runner
 ## 5. Exact contract registry
 
 The static registry is specified in
-`docs/contracts/ocgforge-model-contract-bundle-v1.md`. It contains fifteen
-ordered entries. The registry's consumer-manifest identity is an Ignis binding
-identity and is never substituted for an OCGForge semantic identity.
+`docs/contracts/ocgforge-model-contract-bundle-v1.md`. It contains
+`I6_BUNDLE_ENTRIES=15` ordered entries across mixed authority classes. The
+registry's consumer-manifest identity is an Ignis binding identity and is never
+substituted for an OCGForge semantic identity.
 
 The OCGForge-owned registry is:
 
@@ -505,7 +511,8 @@ I6_MALFORMED_MISMATCH_FAIL_CLOSED=PASS
 I6_UNSUPPORTED_FAMILY_FAIL_CLOSED=PASS
 
 I6_RULES_RUNTIME_COMPATIBILITY=PASS
-I6_CHECKPOINT_COMPATIBILITY=PASS_ONLY_WITH_SEPARATE_EVIDENCE
+I6_CHECKPOINT_COMPATIBILITY=NOT_AN_I6_FINAL_GATE
+I6_I7_CHECKPOINT_PREREQUISITES=DOCUMENTED_ONLY
 I6_NETWORK_RESPONSE_SENDING=ABSENT
 I6_MODEL_SCORING=ABSENT
 I6_CHECKPOINT_LOADING=ABSENT
@@ -514,8 +521,15 @@ I6_I7_AUTHORITY=ABSENT
 
 `PASS_OR_NOT_APPLICABLE` for Task7 means only that the selected I6 scope
 explicitly excludes the conditional physical stage; it cannot be used to
-claim Task7 materialization success. Any required stage with missing source
-proof is `BLOCKED`, not `PASS`.
+claim Task7 materialization success. Dataset membership, split issuance, a
+real checkpoint, checkpoint loading, and runner freshness are not I6F
+prerequisites and are owned by Task7/I7. Any required stage with missing
+source proof is `BLOCKED`, not `PASS`.
+
+I6 may document the input and rules prerequisites that a later I7 checkpoint
+must satisfy. I6 does not wait for, create, load, or handshake with that
+checkpoint. The I7 checkpoint artifact, loader, binary binding, runner
+handshake, and freshness gates remain outside I6 final acceptance.
 
 ## 16. Evidence that is insufficient
 
@@ -549,7 +563,8 @@ I6_PUBLIC_STATE_ORACLE=BLOCKED
 I6_EVENT_ORACLE=BLOCKED
 I6_PROMPT_LOCAL_CARDCODE_MAPPING=BLOCKED
 I6_RULES_DOMAIN_COMPATIBILITY=DIFFERENT_OR_UNPROVEN
-I6_CHECKPOINT_COMPATIBILITY=BLOCKED
+I6_CHECKPOINT_COMPATIBILITY=NOT_AN_I6_FINAL_GATE
+I7_CHECKPOINT_COMPATIBILITY=UNRESOLVED
 I6_TASK7_FINAL_ACCEPTANCE=NOT_PROVEN
 
 I6_RUNTIME_IMPLEMENTATION_AUTHORIZED=NO

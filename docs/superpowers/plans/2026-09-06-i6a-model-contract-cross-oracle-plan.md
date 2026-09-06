@@ -113,7 +113,8 @@ unmerged source commit as a semantic oracle.
   I6_FIXED_VOCABULARY_ARTIFACT=REQUIRES_SOURCE_PROOF
   I6_TASK7_FINAL_ACCEPTANCE=NOT_PROVEN
   I6_RULES_DOMAIN_COMPATIBILITY=DIFFERENT_OR_UNPROVEN
-  I6_CHECKPOINT_COMPATIBILITY=BLOCKED
+  I6_CHECKPOINT_COMPATIBILITY=NOT_AN_I6_FINAL_GATE
+  I7_CHECKPOINT_COMPATIBILITY=UNRESOLVED
   ```
 
   Do not add a test or fallback that hides one of these values.
@@ -201,8 +202,10 @@ vocabulary and never queries BabelCDB or hidden state.
 ### I6F — conditional Task7 materialization bridge
 
 Owning layer: `OCGForge.Ignis.Model`; semantic changes: none. This slice is
-not schedulable until Task7 materialization implementation and dataset/
-checkpoint readiness are independently accepted.
+not schedulable until the Task7 materialization semantics are accepted, the
+implementation/source is available, the exact configuration identity is
+validated, and native oracle vectors exist. Dataset and checkpoint readiness
+are not prerequisites for this materialization-only bridge.
 
 ```text
 CREATE src/OCGForge.Ignis.Model/OcgForgeTask7MaterializationV1.cs
@@ -212,6 +215,11 @@ CREATE tests/OCGForge.Ignis.Model.Tests/I6FTask7MaterializationTests.cs
 The bridge validates the exact Task7 configuration identity and compares
 canonical unpadded materialization bytes/tables. It never downgrades to Task4,
 creates a dataset identity, or loads a checkpoint.
+
+`DatasetManifest`, `TrainingDatasetSplitV1`, and a real checkpoint remain
+outside I6F. Dataset membership belongs to the separately owned Task7 dataset
+authority; checkpoint binding belongs to I7. Their absence must not be used to
+block a valid materialization-only cross-oracle vector.
 
 If the later path is supervised, it receives a separately validated
 `ModelSupervisionSampleV1`/admission association. The Task7 materializer does
@@ -473,5 +481,6 @@ I6_PROMPT_LOCAL_CARDCODE_MAPPING=BLOCKED
 I6_FIXED_VOCABULARY_ARTIFACT=REQUIRES_SOURCE_PROOF
 I6_TASK7_FINAL_ACCEPTANCE=NOT_PROVEN
 I6_RULES_DOMAIN_COMPATIBILITY=DIFFERENT_OR_UNPROVEN
-I6_CHECKPOINT_COMPATIBILITY=BLOCKED
+I6_CHECKPOINT_COMPATIBILITY=NOT_AN_I6_FINAL_GATE
+I7_CHECKPOINT_COMPATIBILITY=UNRESOLVED
 ```

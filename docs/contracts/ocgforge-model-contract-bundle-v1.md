@@ -101,8 +101,9 @@ domain, model input, dataset, or checkpoint.
 
 ### 3.1 Static semantic registry
 
-The following fifteen entries are the accepted model-facing bundle surface, in
-this order:
+The following fifteen entries are the frozen I6 bundle registry, in this
+order. They span mixed authority classes; `I6_BUNDLE_ENTRIES=15` must not be
+reported as fifteen same-class authoritative semantic contracts:
 
 ```text
 01 ocgforge.public_environment_observation.v1
@@ -201,14 +202,29 @@ The future canonical manifest bytes are an explicit ordered, value-owned
 encoding:
 
 ```text
-string(bundle_schema_id)
-string(bundle_schema_id)
+string(identity_domain)
+string(schema_id)
 string(ocgforge_source_commit)
 string(p5_acceptance_execution_head)
 vector<registry_entry>
 string(task7_materialization_config_identity)
 string(ignis_runtime_contract_id)
 string(compatibility_profile_token)
+```
+
+The first two fields are not placeholders and are not inferred from one
+another:
+
+```text
+identity_domain = ocgforge-ignis.i6.model-contract-bundle.v1
+schema_id       = ocgforge-ignis.i6.model-contract-bundle.v1
+ocgforge_source_commit =
+    3edfcabf51dd914f96adc4df903b1ac2a9d20e5f
+p5_acceptance_execution_head =
+    3c99e86c487361fc4e0f5f12678b4867e59232b7
+ignis_runtime_contract_id = ocgforge-ignis.runtime-bundle-identity.v1
+compatibility_profile_token =
+    ocgforge-ignis.i6.compatibility-profile.v1
 ```
 
 Each `registry_entry` is:
@@ -221,6 +237,53 @@ u8 runtime_required
 u8 canonical_bytes_required
 u8 identity_required
 ```
+
+The registry field codes are frozen as follows:
+
+```text
+authority_class:
+  0 = AUTHORITATIVE_SEMANTIC
+  1 = AUTHORITATIVE_ENCODING
+  2 = AUTHORITATIVE_IDENTITY
+  3 = PHYSICAL_EXECUTION_ONLY
+  4 = HISTORICAL_SMOKE_ONLY
+  5 = DERIVED_EVIDENCE
+  6 = NOT_RELEVANT_TO_I6
+
+owner_repository_id:
+  "ocgforge" = the only accepted owner token in this registry
+
+runtime_required, canonical_bytes_required, identity_required:
+  0 = false
+  1 = true
+```
+
+The complete fifteen-entry flag table is:
+
+| Order | Contract ID | Owner token | Authority code | Runtime | Canonical bytes | Concrete identity |
+| ---: | --- | --- | ---: | ---: | ---: | ---: |
+| 01 | `ocgforge.public_environment_observation.v1` | `ocgforge` | 0 | 1 | 1 | 1 |
+| 02 | `ocgforge.public_safe_state.v1` | `ocgforge` | 0 | 1 | 1 | 0 |
+| 03 | `ocgforge.public_action_identity.v1` | `ocgforge` | 2 | 1 | 1 | 1 |
+| 04 | `ocgforge.public_candidate_domain.v1` | `ocgforge` | 2 | 1 | 1 | 1 |
+| 05 | `ocgforge.public_semantic_decision_identity.v1` | `ocgforge` | 2 | 1 | 1 | 1 |
+| 06 | `ocgforge.episodic_environment.v2` | `ocgforge` | 0 | 1 | 0 | 1 |
+| 07 | `ocgforge.environment_identity.v2` | `ocgforge` | 2 | 1 | 1 | 1 |
+| 08 | `ocgforge.model_logical_input.v1` | `ocgforge` | 0 | 1 | 1 | 0 |
+| 09 | `ocgforge.model_encoded_input.v1` | `ocgforge` | 1 | 1 | 1 | 0 |
+| 10 | `ocgforge.model_card_vocabulary.v1` | `ocgforge` | 2 | 1 | 1 | 1 |
+| 11 | `ocgforge.model_input_identity.v1` | `ocgforge` | 2 | 1 | 1 | 1 |
+| 12 | `ocgforge.model_batch_layout.v1` | `ocgforge` | 3 | 0 | 1 | 0 |
+| 13 | `ocgforge.model_supervision_sample.v1` | `ocgforge` | 5 | 0 | 1 | 0 |
+| 14 | `ocgforge.phase6.task7.input_materialization.v1` | `ocgforge` | 3 | 0 | 1 | 0 |
+| 15 | `ocgforge.phase6.task7.input_materialization_config.v1` | `ocgforge` | 2 | 0 | 1 | 1 |
+```
+
+`runtime_required=0` means conditional for the I6 path, not unsupported. A
+concrete identity is required only where the owning contract defines one;
+`public_safe_state.v1`, logical input, encoded input, batch layout,
+supervision, and Task7 sample materialization have no separate per-value
+identity beyond the explicitly listed bytes/source associations.
 
 Strings use exact UTF-8 with a `u32be` byte length. Integers are unsigned
 big-endian. The registry vector order above is semantic and must not be
@@ -490,7 +553,8 @@ I6_PROMPT_LOCAL_CARDCODE_MAPPING=BLOCKED
 I6_FIXED_VOCABULARY_ARTIFACT=REQUIRES_SOURCE_PROOF
 I6_TASK7_FINAL_ACCEPTANCE=NOT_PROVEN
 I6_RULES_DOMAIN_COMPATIBILITY=DIFFERENT_OR_UNPROVEN
-I6_CHECKPOINT_COMPATIBILITY=BLOCKED
+I6_CHECKPOINT_COMPATIBILITY=NOT_AN_I6_FINAL_GATE
+I6_I7_CHECKPOINT_PREREQUISITES=DOCUMENTED_ONLY
 ```
 
 ### 11.1 Ignis public-state/event gap — BLOCKER
@@ -552,7 +616,9 @@ is present, owned by OCGForge, and bound to an exact source snapshot. It does
 not authorize I6 runtime code. A later I6 final acceptance additionally needs
 the oracle gates in the design and plan documents, including closure of the
 two blockers, exact vocabulary artifacts, native cross-oracle vectors, and
-explicit runtime compatibility evidence.
+explicit runtime compatibility evidence. A Task7 materialization-only bridge
+does not wait for `DatasetManifest`, `TrainingDatasetSplitV1`, or a checkpoint;
+those are separate Task7/I7 authorities.
 
 ```text
 I6A_RUNTIME_IMPLEMENTATION_AUTHORIZED=NO
