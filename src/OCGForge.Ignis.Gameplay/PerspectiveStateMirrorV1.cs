@@ -593,12 +593,16 @@ public sealed class PerspectiveStateMirrorV1
 
         foreach (EntityState entity in shifted)
         {
+            uint newOverlayIndex = entity.Address.OverlayIndex - 1;
             entity.Address = new MirrorAddress(
                 entity.Address.Controller,
                 entity.Address.Zone,
                 entity.Address.Sequence,
                 true,
-                entity.Address.OverlayIndex - 1);
+                newOverlayIndex);
+            entity.Position = MirrorValueV1.Known(
+                newOverlayIndex,
+                MirrorProvenanceV1.PublicProtocolFact);
             candidate.Entities.Add(entity.Address, entity);
         }
     }

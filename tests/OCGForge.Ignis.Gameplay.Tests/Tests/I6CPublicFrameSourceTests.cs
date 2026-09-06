@@ -1293,6 +1293,12 @@ internal static class I6CPublicFrameSourceTests
         Equal((uint)0x3333, FindI6C3Entity(
             initial,
             "p0:OVERLAY:2:1").Passcode!.Value);
+        PerspectiveSafeEntityV1 initialSecond = FindI6C3Entity(
+            initial,
+            "p0:OVERLAY:2:1");
+        Equal(PerspectiveSafePositionV1.FaceUpAttack, initialSecond.Position);
+        True(initialSecond.FaceUp);
+        False(initialSecond.FaceDown);
 
         ApplyMirrorMessage(
             mirror,
@@ -1311,6 +1317,12 @@ internal static class I6CPublicFrameSourceTests
         Equal((uint)0x3333, FindI6C3Entity(
             afterDetach,
             "p0:OVERLAY:2:0").Passcode!.Value);
+        PerspectiveSafeEntityV1 reindexedSecond = FindI6C3Entity(
+            afterDetach,
+            "p0:OVERLAY:2:0");
+        Equal(PerspectiveSafePositionV1.Unknown, reindexedSecond.Position);
+        False(reindexedSecond.FaceUp);
+        False(reindexedSecond.FaceDown);
         False(afterDetach.Entities.Any(entity =>
             entity.Locator == "p0:OVERLAY:2:1"));
         True(afterDetach.Relationships.Any(relation =>
