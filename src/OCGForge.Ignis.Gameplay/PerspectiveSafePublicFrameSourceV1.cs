@@ -942,12 +942,18 @@ public static class PerspectiveSafePublicFrameSourceV1
             return I6C3EndpointResolution.Unproven;
         }
 
-        if (card.IsOverlay || card.Zone == MirrorZoneV1.SpellTrapZone)
+        if (card.IsOverlay)
+        {
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                PerspectiveSafeSourceSectionV1.Relationships);
+            return I6C3EndpointResolution.Unproven;
+        }
+
+        if (card.Zone == MirrorZoneV1.SpellTrapZone)
         {
             error = default;
-            return card.Zone == MirrorZoneV1.SpellTrapZone
-                ? I6C3EndpointResolution.PendingI6C5
-                : I6C3EndpointResolution.Unproven;
+            return I6C3EndpointResolution.PendingI6C5;
         }
 
         if (card.Zone == MirrorZoneV1.MainDeck)

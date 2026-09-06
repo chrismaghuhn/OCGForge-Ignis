@@ -716,6 +716,7 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C3 preserves I6C2 source", AssertI6C3PreservesI6C2Source);
         Run("I6C3 overlay lifecycle", AssertI6C3OverlayLifecycle);
         Run("I6C3 hidden overlay privacy", AssertI6C3HiddenOverlayPrivacy);
+        Run("I6C3 hidden-only unrelated privacy", AssertI6C3HiddenOnlyPrivacy);
         Run("I6C3 relation lifecycle", AssertI6C3RelationLifecycle);
         Run("I6C3 unresolved public endpoint fails closed", AssertI6C3UnresolvedPublicEndpoint);
         Run("I6C3 relation ordering and privacy", AssertI6C3RelationOrderingAndPrivacy);
@@ -1404,6 +1405,13 @@ internal static class I6CPublicFrameSourceTests
         ApplyMirrorMessage(mirror, decoder, UnequipMessage(source));
         False(GetI6C3Source(mirror).Relationships.Any(relation =>
             relation.Kind == PerspectiveSafeRelationshipKindV1.Equip));
+    }
+
+    private static void AssertI6C3HiddenOnlyPrivacy()
+    {
+        Equal(
+            I6C3Signature(GetI6C3Source(CreateHiddenWorld(0xA100))),
+            I6C3Signature(GetI6C3Source(CreateHiddenWorld(0xB100))));
     }
 
     private static void AssertI6C3RelationOrderingAndPrivacy()
