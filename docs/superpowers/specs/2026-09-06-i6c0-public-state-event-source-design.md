@@ -262,8 +262,10 @@ past targets.
 ### 3.6 Visible event ledger and event fields
 
 OCGForge `VisibleEventKind` has 23 enum values including `Unknown` (which is a
-validation value, not a valid emitted semantic event) and 22 named events. The
-event projector at O4 proves that one message can produce multiple events:
+validation value, not a valid emitted semantic event) and 22 named semantic
+events. Enum completeness is separate from producer reachability under a
+particular pinned runtime profile. The event projector at O4 proves that one
+message can produce multiple events:
 `MSG_DRAW` can emit `Draw` plus `CardRevealed` events, and shuffle messages emit
 `Shuffle` plus `RandomizationBoundary`. Unsupported message families emit no
 event. Ignis currently has no persistent event ledger.
@@ -290,14 +292,18 @@ event. Ignis currently has no persistent event ledger.
 | `PositionChanged` | `MSG_POS_CHANGE` | I3 applies current position | Preserve old/new public semantics | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject missing old/new |
 | `CounterChanged` | `MSG_ADD_COUNTER`, `MSG_REMOVE_COUNTER` | Not admitted by I3 decoder | Preserve counter type and signed/unsigned meaning | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject unsupported counter form |
 | `Equipped` | `MSG_EQUIP` | I3 applies current equipment relation | Preserve source/target public locators | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject hidden/ambiguous relation |
-| `Unequipped` | `MSG_UNEQUIP` | I3 removes current equipment relation | Emit before removal loses source/target context | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject missing prior relation |
+| `Unequipped` | `MSG_UNEQUIP` parser-compatibility form (two locations; no producer in the current pinned runtime) | I3 removes the current equipment relation and retains an I3 wire-compatibility decoder | The I6C4-certified source must not admit an unproven 95 packet or synthesize the historical target | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C4 profile classification | I6C4 source admission fails closed; the I3 compatibility decoder may remain |
 | `Targeted` | `MSG_BECOME_TARGET`, `MSG_CARD_TARGET`, `MSG_CANCEL_TARGET` | I3 applies current target relations | Preserve exact event action and visible targets | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject hidden/ambiguous target |
 | `Win` | `MSG_WIN` | I3 applies terminal snapshot | Preserve winner/win reason at event time | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject invalid terminal payload |
 
-The event-kind table is complete for the OCGForge enum. Every named kind is
-currently blocked at the source-container level even where a typed Ignis
-message already exists, because current Ignis does not retain the complete
-event fields/history needed by OCGForge.
+The event-kind table is complete for the OCGForge enum, but it is not a claim
+that every enum member has a reachable producer under every runtime pin. I6C4
+must close every source-backed producer reachable under the exact pinned
+runtime profile and must explicitly classify enum members that are unreachable.
+For the current profile, `MSG_UNEQUIP` is such an enum member: the OCGForge
+parser accepts a two-location compatibility shape, while the pinned runtime
+has no producer. The existing Ignis one-location decoder remains an I3 wire
+compatibility path and is not I6C4 source authority.
 
 The event field matrix is:
 
@@ -556,6 +562,29 @@ The two I6C0 blockers are:
 These are source-closure findings, not permission to synthesize data from the
 private mirror or current board. The prompt-local CardCode gap and rules/runtime
 compatibility gap remain unchanged and outside this task.
+
+### 9.1 Runtime-profile reachability resolution for `MSG_UNEQUIP`
+
+The semantic enum member `Unequipped` remains valid OCGForge vocabulary, but
+the current pinned runtime profile has no source-backed producer for
+`MSG_UNEQUIP` (message id 95). The OCGForge event projector's two-location
+case and Ignis' one-location decoder are therefore compatibility/parser
+surfaces, not evidence that the current runtime can emit the event.
+
+The I3 decoder may continue accepting its historical one-location form for
+wire compatibility. That acceptance must not promote the packet into the
+I6C4-certified event source. An unexpected `MSG_UNEQUIP` under this profile
+must fail I6C4 source admission closed:
+
+```text
+MUST NOT be accepted as a source-backed Unequipped event
+MUST NOT synthesize a target from current or prior mirror state
+MUST NOT change the I3 compatibility parser contract
+```
+
+I6C4 acceptance therefore requires reachable-producer closure plus an explicit
+unreachable-enum classification; it does not require a reachable producer for
+every enum member.
 
 ## 10. Future acceptance evidence
 
