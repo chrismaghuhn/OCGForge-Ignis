@@ -59,8 +59,11 @@ if ((git rev-parse HEAD).Trim() -cne $expectedIgnisMain) {
 git switch -c chris/i6a-model-contract-cross-oracle-freeze
 ```
 
-The OCGForge audit checkout is read-only. Verify its source anchor without
-switching or modifying it:
+The OCGForge audit checkout is read-only. The following guard records the
+historical I6A audit anchor and is retained as historical procedure; it is not
+the current I6 source binding. The current reconciled binding is
+`f929de0b4d4157327dba003067d2e21e42f7ad75`. Verify the historical audit anchor
+without switching or modifying it:
 
 ```powershell
 git -C C:\yogiohML fetch origin --prune

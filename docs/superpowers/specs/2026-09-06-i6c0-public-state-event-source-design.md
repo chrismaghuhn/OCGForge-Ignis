@@ -7,7 +7,8 @@ Audit date: 2026-09-06
 
 ```text
 IGNIS_SOURCE_COMMIT=144322702a0d885e71ff2b578d134e104ffb2969
-OCGFORGE_SOURCE_COMMIT=3edfcabf51dd914f96adc4df903b1ac2a9d20e5f
+I6C0_AUDIT_OCGFORGE_SOURCE_COMMIT=3edfcabf51dd914f96adc4df903b1ac2a9d20e5f
+CURRENT_OCGFORGE_SOURCE_BINDING=f929de0b4d4157327dba003067d2e21e42f7ad75
 I3_V1_CANONICAL_BYTES_CHANGED=NO
 I3_V1_IDENTITY_CHANGED=NO
 ```
@@ -46,8 +47,12 @@ inference.
 
 ## 2. Audited authority set
 
-The OCGForge authority was read from `origin/main` at
-`3edfcabf51dd914f96adc4df903b1ac2a9d20e5f`. The relevant primary surfaces are:
+The OCGForge authority for the I6C0 audit was read from `origin/main` at the
+historical snapshot `3edfcabf51dd914f96adc4df903b1ac2a9d20e5f`. The current
+reconciled I6 source binding is the independently accepted merge commit
+`f929de0b4d4157327dba003067d2e21e42f7ad75`; the accepted parser bugfix does
+not change the public event schema or canonical event meaning. The relevant
+primary surfaces are:
 
 | Authority | Exact source | Finding for I6C0 |
 | --- | --- | --- |

@@ -7,7 +7,8 @@ Audit date: 2026-09-06
 
 ```text
 IGNIS_MAIN=e54f392d3688a28f2892c02998854349b2007a91
-OCGFORGE_MAIN=3edfcabf51dd914f96adc4df903b1ac2a9d20e5f
+OCGFORGE_AUDIT_MAIN=3edfcabf51dd914f96adc4df903b1ac2a9d20e5f
+OCGFORGE_CURRENT_SOURCE_BINDING=f929de0b4d4157327dba003067d2e21e42f7ad75
 ```
 
 ## 1. Scope and decision boundary
@@ -37,10 +38,14 @@ SELECT_SUM   = FAIL_CLOSED_UNSUPPORTED_V1
 ANNOUNCE_CARD = FAIL_CLOSED_UNSUPPORTED
 ```
 
-The OCGForge `origin/main` anchor is live at `3edfcabf…`. Its checked-out
-branch was `chris/phase6-task7-run-a-failure-localization` at `a32d336…`, two
-commits ahead of `origin/main`; those diagnostic commits were excluded from
-this audit. OCGForge was not modified.
+The original I6A audit used the OCGForge `origin/main` anchor
+`3edfcabf…`. Its checked-out branch was
+`chris/phase6-task7-run-a-failure-localization` at `a32d336…`, two commits
+ahead of `origin/main`; those diagnostic commits were excluded from that
+audit. OCGForge was not modified. The current reconciled I6 source binding is
+the independently accepted OCGForge merge commit `f929de0b…`; the later
+producer-shaped shuffle parser acceptance does not change the public event
+schema or canonical event meaning.
 
 The Ignis repository does not contain `docs/NORMATIVE_HIERARCHY.md` or
 `docs/CURRENT_PROJECT_STATE.md`; the authoritative versions inspected for
