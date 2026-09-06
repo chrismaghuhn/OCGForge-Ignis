@@ -93,7 +93,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          dotnet run --project tests/OCGForge.Ignis.Model.Tests/OCGForge.Ignis.Model.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i6b-a.txt"
-          dotnet run --project tests/OCGForge.Ignis.Model.Tests/OCGForge.Ignis.Model.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i6b-b.txt"
-          cmp -- "$RUNNER_TEMP/i6b-a.txt" "$RUNNER_TEMP/i6b-b.txt"
-          cat "$RUNNER_TEMP/i6b-a.txt"
+          set +e
+          dotnet run --project tests/OCGForge.Ignis.Model.Tests/OCGForge.Ignis.Model.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i6b-a.stdout" 2> "$RUNNER_TEMP/i6b-a.stderr"
+          i6b_a_status=$?
+          dotnet run --project tests/OCGForge.Ignis.Model.Tests/OCGForge.Ignis.Model.Tests.csproj --configuration Release --no-build --no-restore > "$RUNNER_TEMP/i6b-b.stdout" 2> "$RUNNER_TEMP/i6b-b.stderr"
+          i6b_b_status=$?
+          set -e
+          test "$i6b_a_status" -eq "$i6b_b_status"
+          test "$i6b_a_status" -eq 0
+          cmp -- "$RUNNER_TEMP/i6b-a.stdout" "$RUNNER_TEMP/i6b-b.stdout"
+          cmp -- "$RUNNER_TEMP/i6b-a.stderr" "$RUNNER_TEMP/i6b-b.stderr"
+          cat "$RUNNER_TEMP/i6b-a.stdout"
+          cat "$RUNNER_TEMP/i6b-a.stderr"
