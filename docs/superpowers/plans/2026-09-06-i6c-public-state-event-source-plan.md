@@ -97,8 +97,9 @@ an I3 V1 extension, or any prompt-local/private value.
 
 **Semantic work:**
 
-- Source life points, turn player/count, phase, terminal, and proven terminal values without aliases.
-- Produce all ten OCGForge zone kinds, including field/pzone/overlay only with explicit layout/relation proof.
+- Close the gameplay-state globals (life points, turn player/count, phase, terminal, and proven terminal values) without aliases; `duel_flags` remains explicit I6C5 configuration and `player_to_act` remains outside I6C under I6D.
+- Close ordinary OCGForge zones and layout-derived field/pzone values only where their source is explicit and proven.
+- Do not claim overlay/Xyz-dependent zone or entity closure in I6C2; leave those constituents fail-closed pending the relation/material proof owned by I6C3.
 - Preserve total/public/hidden counts and observable-order values per zone.
 - Convert current entity facts to public locators and optional values under I3 knowledge rules.
 - Never produce a Main Deck entity or hidden unknown locator.
@@ -108,6 +109,7 @@ an I3 V1 extension, or any prompt-local/private value.
 
 - each global field mutation changes exactly its public source value;
 - field/pzone layout ambiguity fails closed;
+- overlay/Xyz-dependent values remain blocked rather than being fabricated before I6C3;
 - counts and hidden/public populations remain exact for both perspectives;
 - current locators are unique and stable under dictionary/container reorder;
 - knowledge-destroying transitions remove stale identity;
@@ -121,8 +123,9 @@ an I3 V1 extension, or any prompt-local/private value.
 - Retain private source diagnostics separately from public frame values.
 
 **Stop boundary:** Stop on any required printed/current field whose source is
-not accepted, any hidden-card leakage, or any proposal to alter
-`PublicStateProjectionV1.cs` V1 encoding.
+not accepted, any hidden-card leakage, any attempt to claim overlay/Xyz
+closure before I6C3, or any proposal to alter `PublicStateProjectionV1.cs` V1
+encoding.
 
 ### Task I6C3: Relationship and chain source closure
 
@@ -138,6 +141,9 @@ not accepted, any hidden-card leakage, or any proposal to alter
 
 **Semantic work:**
 
+- Close the overlay/Xyz-dependent zone and entity constituents deliberately
+  left blocked by I6C2, but only after the current public locator seam and the
+  parent/material source are accepted.
 - Map internal target/equipment/overlay relation facts to OCGForge `Target`, `Equip`, and `XyzMaterial` only when both public endpoints are proven.
 - Preserve exact current relation removal/retargeting semantics.
 - Preserve complete chain link order, triggering player, source, activation zone, description, and targets.
@@ -245,9 +251,10 @@ mapping, which are outside I6C and belong to I6D.
 
 **Semantic work:**
 
-- Compare native OCGForge safe-state bytes and decoded field values against independently constructed Ignis source values.
+- Compare native OCGForge safe-state bytes and decoded field values against independently constructed Ignis source values only for vectors whose `player_to_act` is legitimately absent and that carry no decision context.
 - Compare event count/order/index/optional presence and historical references.
-- Compare outer observation bytes only when decision context is fully accepted.
+- Do not claim full Decision-Boundary safe-state byte equality: vectors with `player_to_act=PRESENT` are `BLOCKED_PENDING_I6D` until I6D supplies the accepted decision source.
+- Compare outer observation bytes only after the separately owned I6D decision composition is accepted.
 - Keep prompt-local CardCode blocker outside this slice; affected frames fail closed.
 
 **Gates:**
@@ -277,6 +284,9 @@ as a substitute for accepted OCGForge safe-state semantics.
 
 ```text
 GLOBALS_SOURCE=BLOCKED
+I6C_STATE_GLOBALS_SOURCE=BLOCKED
+I6C_PLAYER_TO_ACT_SOURCE=OUTSIDE_I6C_PENDING_I6D
+I6_DECISION_BOUNDARY_SAFE_STATE_BYTES=BLOCKED_PENDING_I6D
 ZONES_SOURCE=BLOCKED
 ENTITIES_SOURCE=BLOCKED
 RELATIONSHIPS_SOURCE=BLOCKED_PENDING_LOCATOR_CLOSURE
@@ -291,10 +301,11 @@ These are current source-closure values, not acceptance claims. The following
 is the required matrix for a later I6C final review after the preceding slices
 have closed their dependencies:
 
-**Required future final matrix:**
+**Required future I6C-owned state-only final matrix:**
 
 ```text
-I6C_GLOBALS_SOURCE=PROVEN
+I6C_STATE_GLOBALS_SOURCE=PROVEN
+I6C_STATE_ONLY_SAFE_STATE_BYTES=PROVEN
 I6C_ZONES_SOURCE=PROVEN
 I6C_ENTITIES_SOURCE=PROVEN
 I6C_RELATIONSHIPS_SOURCE=PROVEN
@@ -313,6 +324,21 @@ I6_HISTORICAL_LOCATOR_NO_REBIND=PASS
 I6_NO_PRIVATE_CONTINUATION_LEAK=PASS
 I6_NO_I6D_OR_I7_AUTHORITY=PASS
 ```
+
+The decision-boundary composition is a separate deferred matrix and is not an
+I6C final prerequisite:
+
+```text
+I6C_PLAYER_TO_ACT_SOURCE=OUTSIDE_I6C
+I6_DECISION_BOUNDARY_SAFE_STATE_BYTES=BLOCKED_PENDING_I6D
+I6C_DECISION_CONTEXT_SOURCE=OUTSIDE_I6C
+```
+
+I6C6 may compare only state-only vectors whose OCGForge
+`player_to_act` is semantically absent. Full decision-boundary safe-state or
+outer-observation equality becomes eligible only after I6D supplies and
+accepts the decision source; I6C must not close that gap by dropping a
+present field.
 
 The exact test count is intentionally UNKNOWN until this final slice is
 authorized; the implementation must record the actual live harness count and

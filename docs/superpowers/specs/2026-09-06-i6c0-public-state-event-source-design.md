@@ -105,20 +105,25 @@ P  = Ignis PROTOCOL_PROVENANCE.md and pinned EDOPro message facts
 | OCGForge field | Required semantics | Ignis source | Pinned producer | Knowledge classification | Persistence/history needed | Ordering rule | Status | Owning future slice | Failure behavior |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | safe-state domain/schema | Exact `ocgforge.public_safe_state.v1` pair | None; fixed contract value | O1/O2 | Contract constant | No runtime history | First two safe-state fields | PROVEN_EXISTING_SOURCE | I6C1 | Reject if altered or absent |
-| `globals.duel_flags` | Exact duel-layout/flag value | I2 `PublicStateProjectionContextV1.DuelFlags`; not retained by `MirrorState` | O3 receives explicit flags | Configuration value, not inferred state | Run configuration | Scalar | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C6 | Reject if absent or inconsistent |
-| `globals.life_points[]` | Ordered current LP values, one per absolute player | I1 `MirrorState.LifePoints`; start and LP message payloads | O3 `field.players[].life_points`; P `MSG_START`, LP messages | Perspective-safe public scalar | Current state only | Absolute player order | PROVEN_EXISTING_SOURCE | I6C3 | Reject unknown/count mismatch |
+| `globals.duel_flags` | Exact duel-layout/flag value | I2 `PublicStateProjectionContextV1.DuelFlags`; not retained by `MirrorState` | O3 receives explicit flags | Configuration value, not inferred state | Run configuration | Scalar | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C5 | Reject if absent or inconsistent |
+| `globals.life_points[]` | Ordered current LP values, one per absolute player | I1 `MirrorState.LifePoints`; start and LP message payloads | O3 `field.players[].life_points`; P `MSG_START`, LP messages | Perspective-safe public scalar | Current state only | Absolute player order | PROVEN_EXISTING_SOURCE | I6C2 | Reject unknown/count mismatch |
 | `globals.player_to_act?` | Optional current acting player, not a turn-player alias | OCGForge derives it from attached decision context; current Ignis has no accepted general field | O1 `DecisionContext.player` | Decision/context value, not gameplay state | Decision integration | Optional presence bit | OUTSIDE_I6C | I6D | Omit unless the separately owned decision source supplies it; never infer |
-| `globals.turn_player?` | Optional absolute player whose turn is current | I1 `MirrorState.TurnPlayer`, `ApplyNewTurn` | O3 event-global projection and `MSG_NEW_TURN` | Public protocol fact | Current state | Optional presence bit | PROVEN_EXISTING_SOURCE | I6C3 | Reject invalid player/provenance |
-| `globals.turn_count?` | Optional semantic turn count | I1 `MirrorState.TurnCount`, incremented by `ApplyNewTurn` | O3 derives from turn-start events | Public derived scalar | Current state plus turn history | Scalar | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C3 | Reject if equivalence cannot be proved |
-| `globals.phase?` | Optional exact phase value | I1 `MirrorState.Phase`, `ApplyNewPhase` | O3 phase events / `MSG_NEW_PHASE` | Public protocol fact | Current state | Optional presence bit | PROVEN_EXISTING_SOURCE | I6C3 | Reject invalid provenance |
-| `globals.chain_length` | Current chain length, distinct from link count | I1 chains plus pending chain; not exposed by accepted I3 V1 | O3 `field.chain.size()` | Current mirror fact requiring a new public source | Current chain state | Scalar | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject inconsistent chain/pending state |
-| `globals.winner?` | Optional absolute winner | I1 `MirrorTerminalSnapshotV1.Winner` is omitted by accepted I3 V1 | O1/O3 win source | Current mirror fact requiring a new public source | Terminal state | Optional presence bit | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject invalid player |
-| `globals.win_reason?` | Optional exact win reason/type | I1 `MirrorTerminalSnapshotV1.WinType` | O1 `MSG_WIN` payload | Public terminal fact, exact name mapping still required | Terminal state | Optional presence bit | SEMANTICS_AMBIGUOUS | I6C3 | Reject until native equivalence is proven |
-| `globals.terminal` | Terminal boolean | I1 `MirrorTerminalSnapshotV1.IsTerminal` | O3 Win projection | Public current fact | Current state | Scalar | PROVEN_EXISTING_SOURCE | I6C3 | Reject terminal/state contradiction |
+| `globals.turn_player?` | Optional absolute player whose turn is current | I1 `MirrorState.TurnPlayer`, `ApplyNewTurn` | O3 event-global projection and `MSG_NEW_TURN` | Public protocol fact | Current state | Optional presence bit | PROVEN_EXISTING_SOURCE | I6C2 | Reject invalid player/provenance |
+| `globals.turn_count?` | Optional semantic turn count | I1 `MirrorState.TurnCount`, incremented by `ApplyNewTurn` | O3 derives from turn-start events | Public derived scalar | Current state plus turn history | Scalar | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C2 | Reject if equivalence cannot be proved |
+| `globals.phase?` | Optional exact phase value | I1 `MirrorState.Phase`, `ApplyNewPhase` | O3 phase events / `MSG_NEW_PHASE` | Public protocol fact | Current state | Optional presence bit | PROVEN_EXISTING_SOURCE | I6C2 | Reject invalid provenance |
+| `globals.chain_length` | Current chain length, distinct from link count | I1 chains plus pending chain; not exposed by accepted I3 V1 | O3 `field.chain.size()` | Current mirror fact requiring a new public source | Current chain state | Scalar | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject inconsistent chain/pending state |
+| `globals.winner?` | Optional absolute winner | I1 `MirrorTerminalSnapshotV1.Winner` is omitted by accepted I3 V1 | O1/O3 win source | Current mirror fact requiring a new public source | Terminal state | Optional presence bit | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject invalid player |
+| `globals.win_reason?` | Optional exact win reason/type | I1 `MirrorTerminalSnapshotV1.WinType` | O1 `MSG_WIN` payload | Public terminal fact, exact name mapping still required | Terminal state | Optional presence bit | SEMANTICS_AMBIGUOUS | I6C2 | Reject until native equivalence is proven |
+| `globals.terminal` | Terminal boolean | I1 `MirrorTerminalSnapshotV1.IsTerminal` | O3 Win projection | Public current fact | Current state | Scalar | PROVEN_EXISTING_SOURCE | I6C2 | Reject terminal/state contradiction |
 
 `player_to_act` is not interchangeable with `turn_player`. `decision_index`,
 `PromptInstanceOrdinal`, continuation steps, network message counts, and
 GAME_MSG counts are not accepted substitutes for either global turn field.
+
+I6C2 owns the gameplay-state globals above except for `player_to_act`. The
+configured `duel_flags` value is owned by I6C5 because it is explicit runtime
+configuration rather than reducer state; `player_to_act` remains outside I6C
+and is owned by I6D.
 
 ### 3.2 Zone records
 
@@ -130,23 +135,31 @@ card flags rather than a complete zone vector.
 
 | Zone field / coverage | Required semantics | Ignis source | Pinned producer | Knowledge classification | Persistence/history needed | Ordering rule | Status | Owning future slice | Failure behavior |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `zone.player` | Absolute player 0/1 | I1 controller/perspective mapping | O1/O3 | Public | Current state | Zone tuple order | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C3 | Reject invalid player |
-| `zone.kind` for MAIN_DECK/HAND/MZONE/SZONE/GRAVE/BANISHED/EXTRA | Exact semantic zone enum | I1 `MirrorZoneV1` | O3 zone projection | Public | Current state | OCGForge zone tuple sort | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C3 | Reject unknown enum |
-| `zone.kind` for FIELD_ZONE/PENDULUM_RELEVANT | SZONE layout-dependent semantic classification | I2 `TryClassifySpellTrap`, duel flags, proven Type query | O3 `project_zone` | Public only with flags and Type proof | Current state/config | OCGForge zone tuple sort | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C3 | Reject missing/contradictory layout proof |
-| `zone.kind` for OVERLAY | Separate overlay population | I1 `IsOverlay`, `OverlayRelations` | O3 overlay traversal | Perspective-safe only with parent/material proof | Current relation/state | Zone tuple sort | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C4 | Reject unproven parent/continuity |
-| `zone.total_count` for existing seven zones | Total population, including hidden cards | I1 `ZoneCounts` and participant zones | O3 `add_zone_counts` | Public count | Current state | Zone tuple sort | PROVEN_EXISTING_SOURCE | I6C3 | Reject count underflow/overflow |
-| `zone.total_count` for field/pzone/overlay | Total population of derived zone | I1 slots/overlay flags; no complete public zone vector | O3 layout/overlay traversal | Derived public fact | Current state/config | Zone tuple sort | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject if composition is incomplete |
-| `zone.public_identity_count` | Count of identities legally public to perspective | I1 nullable card codes and counts, but no accepted zone summary | O3 visibility rules | Zone-level visibility semantics differ at current seam | Current state | Zone tuple sort | SEMANTICS_AMBIGUOUS | I6C3 | Reject if visibility cannot be proven |
-| `zone.hidden_count` | Exact hidden population, not guessed as a residual | I1 total counts plus incomplete public-card projection | O3 computes from zone-specific visibility | Zone-level residual semantics are not yet equivalent | Current state | Zone tuple sort | SEMANTICS_AMBIGUOUS | I6C3 | Reject if residual derivation is not valid for zone |
-| `zone.player_observable_order` | Whether order is observable and semantically meaningful | No equivalent field in I1/I2; own-Hand semantics differ | O3 sets explicit per-zone value | Public semantic policy | Current state plus zone policy | Zone tuple sort | SEMANTICS_AMBIGUOUS | I6C3 | Reject instead of container-order inference |
-| Main Deck coverage | Count only; no per-card entity/locator | I1 count exists; public I3 excludes cards | O3 `keep_entity` excludes Main Deck | Hidden/public population rule | Current state | Main Deck zone record | PROVEN_EXISTING_SOURCE | I6C3 | Never create per-card Main Deck locator |
-| Hand coverage | Own order/identity may be perspective-private; opponent hidden identities omitted | I1 hand count/cards/provenance | O3 visibility and sequence rules | Perspective-safe | Current state; shuffle destroys hidden continuity | Zone tuple sort | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C3 | Reject hidden identity leakage |
-| MZONE/SZONE coverage | Field slots and public/hidden identity | I1 field entities/positions; SZONE mapping in I2 | O3 field slots/layout | Public with layout proof | Current state/config | Zone tuple sort | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C3 | Reject unsupported layout |
-| Graveyard/Banished coverage | Population and public identities only when proven | I1 counts/entities/query provenance | O3 visibility rules | Perspective-safe | Current state | Zone tuple sort | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C3 | Reject unproven identity |
-| Extra Deck coverage | Count; known public cards only when exposed | I1 count/entities/provenance | O3 visibility rules | Perspective-safe | Current state; hidden continuity destroyed | Zone tuple sort | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C3 | Never create unknown locator |
+| `zone.player` | Absolute player 0/1 | I1 controller/perspective mapping | O1/O3 | Public | Current state | Zone tuple order | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C2 | Reject invalid player |
+| `zone.kind` for MAIN_DECK/HAND/MZONE/SZONE/GRAVE/BANISHED/EXTRA | Exact semantic zone enum | I1 `MirrorZoneV1` | O3 zone projection | Public | Current state | OCGForge zone tuple sort | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C2 | Reject unknown enum |
+| `zone.kind` for FIELD_ZONE/PENDULUM_RELEVANT | SZONE layout-dependent semantic classification | I2 `TryClassifySpellTrap`, duel flags, proven Type query | O3 `project_zone` | Public only with flags and Type proof | Current state/config | OCGForge zone tuple sort | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C2 | Reject missing/contradictory layout proof |
+| `zone.kind` for OVERLAY | Separate overlay population only after parent/material proof | I1 `IsOverlay`, `OverlayRelations` | O3 overlay traversal | Perspective-safe only with parent/material proof | Current relation/state | Zone tuple sort | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject unproven parent/continuity |
+| `zone.total_count` for existing seven zones | Total population, including hidden cards | I1 `ZoneCounts` and participant zones | O3 `add_zone_counts` | Public count | Current state | Zone tuple sort | PROVEN_EXISTING_SOURCE | I6C2 | Reject count underflow/overflow |
+| `zone.total_count` for field/pzone | Total population of derived zone | I1 slots; no complete public zone vector | O3 layout traversal | Derived public fact | Current state/config | Zone tuple sort | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject if composition is incomplete |
+| `zone.total_count` for overlay | Total overlay population under proven parent relations | I1 overlay flags/relations | O3 overlay traversal | Derived public fact | Current relation/state | Zone tuple sort | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject if relation composition is incomplete |
+| `zone.public_identity_count` | Count of identities legally public to perspective | I1 nullable card codes and counts, but no accepted zone summary | O3 visibility rules | Zone-level visibility semantics differ at current seam | Current state | Zone tuple sort | SEMANTICS_AMBIGUOUS | I6C2 | Reject if visibility cannot be proven |
+| `zone.hidden_count` | Exact hidden population, not guessed as a residual | I1 total counts plus incomplete public-card projection | O3 computes from zone-specific visibility | Zone-level residual semantics are not yet equivalent | Current state | Zone tuple sort | SEMANTICS_AMBIGUOUS | I6C2 | Reject if residual derivation is not valid for zone |
+| `zone.player_observable_order` | Whether order is observable and semantically meaningful | No equivalent field in I1/I2; own-Hand semantics differ | O3 sets explicit per-zone value | Public semantic policy | Current state plus zone policy | Zone tuple sort | SEMANTICS_AMBIGUOUS | I6C2 | Reject instead of container-order inference |
+| Main Deck coverage | Count only; no per-card entity/locator | I1 count exists; public I3 excludes cards | O3 `keep_entity` excludes Main Deck | Hidden/public population rule | Current state | Main Deck zone record | PROVEN_EXISTING_SOURCE | I6C2 | Never create per-card Main Deck locator |
+| Hand coverage | Own order/identity may be perspective-private; opponent hidden identities omitted | I1 hand count/cards/provenance | O3 visibility and sequence rules | Perspective-safe | Current state; shuffle destroys hidden continuity | Zone tuple sort | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C2 | Reject hidden identity leakage |
+| MZONE/SZONE coverage | Field slots and public/hidden identity | I1 field entities/positions; SZONE mapping in I2 | O3 field slots/layout | Public with layout proof | Current state/config | Zone tuple sort | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C2 | Reject unsupported layout |
+| Graveyard/Banished coverage | Population and public identities only when proven | I1 counts/entities/query provenance | O3 visibility rules | Perspective-safe | Current state | Zone tuple sort | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C2 | Reject unproven identity |
+| Extra Deck coverage | Count; known public cards only when exposed | I1 count/entities/provenance | O3 visibility rules | Perspective-safe | Current state; hidden continuity destroyed | Zone tuple sort | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C2 | Never create unknown locator |
 
 `hidden_count` must not be implemented as “total minus rows currently emitted”
 unless the zone-specific visibility rule and all omitted categories are proven.
+
+I6C2 closes ordinary zone/entity facts and any layout-derived field/pzone
+facts whose source is independently proven. It does not claim complete
+ten-zone closure: overlay population, overlay entity zone, and
+`overlay_sequence` remain explicitly blocked until I6C3 proves the parent and
+material relationships. A future I6C2 implementation must preserve those
+constituents as fail-closed rather than fabricating an overlay projection.
 
 ### 3.3 Entity records and nested card properties
 
@@ -158,49 +171,50 @@ are not yet a complete accepted entity-property source.
 
 | Entity field | Required semantics | Ignis source | Pinned producer | Knowledge classification | Persistence/history needed | Ordering rule | Status | Owning future slice | Failure behavior |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `entity.locator` | Non-empty unique public semantic locator | I2 `PublicSemanticLocatorV1` forms, but own-Hand mapping differs from OCGForge | O1/O2 locator validation | Public token semantics are not fully equivalent | Current frame only | Locator value | SEMANTICS_AMBIGUOUS | I6C3 | Reject missing/colliding/unproven locator |
-| `entity.identity_known` | Whether passcode/properties are known to perspective | I1 `MirrorValueV1.IsKnown` and provenance | O3 visibility rule | Perspective-safe knowledge classification | Knowledge-destroying transitions | Entity record | PROVEN_EXISTING_SOURCE | I6C3 | Reject inconsistent identity fields |
-| `entity.passcode?` | Optional public passcode | I1 `CardCode` when proven | O3 query/protocol visibility | Public or legitimate perspective-private fact | Current knowledge only | Optional presence | PROVEN_EXISTING_SOURCE | I6C3 | Omit unknown; never reconstruct |
-| `entity.owner?` | Optional absolute owner | I1 owner query/provenance is not emitted by I3 V1 cards | O3 card query | Public only when proven | Current state | Optional presence | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject invalid player/provenance |
-| `entity.controller?` | Optional absolute controller | I1 address/controller mapping | O3 current field source | Public current fact | Current state | Optional presence | PROVEN_EXISTING_SOURCE | I6C3 | Reject invalid player |
-| `entity.zone` | Exact semantic zone | I1 zone/address plus I2 SZONE mapping | O3 zone projection | Public with layout proof | Current state/config | Entity locator order | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C3 | Reject unknown/layout ambiguity |
-| `entity.sequence?` | Optional semantic sequence, not hidden physical identity | I1 address sequence; I2 uses code-group ordinals for pile cards | O3 sequence visibility rule | Own-Hand/current locator semantics differ | Current state | Entity locator order | SEMANTICS_AMBIGUOUS | I6C3 | Omit when not observable |
-| `entity.overlay_sequence?` | Optional overlay position under proven parent | I1 overlay index/address and I2 overlay locator | O3 overlay traversal | Derived public positional fact when parent is proven | Current relation/state | Entity locator order | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C4 | Reject hidden continuity ambiguity |
-| `entity.position` | Exact public position code, including Unknown | I1 position provenance | O3 query position | Public/known fact | Current state | Entity locator order | PROVEN_EXISTING_SOURCE | I6C3 | Reject unproven non-unknown value |
-| `entity.face_up` | Position-derived face-up flag | I1 position plus local mapping | O3 card projection | Derived public fact | Current state | Entity record | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C3 | Reject both face flags true |
-| `entity.face_down` | Position-derived face-down flag | I1 position plus local mapping | O3 card projection | Derived public fact | Current state | Entity record | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C3 | Reject both face flags true |
-| `entity.printed?` | Static printed properties for known public identity | No Ignis accepted static-card-data source; I1 stores query facts, not printed records | O3 uses `CoreHost.static_card_data` | Must be perspective-safe and explicitly sourced | Current known identity | Property field order | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject complete frame if required |
-| `entity.current?` | Current public/proven dynamic properties | I1 query fields with provenance | O3 current query projection | Public/known facts only | Current state | Property field order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Omit only when contract permits; never guess |
-| `printed.type?` | Printed type bitset | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.attribute?` | Printed attribute bitset | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.race?` | Printed race bitset | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.attack?` | Printed signed attack | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.defense?` | Printed signed defense | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.base_attack?` | Printed base attack if contract supplies it | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.base_defense?` | Printed base defense if contract supplies it | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.level?` | Printed level | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.rank?` | Printed rank | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.link_rating?` | Printed link rating | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.link_markers[]` | Ordered marker enum codes | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Sorted by enum code | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.left_scale?` | Printed left scale | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.right_scale?` | Printed right scale | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.status_flags?` | Printed status flags if defined | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `printed.counters[]` | Printed counters `(type,count)` | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Sorted `(type,count)` | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C3 | Reject if required |
-| `current.type?` | Current type bitset | I1 query `QueryFlagV1.Type` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.attribute?` | Current attribute | I1 query `Attribute` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.race?` | Current race | I1 query `Race` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.attack?` | Current signed attack | I1 query `Attack` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.defense?` | Current signed defense | I1 query `Defense` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.base_attack?` | Current base attack | I1 query `BaseAttack` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.base_defense?` | Current base defense | I1 query `BaseDefense` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.level?` | Current level | I1 query `Level` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.rank?` | Current rank | I1 query `Rank` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.link_rating?` | Current link rating | I1 query `Link` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.link_markers[]` | Current marker values in canonical enum order | I1 `ModernQueryLinkPayloadV1` | O3 query projection | Public/proven perspective fact | Current state | Sorted enum code | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject unproven/malformed mapping |
-| `current.left_scale?` | Current left scale | I1 query `LScale`, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.right_scale?` | Current right scale | I1 query `RScale`, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.status_flags?` | Current status flags | I1 query `Status`, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/unproven value |
-| `current.counters[]` | Current `(type,count)` values | I1 query `Counters` | O3 query projection | Public/proven perspective fact | Current state | Sorted `(type,count)` | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject unproven/malformed mapping |
+| `entity.locator` | Non-empty unique public semantic locator | I2 `PublicSemanticLocatorV1` forms, but own-Hand mapping differs from OCGForge | O1/O2 locator validation | Public token semantics are not fully equivalent | Current frame only | Locator value | SEMANTICS_AMBIGUOUS | I6C2 | Reject missing/colliding/unproven locator |
+| `entity.identity_known` | Whether passcode/properties are known to perspective | I1 `MirrorValueV1.IsKnown` and provenance | O3 visibility rule | Perspective-safe knowledge classification | Knowledge-destroying transitions | Entity record | PROVEN_EXISTING_SOURCE | I6C2 | Reject inconsistent identity fields |
+| `entity.passcode?` | Optional public passcode | I1 `CardCode` when proven | O3 query/protocol visibility | Public or legitimate perspective-private fact | Current knowledge only | Optional presence | PROVEN_EXISTING_SOURCE | I6C2 | Omit unknown; never reconstruct |
+| `entity.owner?` | Optional absolute owner | I1 owner query/provenance is not emitted by I3 V1 cards | O3 card query | Public only when proven | Current state | Optional presence | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject invalid player/provenance |
+| `entity.controller?` | Optional absolute controller | I1 address/controller mapping | O3 current field source | Public current fact | Current state | Optional presence | PROVEN_EXISTING_SOURCE | I6C2 | Reject invalid player |
+| `entity.zone` for ordinary zones | Exact semantic zone | I1 zone/address plus I2 SZONE mapping | O3 zone projection | Public with layout proof | Current state/config | Entity locator order | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C2 | Reject unknown/layout ambiguity |
+| `entity.zone` for OVERLAY | Overlay zone only under proven parent/material relation | I1 `IsOverlay`, `OverlayRelations` | O3 overlay projection | Public only after relation/parent proof | Relation/current state | Entity locator order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject unproven parent/continuity |
+| `entity.sequence?` | Optional semantic sequence, not hidden physical identity | I1 address sequence; I2 uses code-group ordinals for pile cards | O3 sequence visibility rule | Own-Hand/current locator semantics differ | Current state | Entity locator order | SEMANTICS_AMBIGUOUS | I6C2 | Omit when not observable |
+| `entity.overlay_sequence?` | Optional overlay position under proven parent | I1 overlay index/address and I2 overlay locator | O3 overlay traversal | Derived public positional fact when parent is proven | Current relation/state | Entity locator order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden continuity ambiguity |
+| `entity.position` | Exact public position code, including Unknown | I1 position provenance | O3 query position | Public/known fact | Current state | Entity locator order | PROVEN_EXISTING_SOURCE | I6C2 | Reject unproven non-unknown value |
+| `entity.face_up` | Position-derived face-up flag | I1 position plus local mapping | O3 card projection | Derived public fact | Current state | Entity record | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C2 | Reject both face flags true |
+| `entity.face_down` | Position-derived face-down flag | I1 position plus local mapping | O3 card projection | Derived public fact | Current state | Entity record | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C2 | Reject both face flags true |
+| `entity.printed?` | Static printed properties for known public identity | No Ignis accepted static-card-data source; I1 stores query facts, not printed records | O3 uses `CoreHost.static_card_data` | Must be perspective-safe and explicitly sourced | Current known identity | Property field order | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject complete frame if required |
+| `entity.current?` | Current public/proven dynamic properties | I1 query fields with provenance | O3 current query projection | Public/known facts only | Current state | Property field order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Omit only when contract permits; never guess |
+| `printed.type?` | Printed type bitset | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.attribute?` | Printed attribute bitset | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.race?` | Printed race bitset | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.attack?` | Printed signed attack | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.defense?` | Printed signed defense | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.base_attack?` | Printed base attack if contract supplies it | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.base_defense?` | Printed base defense if contract supplies it | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.level?` | Printed level | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.rank?` | Printed rank | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.link_rating?` | Printed link rating | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.link_markers[]` | Ordered marker enum codes | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Sorted by enum code | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.left_scale?` | Printed left scale | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.right_scale?` | Printed right scale | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.status_flags?` | Printed status flags if defined | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Optional field | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `printed.counters[]` | Printed counters `(type,count)` | No accepted Ignis printed source | O3 static data | Not derivable from protocol alone | Current known identity | Sorted `(type,count)` | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C2 | Reject if required |
+| `current.type?` | Current type bitset | I1 query `QueryFlagV1.Type` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.attribute?` | Current attribute | I1 query `Attribute` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.race?` | Current race | I1 query `Race` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.attack?` | Current signed attack | I1 query `Attack` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.defense?` | Current signed defense | I1 query `Defense` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.base_attack?` | Current base attack | I1 query `BaseAttack` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.base_defense?` | Current base defense | I1 query `BaseDefense` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.level?` | Current level | I1 query `Level` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.rank?` | Current rank | I1 query `Rank` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.link_rating?` | Current link rating | I1 query `Link` when proven, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.link_markers[]` | Current marker values in canonical enum order | I1 `ModernQueryLinkPayloadV1`, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Sorted enum code | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject unproven/malformed mapping |
+| `current.left_scale?` | Current left scale | I1 query `LScale`, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.right_scale?` | Current right scale | I1 query `RScale`, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.status_flags?` | Current status flags | I1 query `Status`, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Optional field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject hidden/unproven value |
+| `current.counters[]` | Current `(type,count)` values | I1 query `Counters`, omitted by I3 V1 | O3 query projection | Public/proven perspective fact after new source closure | Current state | Sorted `(type,count)` | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject unproven/malformed mapping |
 
 The printed-property rows are deliberately `NOT_AVAILABLE_FROM_PINNED_RUNTIME`
 for the current Ignis source, not an invitation to use BabelCDB, CardScripts,
@@ -216,9 +230,9 @@ lists and relation ordinals, but I3 V1 does not publish them.
 
 | Relationship field | Required semantics | Ignis source | Pinned producer | Knowledge classification | Persistence/history needed | Ordering rule | Status | Owning future slice | Failure behavior |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `relationship.kind` | Exact OCGForge relationship enum | I1 relation lists are internal and absent from I3 V1 | O2/O3; `ApplyBecomeTarget`, `ApplyEquip`, overlay updates | Current relation fact requiring public source closure | Current state | Kind first | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject unknown/ambiguous kind |
-| `relationship.source` | Current public locator of source | I1 internal `MirrorEntityIdV1` relation source; no public relation vector | O2 requires locator string | Requires current exact entity mapping | Current state | Kind/source/target | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject hidden/missing/ambiguous mapping |
-| `relationship.target` | Current public locator of target | I1 internal `MirrorEntityIdV1` relation target | O2 requires locator string | Requires current exact entity mapping | Current state | Kind/source/target | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject hidden/missing/ambiguous mapping |
+| `relationship.kind` | Exact OCGForge relationship enum | I1 relation lists are internal and absent from I3 V1 | O2/O3; `ApplyBecomeTarget`, `ApplyEquip`, overlay updates | Current relation fact requiring public source closure | Current state | Kind first | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject unknown/ambiguous kind |
+| `relationship.source` | Current public locator of source | I1 internal `MirrorEntityIdV1` relation source; no public relation vector | O2 requires locator string | Requires current exact entity mapping | Current state | Kind/source/target | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/missing/ambiguous mapping |
+| `relationship.target` | Current public locator of target | I1 internal `MirrorEntityIdV1` relation target | O2 requires locator string | Requires current exact entity mapping | Current state | Kind/source/target | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject hidden/missing/ambiguous mapping |
 
 Internal relation ordinals are not public order. The future source must use the
 OCGForge tuple sort and must not expose `NextRelationOrdinal`.
@@ -232,14 +246,14 @@ not expose chain records through I3 V1.
 
 | Chain field | Required semantics | Ignis source | Pinned producer | Knowledge classification | Persistence/history needed | Ordering rule | Status | Owning future slice | Failure behavior |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `chain.length` | Current chain length | I1 `Chains` plus `PendingChain` | O3 field chain size | Current derived fact | Current chain state | Scalar | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C4 | Reject mismatch with links |
-| `chain.links[]` | Complete ordered chain links | I1 current chain list only | O3 `field.chain` | Public current chain source incomplete | Current chain state | Authoritative vector order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject partial chain |
-| `link.index` | Exact link index | I1 `ChainSize` is not retained as the same field shape | O1/O2 chain link index | Mapping not proven | Chain history | Vector order | SEMANTICS_AMBIGUOUS | I6C4 | Reject until native vector proves mapping |
-| `link.activating_player?` | Optional absolute activating player | Input `GameplayChainingPayloadV1.TriggeringController` is consumed but not stored in `ChainState` | O3 chain source | Public source exists at ingest, not retained | Chain event history | Link order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject if missing when required |
-| `link.source?` | Optional current public source locator | I1 internal pending/card entity ID and card code | O3 source locator | Requires exact current public mapping | Chain history/current entities | Link order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Never use CardCode as locator |
-| `link.activation_zone?` | Optional semantic activation zone | I1 address available before internal ID conversion | O3 zone projection | Layout/provenance dependent | Chain history/config | Link order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject unproven layout |
-| `link.effect_description?` | Optional exact description ID | I1 `MirrorChainSnapshotV1.Description` is not emitted by I3 V1 | O3 chain description | Public only when source is known | Chain history | Link order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject unproven value |
-| `link.targets[]` | Complete target locator vector | I1 internal target IDs and relation lists | O3 target relations | Requires public mapping and history | Chain history/current entities | OCGForge target sort | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject missing/ambiguous target |
+| `chain.length` | Current chain length | I1 `Chains` plus `PendingChain` | O3 field chain size | Current derived fact | Current chain state | Scalar | PROVEN_DERIVED_FROM_PUBLIC_FACTS | I6C3 | Reject mismatch with links |
+| `chain.links[]` | Complete ordered chain links | I1 current chain list only | O3 `field.chain` | Public current chain source incomplete | Current chain state | Authoritative vector order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject partial chain |
+| `link.index` | Exact link index | I1 `ChainSize` is not retained as the same field shape | O1/O2 chain link index | Mapping not proven | Chain history | Vector order | SEMANTICS_AMBIGUOUS | I6C3 | Reject until native vector proves mapping |
+| `link.activating_player?` | Optional absolute activating player | Input `GameplayChainingPayloadV1.TriggeringController` is consumed but not stored in `ChainState` | O3 chain source | Public source exists at ingest, not retained | Chain event history | Link order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject if missing when required |
+| `link.source?` | Optional current public source locator | I1 internal pending/card entity ID and card code | O3 source locator | Requires exact current public mapping | Chain history/current entities | Link order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Never use CardCode as locator |
+| `link.activation_zone?` | Optional semantic activation zone | I1 address available before internal ID conversion | O3 zone projection | Layout/provenance dependent | Chain history/config | Link order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject unproven layout |
+| `link.effect_description?` | Optional exact description ID | I1 `MirrorChainSnapshotV1.Description` is not emitted by I3 V1 | O3 chain description | Public only when source is known | Chain history | Link order | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject unproven value |
+| `link.targets[]` | Complete target locator vector | I1 internal target IDs and relation lists | O3 target relations | Requires public mapping and history | Chain history/current entities | OCGForge target sort | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C3 | Reject missing/ambiguous target |
 
 Current-chain state is not a substitute for historical chain events. A source
 that only inspects the current board cannot recreate resolved links or their
@@ -256,29 +270,29 @@ event. Ignis currently has no persistent event ledger.
 
 | Event kind | Exact pinned EDOPro message/source candidates | Current Ignis tracking | Visibility / history rule | Status | Future slice | Failure behavior |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Unknown` | No admitted producer; O2 rejects unknown event code | None | Must never be emitted | OUTSIDE_I6C | I6C2 | Reject unknown event |
-| `TurnStarted` | `MSG_NEW_TURN` | I3 decodes/applies current turn only | Emit from typed public player field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject invalid player/order |
-| `PhaseChanged` | `MSG_NEW_PHASE` | I3 decodes/applies current phase only | Emit exact phase value | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject malformed phase |
-| `CardMoved` | `MSG_MOVE` when no destroy/banish/return specialization applies | I3 applies movement, discards reason from snapshot history | Preserve from/to and visibility at event time | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject if event source not complete |
+| `Unknown` | No admitted producer; O2 rejects unknown event code | None | Must never be emitted | OUTSIDE_I6C | I6C4 | Reject unknown event |
+| `TurnStarted` | `MSG_NEW_TURN` | I3 decodes/applies current turn only | Emit from typed public player field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject invalid player/order |
+| `PhaseChanged` | `MSG_NEW_PHASE` | I3 decodes/applies current phase only | Emit exact phase value | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject malformed phase |
+| `CardMoved` | `MSG_MOVE` when no destroy/banish/return specialization applies | I3 applies movement, discards reason from snapshot history | Preserve from/to and visibility at event time | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject if event source not complete |
 | `CardRevealed` | `MSG_DRAW` reveal branch and `MSG_CONFIRM_CARDS`, `MSG_CONFIRM_DECKTOP`, `MSG_CONFIRM_EXTRATOP` | Confirm variants not admitted; query state has no ledger | Reveal only exact acting-perspective-visible code | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Omit hidden code; reject missing required field |
-| `Summoned` | `MSG_SUMMONING`, `MSG_SPSUMMONING`, `MSG_FLIPSUMMONING` and corresponding completion signals | Not all variants admitted by I3 decoder | Preserve exact message-to-event multiplicity | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject unsupported producer form |
-| `Set` | `MSG_SET` | I3 decodes set but state ownership is movement/query | Presentation event must not double-mutate state | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject duplicate semantic application |
-| `Draw` | `MSG_DRAW` | I3 decodes draw records | Emit one draw event with exact count | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject count/body mismatch |
-| `Shuffle` | `MSG_SHUFFLE_DECK`, `MSG_SHUFFLE_HAND`, `MSG_SHUFFLE_EXTRA`, `MSG_SHUFFLE_SET_CARD`, `MSG_REVERSE_DECK` | Not admitted by I3 decoder | Identity-destroying boundary; no hidden codes | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject unknown shape; destroy stale continuity |
-| `RandomizationBoundary` | Derived only from an accepted shuffle event | None | Paired semantic event, not invented from board change | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Emit only with source shuffle |
+| `Summoned` | `MSG_SUMMONING`, `MSG_SPSUMMONING`, `MSG_FLIPSUMMONING` and corresponding completion signals | Not all variants admitted by I3 decoder | Preserve exact message-to-event multiplicity | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject unsupported producer form |
+| `Set` | `MSG_SET` | I3 decodes set but state ownership is movement/query | Presentation event must not double-mutate state | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject duplicate semantic application |
+| `Draw` | `MSG_DRAW` | I3 decodes draw records | Emit one draw event with exact count | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject count/body mismatch |
+| `Shuffle` | `MSG_SHUFFLE_DECK`, `MSG_SHUFFLE_HAND`, `MSG_SHUFFLE_EXTRA`, `MSG_SHUFFLE_SET_CARD`, `MSG_REVERSE_DECK` | Not admitted by I3 decoder | Identity-destroying boundary; no hidden codes | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject unknown shape; destroy stale continuity |
+| `RandomizationBoundary` | Derived only from an accepted shuffle event | None | Paired semantic event, not invented from board change | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Emit only with source shuffle |
 | `LifePointsChanged` | `MSG_LPUPDATE`, `MSG_DAMAGE`, `MSG_RECOVER`; `MSG_PAY_LPCOST` is deferred/not copied by the frozen event oracle | I3 decodes/applies LP, including a typed PayLpCost message that is not an admitted event source | Preserve signed amount and player only for the three admitted producers | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject deferred/unsupported event form |
-| `ChainActivated` | `MSG_CHAINING`, `MSG_CHAINED` | I3 stores current chain but no history | Preserve link order/player/source/description when visible | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2/I6C4 | Reject incomplete link |
-| `ChainResolved` | `MSG_CHAIN_SOLVING`, `MSG_CHAIN_SOLVED` | I3 stores status only | Preserve semantic resolution event | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2/I6C4 | Reject order/status mismatch |
-| `ChainEnded` | `MSG_CHAIN_END` | I3 clears chain state | Emit before history is discarded | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2/I6C4 | Reject lost terminal chain event |
-| `CardDestroyed` | `MSG_MOVE` with proven destroy reason into Graveyard | I3 applies move but discards reason history | Reason-dependent specialization must be recorded at ingest | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject missing reason/source |
-| `CardBanished` | `MSG_MOVE` into Banished | I3 applies move only | Preserve to-zone and visible identity | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject incomplete move |
-| `CardReturned` | `MSG_MOVE` from Graveyard/Banished | I3 applies move only | Preserve from/to zones | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject incomplete move |
-| `PositionChanged` | `MSG_POS_CHANGE` | I3 applies current position | Preserve old/new public semantics | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject missing old/new |
-| `CounterChanged` | `MSG_ADD_COUNTER`, `MSG_REMOVE_COUNTER` | Not admitted by I3 decoder | Preserve counter type and signed/unsigned meaning | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject unsupported counter form |
-| `Equipped` | `MSG_EQUIP` | I3 applies current equipment relation | Preserve source/target public locators | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2/I6C4 | Reject hidden/ambiguous relation |
-| `Unequipped` | `MSG_UNEQUIP` | I3 removes current equipment relation | Emit before removal loses source/target context | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2/I6C4 | Reject missing prior relation |
-| `Targeted` | `MSG_BECOME_TARGET`, `MSG_CARD_TARGET`, `MSG_CANCEL_TARGET` | I3 applies current target relations | Preserve exact event action and visible targets | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2/I6C4 | Reject hidden/ambiguous target |
-| `Win` | `MSG_WIN` | I3 applies terminal snapshot | Preserve winner/win reason at event time | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject invalid terminal payload |
+| `ChainActivated` | `MSG_CHAINING`, `MSG_CHAINED` | I3 stores current chain but no history | Preserve link order/player/source/description when visible | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject incomplete link |
+| `ChainResolved` | `MSG_CHAIN_SOLVING`, `MSG_CHAIN_SOLVED` | I3 stores status only | Preserve semantic resolution event | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject order/status mismatch |
+| `ChainEnded` | `MSG_CHAIN_END` | I3 clears chain state | Emit before history is discarded | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject lost terminal chain event |
+| `CardDestroyed` | `MSG_MOVE` with proven destroy reason into Graveyard | I3 applies move but discards reason history | Reason-dependent specialization must be recorded at ingest | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject missing reason/source |
+| `CardBanished` | `MSG_MOVE` into Banished | I3 applies move only | Preserve to-zone and visible identity | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject incomplete move |
+| `CardReturned` | `MSG_MOVE` from Graveyard/Banished | I3 applies move only | Preserve from/to zones | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject incomplete move |
+| `PositionChanged` | `MSG_POS_CHANGE` | I3 applies current position | Preserve old/new public semantics | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject missing old/new |
+| `CounterChanged` | `MSG_ADD_COUNTER`, `MSG_REMOVE_COUNTER` | Not admitted by I3 decoder | Preserve counter type and signed/unsigned meaning | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject unsupported counter form |
+| `Equipped` | `MSG_EQUIP` | I3 applies current equipment relation | Preserve source/target public locators | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject hidden/ambiguous relation |
+| `Unequipped` | `MSG_UNEQUIP` | I3 removes current equipment relation | Emit before removal loses source/target context | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject missing prior relation |
+| `Targeted` | `MSG_BECOME_TARGET`, `MSG_CARD_TARGET`, `MSG_CANCEL_TARGET` | I3 applies current target relations | Preserve exact event action and visible targets | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject hidden/ambiguous target |
+| `Win` | `MSG_WIN` | I3 applies terminal snapshot | Preserve winner/win reason at event time | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject invalid terminal payload |
 
 The event-kind table is complete for the OCGForge enum. Every named kind is
 currently blocked at the source-container level even where a typed Ignis
@@ -315,16 +329,16 @@ inference about what cards have happened to be revealed.
 
 | Match-context field | Required semantics | Ignis source | Status | Owning future slice | Failure behavior |
 | --- | --- | --- | --- | --- | --- |
-| `perspective_player` | Same absolute perspective as safe state | I1 `GameplayPerspectiveV1.PlayerType` | PROVEN_EXISTING_SOURCE | I6C6 | Reject mismatch |
-| `duel_flags` | Exact configured flags used for layout | I2 projection context only | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C6 | Reject missing/mismatch |
-| `knowledge.own_decklist_known` | Explicit policy/configuration bit | No current match config | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C6 | Reject inferred value |
-| `knowledge.opponent_decklist_known` | Explicit policy/configuration bit | No current match config | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C6 | Do not infer from reveals |
-| `own_deck.known` | Explicit known-deck state | Start message has only counts | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C6 | Reject missing list when known |
-| `own_deck.main_deck[]` | Exact configured passcodes, sorted by OCGForge rule | No current list source | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C6 | Reject absent/unsorted known list |
-| `own_deck.extra_deck[]` | Exact configured passcodes, sorted by OCGForge rule | No current list source | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C6 | Reject absent/unsorted known list |
-| `opponent_deck.known` | Explicit known-deck policy, never reveal-derived | No current list source | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C6 | Reject inferred true |
-| `opponent_deck.main_deck[]` | Exact configured passcodes only when known | No current list source | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C6 | Unknown deck must have empty vector |
-| `opponent_deck.extra_deck[]` | Exact configured passcodes only when known | No current list source | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C6 | Unknown deck must have empty vector |
+| `perspective_player` | Same absolute perspective as safe state | I1 `GameplayPerspectiveV1.PlayerType` | PROVEN_EXISTING_SOURCE | I6C5 | Reject mismatch |
+| `duel_flags` | Exact configured flags used for layout | I2 projection context only | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C5 | Reject missing/mismatch |
+| `knowledge.own_decklist_known` | Explicit policy/configuration bit | No current match config | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C5 | Reject inferred value |
+| `knowledge.opponent_decklist_known` | Explicit policy/configuration bit | No current match config | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C5 | Do not infer from reveals |
+| `own_deck.known` | Explicit known-deck state | Start message has only counts | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C5 | Reject missing list when known |
+| `own_deck.main_deck[]` | Exact configured passcodes, sorted by OCGForge rule | No current list source | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C5 | Reject absent/unsorted known list |
+| `own_deck.extra_deck[]` | Exact configured passcodes, sorted by OCGForge rule | No current list source | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C5 | Reject absent/unsorted known list |
+| `opponent_deck.known` | Explicit known-deck policy, never reveal-derived | No current list source | REQUIRES_EXPLICIT_RUNTIME_CONFIGURATION | I6C5 | Reject inferred true |
+| `opponent_deck.main_deck[]` | Exact configured passcodes only when known | No current list source | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C5 | Unknown deck must have empty vector |
+| `opponent_deck.extra_deck[]` | Exact configured passcodes only when known | No current list source | NOT_AVAILABLE_FROM_PINNED_RUNTIME | I6C5 | Unknown deck must have empty vector |
 
 ### 3.8 Outer public observation fields
 
@@ -569,6 +583,22 @@ required source field is either proven or deliberately excluded by an accepted
 OCGForge scope decision. It is insufficient if any target field is silently
 omitted, defaulted, inferred, or represented by current-board reconstruction.
 
+The native safe-state oracle has two explicit scopes:
+
+```text
+I6C state-only safe-state equality
+    = eligible only when player_to_act is ABSENT
+      and no decision context is attached
+
+decision-boundary safe-state equality
+    = BLOCKED_PENDING_I6D
+      because OCGForge attaches player_to_act from the public DecisionContext
+```
+
+`ABSENT` here is a semantic OCGForge value, not an assertion that Ignis failed
+to observe a required player. A decision-boundary vector must not be converted
+to the state-only vector by dropping that field.
+
 ## 11. I6C0 status
 
 ```text
@@ -589,6 +619,9 @@ VISIBLE_EVENTS_SOURCE=BLOCKED
 EVENT_INDEX_SOURCE=BLOCKED
 MATCH_CONTEXT_SOURCE=BLOCKED_PENDING_EXPLICIT_CONFIGURATION
 OUTER_OBSERVATION_CONTEXT_SOURCE=OUTSIDE_I6C
+I6C_STATE_GLOBALS_SOURCE=BLOCKED
+I6C_PLAYER_TO_ACT_SOURCE=OUTSIDE_I6C_PENDING_I6D
+I6_DECISION_BOUNDARY_SAFE_STATE_BYTES=BLOCKED_PENDING_I6D
 
 PROMPT_LOCAL_CARDCODE_BLOCKER_CHANGED=NO
 RULES_RUNTIME_COMPATIBILITY_CHANGED=NO
