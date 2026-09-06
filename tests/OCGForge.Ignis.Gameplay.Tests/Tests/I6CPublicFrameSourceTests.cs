@@ -718,6 +718,9 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C3 hidden overlay privacy", AssertI6C3HiddenOverlayPrivacy);
         Run("I6C3 hidden-only unrelated privacy", AssertI6C3HiddenOnlyPrivacy);
         Run("I6C3 relation lifecycle", AssertI6C3RelationLifecycle);
+        Run("I6C3 chain target source separation", AssertI6C3ChainTargetSourceSeparation);
+        Run("I6C3 visible opponent overlay identity", AssertI6C3VisibleOpponentOverlayIdentity);
+        Run("I6C3 overlay raw position and fresh properties", AssertI6C3OverlayPositionAndFreshProperties);
         Run("I6C3 unresolved public endpoint fails closed", AssertI6C3UnresolvedPublicEndpoint);
         Run("I6C3 relation ordering and privacy", AssertI6C3RelationOrderingAndPrivacy);
         Run("I6C3 chain lifecycle", AssertI6C3ChainLifecycle);
@@ -1450,6 +1453,131 @@ internal static class I6CPublicFrameSourceTests
         Equal(
             PerspectiveSafeSourceSectionV1.Relationships,
             result.Error.Value.Section);
+    }
+
+    private static void AssertI6C3ChainTargetSourceSeparation()
+    {
+        (PerspectiveStateMirrorV1 becomeOnlyMirror, GameplayMessageDecoderV1 becomeOnlyDecoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 source = new(0, 0x04, 0, 0x05);
+        ModernLocInfoV1 target = new(0, 0x04, 1, 0x05);
+        ApplyMirrorMessage(
+            becomeOnlyMirror,
+            becomeOnlyDecoder,
+            MoveMessage(0x7500, empty, source, 0));
+        ApplyMirrorMessage(
+            becomeOnlyMirror,
+            becomeOnlyDecoder,
+            MoveMessage(0x7501, empty, target, 0));
+        ApplyMirrorMessage(
+            becomeOnlyMirror,
+            becomeOnlyDecoder,
+            ChainingMessage(source, 1, 0x7500));
+        ApplyMirrorMessage(
+            becomeOnlyMirror,
+            becomeOnlyDecoder,
+            BecomeTargetMessage(target));
+        PerspectiveSafeI6C3StateSourceV1 becomeOnly = GetI6C3Source(becomeOnlyMirror);
+        False(becomeOnly.Relationships.Any(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target));
+        Equal(0, becomeOnly.Chain.Links[0].Targets.Count);
+
+        ApplyMirrorMessage(
+            becomeOnlyMirror,
+            becomeOnlyDecoder,
+            CardTargetMessage(source, target));
+        PerspectiveSafeI6C3StateSourceV1 combined = GetI6C3Source(becomeOnlyMirror);
+        Equal(1, combined.Relationships.Count(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target));
+        Equal(1, combined.Chain.Links[0].Targets.Count);
+        Equal("p0:MONSTER_ZONE:1", combined.Chain.Links[0].Targets[0]);
+
+        (PerspectiveStateMirrorV1 cardTargetOnlyMirror, GameplayMessageDecoderV1 cardTargetOnlyDecoder) =
+            CreateMirror(0);
+        ApplyMirrorMessage(
+            cardTargetOnlyMirror,
+            cardTargetOnlyDecoder,
+            MoveMessage(0x7600, empty, source, 0));
+        ApplyMirrorMessage(
+            cardTargetOnlyMirror,
+            cardTargetOnlyDecoder,
+            MoveMessage(0x7601, empty, target, 0));
+        ApplyMirrorMessage(
+            cardTargetOnlyMirror,
+            cardTargetOnlyDecoder,
+            ChainingMessage(source, 1, 0x7600));
+        ApplyMirrorMessage(
+            cardTargetOnlyMirror,
+            cardTargetOnlyDecoder,
+            CardTargetMessage(source, target));
+        PerspectiveSafeI6C3StateSourceV1 cardTargetOnly =
+            GetI6C3Source(cardTargetOnlyMirror);
+        Equal(1, cardTargetOnly.Relationships.Count(relation =>
+            relation.Kind == PerspectiveSafeRelationshipKindV1.Target));
+        Equal(1, cardTargetOnly.Chain.Links[0].Targets.Count);
+        Equal("p0:MONSTER_ZONE:1", cardTargetOnly.Chain.Links[0].Targets[0]);
+    }
+
+    private static void AssertI6C3VisibleOpponentOverlayIdentity()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 parent = new(1, 0x04, 2, 0x05);
+        ModernLocInfoV1 material = new(1, 0x84, 2, 0);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7700, empty, parent, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7701, empty, material, 0));
+
+        PerspectiveSafeEntityV1 projected = FindI6C3Entity(
+            GetI6C3Source(mirror),
+            "p1:OVERLAY:2:0");
+        True(projected.IdentityKnown);
+        Equal((uint)0x7701, projected.Passcode!.Value);
+        Equal(
+            PerspectiveSafeI6C3SourceStatusV1.Blocked,
+            GetI6C3Source(mirror).GetStatus(
+                PerspectiveSafeI6C3ConstituentV1.OverlayIdentity));
+    }
+
+    private static void AssertI6C3OverlayPositionAndFreshProperties()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 parent = new(0, 0x04, 2, 0x05);
+        ModernLocInfoV1 firstMaterial = new(0, 0x84, 2, 0);
+        ModernLocInfoV1 staleFieldCard = new(0, 0x04, 3, 0x05);
+        ModernLocInfoV1 secondMaterial = new(0, 0x84, 2, 1);
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7800, empty, parent, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7801, empty, firstMaterial, 0));
+        ApplyMirrorMessage(mirror, decoder, MoveMessage(0x7802, empty, staleFieldCard, 0));
+        ModernQueryV1 staleQuery = DecodeQuery(
+            QueryRecord(QueryFlagV1.Attack, I32(123)),
+            QueryEnd());
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            UpdateCardMessage(0, 0x04, 3, staleQuery));
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            MoveMessage(0x7802, staleFieldCard, secondMaterial, 0));
+
+        PerspectiveSafeEntityV1 projected = FindI6C3Entity(
+            GetI6C3Source(mirror),
+            "p0:OVERLAY:2:1");
+        Equal(PerspectiveSafePositionV1.FaceUpAttack, projected.Position);
+        True(projected.FaceUp);
+        Null(projected.Current);
+        Equal(
+            PerspectiveSafeI6C3SourceStatusV1.Blocked,
+            GetI6C3Source(mirror).GetStatus(
+                PerspectiveSafeI6C3ConstituentV1.OverlayCurrentProperties));
+        Equal(
+            PerspectiveSafeI6C3SourceStatusV1.Blocked,
+            GetI6C3Source(mirror).GetStatus(
+                PerspectiveSafeI6C3ConstituentV1.OverlayEntities));
     }
 
     private static void AssertI6C3ChainLifecycle()

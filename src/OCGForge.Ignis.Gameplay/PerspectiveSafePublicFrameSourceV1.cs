@@ -196,7 +196,9 @@ public static class PerspectiveSafePublicFrameSourceV1
                 out Dictionary<MirrorEntityIdV1, string> locatorById,
                 out Dictionary<MirrorEntityIdV1, MirrorCardSnapshotV1> cardsById,
                 out error,
-                out bool overlayProof))
+                out bool overlayProof,
+                out bool overlayIdentityBlocked,
+                out bool overlayCurrentPropertiesBlocked))
         {
             return PerspectiveSafeI6C3SourceResultV1.Failure(error);
         }
@@ -220,6 +222,7 @@ public static class PerspectiveSafePublicFrameSourceV1
                 cardsById,
                 entities,
                 relationships,
+                targetPending,
                 out PerspectiveSafeChainStateV1 chain,
                 out bool chainPending,
                 out bool activationZonePending,
@@ -231,6 +234,8 @@ public static class PerspectiveSafePublicFrameSourceV1
         PerspectiveSafeI6C3ConstituentStatusV1[] statuses =
             CreateI6C3Statuses(
                 overlayProof,
+                overlayIdentityBlocked,
+                overlayCurrentPropertiesBlocked,
                 targetPending,
                 equipPending,
                 relationshipEndpointPending,
@@ -255,13 +260,17 @@ public static class PerspectiveSafePublicFrameSourceV1
         out Dictionary<MirrorEntityIdV1, string> locatorById,
         out Dictionary<MirrorEntityIdV1, MirrorCardSnapshotV1> cardsById,
         out PerspectiveSafeFrameSourceErrorV1 error,
-        out bool overlayProof)
+        out bool overlayProof,
+        out bool overlayIdentityBlocked,
+        out bool overlayCurrentPropertiesBlocked)
     {
         zones = Array.Empty<PerspectiveSafeZoneV1>();
         entities = Array.Empty<PerspectiveSafeEntityV1>();
         locatorById = new();
         cardsById = new();
         overlayProof = false;
+        overlayIdentityBlocked = false;
+        overlayCurrentPropertiesBlocked = false;
         if (!TryGetAbsolutePerspective(snapshot, out byte perspectivePlayer))
         {
             error = Error(
@@ -464,6 +473,7 @@ public static class PerspectiveSafePublicFrameSourceV1
                      .ThenBy(card => card.Sequence)
                      .ThenBy(card => card.OverlayIndex))
         {
+            overlayIdentityBlocked = true;
             if (!overlayRelationsByMaterial.TryGetValue(
                     material.EntityId,
                     out List<MirrorRelationSnapshotV1>? relations) ||
@@ -528,10 +538,9 @@ public static class PerspectiveSafePublicFrameSourceV1
 
             bool identityVisible = parentEntity.IdentityKnown && materialCode.HasValue;
             PerspectiveSafeCardPropertiesV1? current = null;
-            if (identityVisible &&
-                !TryCreateCurrentProperties(material, out current, out error))
+            if (identityVisible)
             {
-                return false;
+                overlayCurrentPropertiesBlocked = true;
             }
 
             entityValues.Add(new PerspectiveSafeEntityV1(
@@ -699,8 +708,7 @@ public static class PerspectiveSafePublicFrameSourceV1
                 target));
         }
 
-        foreach (MirrorRelationSnapshotV1 relation in snapshot.TargetRelations.Concat(
-                     snapshot.ChainTargetRelations))
+        foreach (MirrorRelationSnapshotV1 relation in snapshot.TargetRelations)
         {
             I6C3EndpointResolution sourceResolution = TryResolveI6C3Endpoint(
                 snapshot,
@@ -763,13 +771,14 @@ public static class PerspectiveSafePublicFrameSourceV1
         Dictionary<MirrorEntityIdV1, MirrorCardSnapshotV1> cardsById,
         IReadOnlyList<PerspectiveSafeEntityV1> entities,
         IReadOnlyList<PerspectiveSafeRelationshipV1> relationships,
+        bool targetRelationshipsPending,
         out PerspectiveSafeChainStateV1 chain,
         out bool chainPending,
         out bool activationZonePending,
         out PerspectiveSafeFrameSourceErrorV1 error)
     {
         chain = new PerspectiveSafeChainStateV1(0, Array.Empty<PerspectiveSafeChainLinkV1>());
-        chainPending = false;
+        chainPending = targetRelationshipsPending;
         activationZonePending = false;
         List<MirrorChainSnapshotV1> sourceChains = snapshot.Chains.ToList();
         if (snapshot.PendingChainSource is not null)
@@ -855,43 +864,6 @@ public static class PerspectiveSafePublicFrameSourceV1
             List<string> targets = new();
             if (sourcePublic)
             {
-                foreach (MirrorEntityIdV1 targetId in sourceChain.Targets)
-                {
-                    I6C3EndpointResolution targetResolution = TryResolveI6C3Endpoint(
-                        snapshot,
-                        targetId,
-                        locatorById,
-                        cardsById,
-                        out string? targetLocator,
-                        out error);
-                    if (targetResolution == I6C3EndpointResolution.Unproven)
-                    {
-                        return false;
-                    }
-
-                    if (targetResolution == I6C3EndpointResolution.PendingI6C5)
-                    {
-                        chainPending = true;
-                        continue;
-                    }
-
-                    if (targetResolution == I6C3EndpointResolution.Hidden)
-                    {
-                        continue;
-                    }
-
-                    if (!relationships.Any(relation =>
-                            relation.Kind == PerspectiveSafeRelationshipKindV1.Target &&
-                            relation.Source == sourceLocator &&
-                            relation.Target == targetLocator))
-                    {
-                        error = Error(
-                            PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
-                            PerspectiveSafeSourceSectionV1.Chain);
-                        return false;
-                    }
-                }
-
                 targets.AddRange(
                     relationships
                         .Where(relation =>
@@ -1043,6 +1015,8 @@ public static class PerspectiveSafePublicFrameSourceV1
 
     private static PerspectiveSafeI6C3ConstituentStatusV1[] CreateI6C3Statuses(
         bool overlayProof,
+        bool overlayIdentityBlocked,
+        bool overlayCurrentPropertiesBlocked,
         bool targetPending,
         bool equipPending,
         bool endpointPending,
@@ -1057,7 +1031,9 @@ public static class PerspectiveSafePublicFrameSourceV1
                     : PerspectiveSafeI6C3SourceStatusV1.Blocked),
             new PerspectiveSafeI6C3ConstituentStatusV1(
                 PerspectiveSafeI6C3ConstituentV1.OverlayEntities,
-                overlayProof
+                overlayCurrentPropertiesBlocked
+                    ? PerspectiveSafeI6C3SourceStatusV1.Blocked
+                    : overlayProof
                     ? PerspectiveSafeI6C3SourceStatusV1.Proven
                     : PerspectiveSafeI6C3SourceStatusV1.Blocked),
             new PerspectiveSafeI6C3ConstituentStatusV1(
@@ -1067,9 +1043,16 @@ public static class PerspectiveSafePublicFrameSourceV1
                     : PerspectiveSafeI6C3SourceStatusV1.Blocked),
             new PerspectiveSafeI6C3ConstituentStatusV1(
                 PerspectiveSafeI6C3ConstituentV1.OverlayIdentity,
-                overlayProof
+                overlayIdentityBlocked
+                    ? PerspectiveSafeI6C3SourceStatusV1.Blocked
+                    : overlayProof
                     ? PerspectiveSafeI6C3SourceStatusV1.Proven
                     : PerspectiveSafeI6C3SourceStatusV1.Blocked),
+            new PerspectiveSafeI6C3ConstituentStatusV1(
+                PerspectiveSafeI6C3ConstituentV1.OverlayCurrentProperties,
+                overlayCurrentPropertiesBlocked
+                    ? PerspectiveSafeI6C3SourceStatusV1.Blocked
+                    : PerspectiveSafeI6C3SourceStatusV1.Proven),
             new PerspectiveSafeI6C3ConstituentStatusV1(
                 PerspectiveSafeI6C3ConstituentV1.XyzMaterialRelationships,
                 PerspectiveSafeI6C3SourceStatusV1.Proven),

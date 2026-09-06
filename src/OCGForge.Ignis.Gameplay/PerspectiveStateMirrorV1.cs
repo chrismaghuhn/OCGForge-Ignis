@@ -399,8 +399,15 @@ public sealed class PerspectiveStateMirrorV1
 
         entity.Address = current;
         entity.Position = current.IsOverlay
-            ? MirrorValueV1.Unknown<uint>()
+            ? MirrorValueV1.Known(
+                current.OverlayIndex,
+                MirrorProvenanceV1.PublicProtocolFact)
             : MirrorValueV1.Known(payload.Current.Position);
+        if (current.IsOverlay)
+        {
+            entity.QueryFields.Clear();
+        }
+
         bool currentFaceDown = !current.IsOverlay &&
                                (payload.Current.Position & PositionFaceDown) != 0;
         if (currentFaceDown && !samePile)
@@ -1566,7 +1573,9 @@ public sealed class PerspectiveStateMirrorV1
                 ? CreateCardCodeValue(candidate, address, cardCode, position)
                 : MirrorValueV1.Unknown<uint>(),
             address.IsOverlay
-                ? MirrorValueV1.Unknown<uint>()
+                ? MirrorValueV1.Known(
+                    address.OverlayIndex,
+                    MirrorProvenanceV1.PublicProtocolFact)
                 : MirrorValueV1.Known(position),
             MirrorValueV1.Unknown<MirrorParticipantRoleV1>(),
             candidate.Perspective);
@@ -1601,6 +1610,29 @@ public sealed class PerspectiveStateMirrorV1
     {
         if (cardCode == 0)
         {
+            return MirrorValueV1.Unknown<uint>();
+        }
+
+        if (address.IsOverlay)
+        {
+            MirrorAddress parent = new(
+                address.Controller,
+                address.Zone,
+                address.Sequence,
+                false,
+                0);
+            if (candidate.Entities.TryGetValue(parent, out EntityState? parentEntity) &&
+                parentEntity.CardCode.IsKnown &&
+                parentEntity.CardCode.Provenance is
+                    MirrorProvenanceV1.PublicProtocolFact or
+                    MirrorProvenanceV1.PerspectivePrivateFact or
+                    MirrorProvenanceV1.DerivedFromProvenPublicFacts)
+            {
+                return MirrorValueV1.Known(
+                    cardCode,
+                    MirrorProvenanceV1.PublicProtocolFact);
+            }
+
             return MirrorValueV1.Unknown<uint>();
         }
 
