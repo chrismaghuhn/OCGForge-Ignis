@@ -178,7 +178,8 @@ to derive relation meaning from card text or board plausibility.
 
 **Semantic work:**
 
-- Implement the source-backed mapping for all 22 emitted event kinds only after entity/locator and relation/chain closure has passed.
+- Implement the source-backed mapping for every event producer reachable under the exact pinned runtime profile only after entity/locator and relation/chain closure has passed.
+- Keep enum completeness separate from runtime producer reachability. Explicitly classify any named enum member that has no producer under the profile; for the current profile, `MSG_UNEQUIP`/`Unequipped` is `NOT_AVAILABLE_FROM_PINNED_RUNTIME`.
 - Preserve OCGForge's one-message-to-zero/one/many event multiplicity.
 - Allocate `event_index` from a monotonic semantic counter, starting at zero for a fresh source stream.
 - Append events only after typed decode, mirror application, and mirror validation succeed.
@@ -199,6 +200,13 @@ to derive relation meaning from card text or board plausibility.
 - The ledger stores typed semantic fields, not raw buffers or internal object IDs.
 - Event indexes depend only on successful semantic emission order.
 - Private audit metadata remains a separate restricted record.
+
+`MSG_UNEQUIP` is not an I6C4-certified source for the current pinned runtime:
+the OCGForge parser retains a two-location compatibility case, while the
+pinned runtime has no producer and the existing Ignis decoder is an I3
+one-location compatibility path. I6C4 must fail source admission closed for
+an unexpected message 95 and must not synthesize its target from current or
+prior mirror state. This does not delete or globally forbid the I3 decoder.
 
 **Stop boundary:** Stop if a required event field exists only in raw private
 bytes, if a historical locator cannot be retained safely, or if the source
