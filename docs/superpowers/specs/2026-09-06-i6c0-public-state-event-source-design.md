@@ -260,13 +260,13 @@ event. Ignis currently has no persistent event ledger.
 | `TurnStarted` | `MSG_NEW_TURN` | I3 decodes/applies current turn only | Emit from typed public player field | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject invalid player/order |
 | `PhaseChanged` | `MSG_NEW_PHASE` | I3 decodes/applies current phase only | Emit exact phase value | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject malformed phase |
 | `CardMoved` | `MSG_MOVE` when no destroy/banish/return specialization applies | I3 applies movement, discards reason from snapshot history | Preserve from/to and visibility at event time | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject if event source not complete |
-| `CardRevealed` | `MSG_CONFIRM_*`, reveal branch of `MSG_DRAW`, public query/reveal transitions | Confirm variants not admitted; query state has no ledger | Reveal only exact acting-perspective-visible code | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Omit hidden code; reject missing required field |
+| `CardRevealed` | `MSG_DRAW` reveal branch and `MSG_CONFIRM_CARDS`, `MSG_CONFIRM_DECKTOP`, `MSG_CONFIRM_EXTRATOP` | Confirm variants not admitted; query state has no ledger | Reveal only exact acting-perspective-visible code | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Omit hidden code; reject missing required field |
 | `Summoned` | `MSG_SUMMONING`, `MSG_SPSUMMONING`, `MSG_FLIPSUMMONING` and corresponding completion signals | Not all variants admitted by I3 decoder | Preserve exact message-to-event multiplicity | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject unsupported producer form |
 | `Set` | `MSG_SET` | I3 decodes set but state ownership is movement/query | Presentation event must not double-mutate state | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject duplicate semantic application |
 | `Draw` | `MSG_DRAW` | I3 decodes draw records | Emit one draw event with exact count | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject count/body mismatch |
 | `Shuffle` | `MSG_SHUFFLE_DECK`, `MSG_SHUFFLE_HAND`, `MSG_SHUFFLE_EXTRA`, `MSG_SHUFFLE_SET_CARD`, `MSG_REVERSE_DECK` | Not admitted by I3 decoder | Identity-destroying boundary; no hidden codes | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject unknown shape; destroy stale continuity |
 | `RandomizationBoundary` | Derived only from an accepted shuffle event | None | Paired semantic event, not invented from board change | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Emit only with source shuffle |
-| `LifePointsChanged` | `MSG_LPUPDATE`, `MSG_DAMAGE`, `MSG_RECOVER`, `MSG_PAY_LPCOST` | I3 decodes/applies LP | Preserve signed amount and player | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2 | Reject invalid signed mapping |
+| `LifePointsChanged` | `MSG_LPUPDATE`, `MSG_DAMAGE`, `MSG_RECOVER`; `MSG_PAY_LPCOST` is deferred/not copied by the frozen event oracle | I3 decodes/applies LP, including a typed PayLpCost message that is not an admitted event source | Preserve signed amount and player only for the three admitted producers | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C4 | Reject deferred/unsupported event form |
 | `ChainActivated` | `MSG_CHAINING`, `MSG_CHAINED` | I3 stores current chain but no history | Preserve link order/player/source/description when visible | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2/I6C4 | Reject incomplete link |
 | `ChainResolved` | `MSG_CHAIN_SOLVING`, `MSG_CHAIN_SOLVED` | I3 stores status only | Preserve semantic resolution event | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2/I6C4 | Reject order/status mismatch |
 | `ChainEnded` | `MSG_CHAIN_END` | I3 clears chain state | Emit before history is discarded | REQUIRES_NEW_PERSPECTIVE_SAFE_TRACKER | I6C2/I6C4 | Reject lost terminal chain event |
@@ -579,6 +579,16 @@ I3_V1_NON_INTERFERENCE=PASS
 ARCHITECTURE_A_SELECTED=YES
 SOURCE_CLOSURE=BLOCKED
 NEW_CONTRACT_FILE=NOT_CREATED_DUE_SOURCE_BLOCKERS
+
+GLOBALS_SOURCE=BLOCKED
+ZONES_SOURCE=BLOCKED
+ENTITIES_SOURCE=BLOCKED
+RELATIONSHIPS_SOURCE=BLOCKED_PENDING_LOCATOR_CLOSURE
+CHAIN_SOURCE=BLOCKED
+VISIBLE_EVENTS_SOURCE=BLOCKED
+EVENT_INDEX_SOURCE=BLOCKED
+MATCH_CONTEXT_SOURCE=BLOCKED_PENDING_EXPLICIT_CONFIGURATION
+OUTER_OBSERVATION_CONTEXT_SOURCE=OUTSIDE_I6C
 
 PROMPT_LOCAL_CARDCODE_BLOCKER_CHANGED=NO
 RULES_RUNTIME_COMPATIBILITY_CHANGED=NO

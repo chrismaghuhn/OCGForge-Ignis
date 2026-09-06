@@ -84,48 +84,7 @@ stopped for independent review. A passing slice never self-authorizes the next.
 **Stop boundary:** Stop if the types require a new meaning for an OCGForge field,
 an I3 V1 extension, or any prompt-local/private value.
 
-### Task I6C2: Typed message event ledger and atomic application
-
-**Owning layer:** Existing Gameplay decoder/session plus the new internal event ledger.
-
-**Files:**
-
-- Create `src/OCGForge.Ignis.Gameplay/PerspectiveSafeEventLedgerV1.cs`.
-- Modify `src/OCGForge.Ignis.Gameplay/GameplayMessageTypesV1.cs` only for missing typed source fields.
-- Modify `src/OCGForge.Ignis.Gameplay/GameplayMessageDecoderV1.cs` only for pinned event forms required by the accepted matrix.
-- Modify `src/OCGForge.Ignis.Gameplay/GameplayMirrorSessionV1.cs` to submit successful typed messages once.
-- Modify `src/OCGForge.Ignis.Gameplay/PerspectiveStateMirrorV1.cs` to commit ledger state atomically with Mirror state.
-- Extend `tests/OCGForge.Ignis.Gameplay.Tests/Tests/I6CPublicFrameSourceTests.cs`.
-
-**Semantic work:**
-
-- Represent the source-backed mapping for all 22 emitted event kinds.
-- Preserve OCGForge's one-message-to-zero/one/many event multiplicity.
-- Allocate `event_index` from a monotonic semantic counter, starting at zero for a fresh source stream.
-- Append events only after typed decode, mirror application, and mirror validation succeed.
-- Preserve event-time public visibility and historical locators; never reconstruct from the current board.
-- Keep unsupported or insufficiently typed messages fail closed.
-
-**Red test and focused gates:**
-
-- `MSG_DRAW` produces a draw event plus only the source-proven reveal events.
-- accepted shuffle produces `Shuffle` and `RandomizationBoundary`, and destroys hidden continuity.
-- malformed/unsupported confirm, summon, counter, or shuffle forms produce no event and no partial commit.
-- a failed mirror application leaves event count and next index unchanged.
-- the same semantic messages split at every TCP boundary produce identical event values/indexes.
-
-**Privacy/determinism/replay:**
-
-- Event codes/passcodes are redacted at event creation, not after public serialization.
-- The ledger stores typed semantic fields, not raw buffers or internal object IDs.
-- Event indexes depend only on successful semantic emission order.
-- Private audit metadata remains a separate restricted record.
-
-**Stop boundary:** Stop if a required event field exists only in raw private
-bytes, if a historical locator cannot be retained safely, or if the source
-would need a second independent reducer.
-
-### Task I6C3: Globals, zones, and entity source closure
+### Task I6C2: Globals, zones, entities, and locator source closure
 
 **Owning layer:** Existing transactional Mirror plus new public-frame source.
 
@@ -138,7 +97,7 @@ would need a second independent reducer.
 
 **Semantic work:**
 
-- Source life points, turn player/count, phase, terminal, winner, and proven win reason without aliases.
+- Source life points, turn player/count, phase, terminal, and proven terminal values without aliases.
 - Produce all ten OCGForge zone kinds, including field/pzone/overlay only with explicit layout/relation proof.
 - Preserve total/public/hidden counts and observable-order values per zone.
 - Convert current entity facts to public locators and optional values under I3 knowledge rules.
@@ -165,7 +124,7 @@ would need a second independent reducer.
 not accepted, any hidden-card leakage, or any proposal to alter
 `PublicStateProjectionV1.cs` V1 encoding.
 
-### Task I6C4: Relationship and chain source closure
+### Task I6C3: Relationship and chain source closure
 
 **Owning layer:** Existing Mirror relation/chain transaction plus public-frame source.
 
@@ -197,6 +156,47 @@ not accepted, any hidden-card leakage, or any proposal to alter
 **Stop boundary:** Stop on any chain field whose `ChainSize` mapping remains
 ambiguous, any relation endpoint that is hidden/ambiguous, or any requirement
 to derive relation meaning from card text or board plausibility.
+
+### Task I6C4: Visible-event ledger and event-index closure
+
+**Owning layer:** Existing Gameplay decoder/session plus the new internal event ledger.
+
+**Files:**
+
+- Create `src/OCGForge.Ignis.Gameplay/PerspectiveSafeEventLedgerV1.cs`.
+- Modify `src/OCGForge.Ignis.Gameplay/GameplayMessageTypesV1.cs` only for missing typed source fields.
+- Modify `src/OCGForge.Ignis.Gameplay/GameplayMessageDecoderV1.cs` only for pinned event forms required by the accepted matrix.
+- Modify `src/OCGForge.Ignis.Gameplay/GameplayMirrorSessionV1.cs` to submit successful typed messages once.
+- Modify `src/OCGForge.Ignis.Gameplay/PerspectiveStateMirrorV1.cs` to commit ledger state atomically with Mirror state.
+- Extend `tests/OCGForge.Ignis.Gameplay.Tests/Tests/I6CPublicFrameSourceTests.cs`.
+
+**Semantic work:**
+
+- Implement the source-backed mapping for all 22 emitted event kinds only after entity/locator and relation/chain closure has passed.
+- Preserve OCGForge's one-message-to-zero/one/many event multiplicity.
+- Allocate `event_index` from a monotonic semantic counter, starting at zero for a fresh source stream.
+- Append events only after typed decode, mirror application, and mirror validation succeed.
+- Preserve event-time public visibility and historical locators; never reconstruct from the current board.
+- Keep unsupported or insufficiently typed messages fail closed.
+
+**Red test and focused gates:**
+
+- `MSG_DRAW` produces a draw event plus only the source-proven reveal events;
+- accepted shuffle produces `Shuffle` and `RandomizationBoundary`, and destroys hidden continuity;
+- malformed/unsupported confirm, summon, counter, or shuffle forms produce no event and no partial commit;
+- a failed mirror application leaves event count and next index unchanged;
+- the same semantic messages split at every TCP boundary produce identical event values/indexes.
+
+**Privacy/determinism/replay:**
+
+- Event codes/passcodes are redacted at event creation, not after public serialization.
+- The ledger stores typed semantic fields, not raw buffers or internal object IDs.
+- Event indexes depend only on successful semantic emission order.
+- Private audit metadata remains a separate restricted record.
+
+**Stop boundary:** Stop if a required event field exists only in raw private
+bytes, if a historical locator cannot be retained safely, or if the source
+would need a second independent reducer.
 
 ### Task I6C5: Match context and outer public-frame source
 
@@ -273,7 +273,25 @@ as a substitute for accepted OCGForge safe-state semantics.
 - Extend `tests/OCGForge.Ignis.Gameplay.Tests/Tests/I6CNativeOracleTests.cs`.
 - No production change unless an earlier authorized source slice explicitly owns it.
 
-**Final matrix:**
+**Current I6C0 preflight classification:**
+
+```text
+GLOBALS_SOURCE=BLOCKED
+ZONES_SOURCE=BLOCKED
+ENTITIES_SOURCE=BLOCKED
+RELATIONSHIPS_SOURCE=BLOCKED_PENDING_LOCATOR_CLOSURE
+CHAIN_SOURCE=BLOCKED
+VISIBLE_EVENTS_SOURCE=BLOCKED
+EVENT_INDEX_SOURCE=BLOCKED
+MATCH_CONTEXT_SOURCE=BLOCKED_PENDING_EXPLICIT_CONFIGURATION
+OUTER_OBSERVATION_CONTEXT_SOURCE=OUTSIDE_I6C
+```
+
+These are current source-closure values, not acceptance claims. The following
+is the required matrix for a later I6C final review after the preceding slices
+have closed their dependencies:
+
+**Required future final matrix:**
 
 ```text
 I6C_GLOBALS_SOURCE=PROVEN
