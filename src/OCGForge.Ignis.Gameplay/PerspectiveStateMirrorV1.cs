@@ -1272,7 +1272,10 @@ public sealed class PerspectiveStateMirrorV1
                 : MirrorValueV1.Known(
                     payload.CardCode,
                     MirrorProvenanceV1.PublicProtocolFact),
-            payload.Description);
+            payload.Description,
+            payload.TriggeringController,
+            payload.TriggeringLocation,
+            payload.TriggeringSequence);
         return GameplayErrorCode.None;
     }
 
@@ -1887,8 +1890,24 @@ public sealed class PerspectiveStateMirrorV1
                 chain.CardCode,
                 chain.Description,
                 chain.Status,
+                chain.TriggeringController,
+                chain.TriggeringLocation,
+                chain.TriggeringSequence,
                 chain.Targets))
             .ToArray();
+        MirrorChainSnapshotV1? pendingChainSource =
+            current.PendingChain is null
+                ? null
+                : new MirrorChainSnapshotV1(
+                    current.PendingChain.ChainSize,
+                    current.PendingChain.Card,
+                    current.PendingChain.CardCode,
+                    current.PendingChain.Description,
+                    current.PendingChain.Status,
+                    current.PendingChain.TriggeringController,
+                    current.PendingChain.TriggeringLocation,
+                    current.PendingChain.TriggeringSequence,
+                    current.PendingChain.Targets);
         MirrorValueV1<MirrorEntityIdV1> pending = current.PendingChain is null
             ? MirrorValueV1.Unknown<MirrorEntityIdV1>()
             : MirrorValueV1.Known(
@@ -1908,7 +1927,8 @@ public sealed class PerspectiveStateMirrorV1
             current.TargetRelations.Select(ToRelationSnapshot),
             current.ChainTargetRelations.Select(ToRelationSnapshot),
             current.EquipmentRelations.Select(ToRelationSnapshot),
-            current.OverlayRelations.Select(ToRelationSnapshot));
+            current.OverlayRelations.Select(ToRelationSnapshot),
+            pendingChainSource);
 
         MirrorCardSnapshotV1 ToCardSnapshot(EntityState entity) =>
             new(
@@ -1987,12 +2007,18 @@ public sealed class PerspectiveStateMirrorV1
             uint chainSize,
             MirrorEntityIdV1 card,
             MirrorValueV1<uint> cardCode,
-            ulong description)
+            ulong description,
+            byte triggeringController,
+            byte triggeringLocation,
+            uint triggeringSequence)
         {
             ChainSize = chainSize;
             Card = card;
             CardCode = cardCode;
             Description = description;
+            TriggeringController = triggeringController;
+            TriggeringLocation = triggeringLocation;
+            TriggeringSequence = triggeringSequence;
         }
 
         internal uint ChainSize { get; }
@@ -2003,13 +2029,26 @@ public sealed class PerspectiveStateMirrorV1
 
         internal ulong Description { get; }
 
+        internal byte TriggeringController { get; }
+
+        internal byte TriggeringLocation { get; }
+
+        internal uint TriggeringSequence { get; }
+
         internal MirrorChainStatusV1 Status { get; set; }
 
         internal List<MirrorEntityIdV1> Targets { get; } = new();
 
         internal ChainState Clone()
         {
-            ChainState clone = new(ChainSize, Card, CardCode, Description)
+            ChainState clone = new(
+                ChainSize,
+                Card,
+                CardCode,
+                Description,
+                TriggeringController,
+                TriggeringLocation,
+                TriggeringSequence)
             {
                 Status = Status
             };

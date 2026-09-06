@@ -564,6 +564,9 @@ public sealed class MirrorChainSnapshotV1 : IEquatable<MirrorChainSnapshotV1>
         MirrorValueV1<uint> cardCode,
         ulong description,
         MirrorChainStatusV1 status,
+        byte triggeringController,
+        byte triggeringLocation,
+        uint triggeringSequence,
         IEnumerable<MirrorEntityIdV1> targets)
     {
         ChainSize = chainSize;
@@ -571,6 +574,9 @@ public sealed class MirrorChainSnapshotV1 : IEquatable<MirrorChainSnapshotV1>
         CardCode = cardCode;
         Description = description;
         Status = status;
+        TriggeringController = triggeringController;
+        TriggeringLocation = triggeringLocation;
+        TriggeringSequence = triggeringSequence;
         this.targets = targets.ToArray();
         targetsView = Array.AsReadOnly(this.targets);
     }
@@ -585,16 +591,25 @@ public sealed class MirrorChainSnapshotV1 : IEquatable<MirrorChainSnapshotV1>
 
     public MirrorChainStatusV1 Status { get; }
 
+    internal byte TriggeringController { get; }
+
+    internal byte TriggeringLocation { get; }
+
+    internal uint TriggeringSequence { get; }
+
     internal IReadOnlyList<MirrorEntityIdV1> Targets => targetsView;
 
     public bool Equals(MirrorChainSnapshotV1? other) =>
         other is not null &&
         ChainSize == other.ChainSize &&
         Card.Equals(other.Card) &&
-        CardCode == other.CardCode &&
-        Description == other.Description &&
-        Status == other.Status &&
-        targets.AsSpan().SequenceEqual(other.targets);
+            CardCode == other.CardCode &&
+            Description == other.Description &&
+            Status == other.Status &&
+            TriggeringController == other.TriggeringController &&
+            TriggeringLocation == other.TriggeringLocation &&
+            TriggeringSequence == other.TriggeringSequence &&
+            targets.AsSpan().SequenceEqual(other.targets);
 
     public override bool Equals(object? obj) =>
         obj is MirrorChainSnapshotV1 other && Equals(other);
@@ -611,7 +626,10 @@ public sealed class MirrorChainSnapshotV1 : IEquatable<MirrorChainSnapshotV1>
             .Append(CardCode.Value).Append(':')
             .Append((byte)CardCode.Provenance).Append('|')
             .Append(Description).Append('|')
-            .Append((byte)Status).Append('|');
+            .Append((byte)Status).Append('|')
+            .Append(TriggeringController).Append('|')
+            .Append(TriggeringLocation).Append('|')
+            .Append(TriggeringSequence).Append('|');
         foreach (MirrorEntityIdV1 target in targets)
         {
             builder.Append(target.Ordinal).Append(',');
@@ -651,7 +669,8 @@ public sealed class MirrorSnapshotV1 : IEquatable<MirrorSnapshotV1>
         IEnumerable<MirrorRelationSnapshotV1> targetRelations,
         IEnumerable<MirrorRelationSnapshotV1> chainTargetRelations,
         IEnumerable<MirrorRelationSnapshotV1> equipmentRelations,
-        IEnumerable<MirrorRelationSnapshotV1> overlayRelations)
+        IEnumerable<MirrorRelationSnapshotV1> overlayRelations,
+        MirrorChainSnapshotV1? pendingChainSource = null)
     {
         Perspective = perspective ?? throw new ArgumentNullException(nameof(perspective));
         this.participants = participants.ToArray();
@@ -673,6 +692,7 @@ public sealed class MirrorSnapshotV1 : IEquatable<MirrorSnapshotV1>
         Phase = phase;
         Terminal = terminal;
         PendingChain = pendingChain;
+        PendingChainSource = pendingChainSource;
     }
 
     public GameplayPerspectiveV1 Perspective { get; }
@@ -690,6 +710,8 @@ public sealed class MirrorSnapshotV1 : IEquatable<MirrorSnapshotV1>
     public MirrorTerminalSnapshotV1 Terminal { get; }
 
     internal MirrorValueV1<MirrorEntityIdV1> PendingChain { get; }
+
+    internal MirrorChainSnapshotV1? PendingChainSource { get; }
 
     public IReadOnlyList<MirrorChainSnapshotV1> Chains => chainsView;
 
@@ -727,6 +749,10 @@ public sealed class MirrorSnapshotV1 : IEquatable<MirrorSnapshotV1>
         builder.Append(PendingChain.IsKnown ? 'K' : 'U').Append(':')
             .Append(PendingChain.Value.Ordinal).Append(':')
             .Append((byte)PendingChain.Provenance).Append('|');
+        if (PendingChainSource is not null)
+        {
+            builder.Append(PendingChainSource.ToDeterministicString()).Append('|');
+        }
         foreach (MirrorParticipantSnapshotV1 participant in participants)
         {
             builder.Append(participant.ToDeterministicString()).Append(';');
