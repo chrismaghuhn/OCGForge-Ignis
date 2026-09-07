@@ -195,10 +195,22 @@ rows are strictly increasing by code
 each code occurs exactly once
 every declared coverage code has one row
 no row exists outside declared coverage
+level <= 0xff
+if TYPE_LINK is absent: link_marker == 0
+if TYPE_LINK is present: defense == 0
+if TYPE_PENDULUM is absent: left_scale == 0 and right_scale == 0
+if TYPE_PENDULUM is present: left_scale <= 0xff and right_scale <= 0xff
+if TYPE_LINK is present: link_marker contains only the eight OCGForge-
+    recognized marker bits
 ```
 
 Malformed input MUST be rejected. A provider MUST NOT silently sort,
 deduplicate, drop unexpected rows, or fill missing rows.
+
+These are canonicality rules, not new card-game rules. They mirror the
+normalization performed by the pinned OCGForge transformation and ensure that
+two rows which project to the same Printed value cannot receive different
+semantic-row digests solely through ignored or normalized fields.
 
 ## 5. Semantic row hash domain
 
@@ -300,6 +312,9 @@ The expected source-format requirements are:
 UTF-8
 LF line endings
 no BOM
+
+source_artifact_format_id =
+ocgforge-ignis.i6c5.printed-source-artifact.pipe12.v1
 ```
 
 `source_artifact_sha256` is `INTEGRITY / FORENSIC PROVENANCE`. It is not the
@@ -338,7 +353,8 @@ Race      = row.race
 Attack    = row.attack
 ```
 
-For non-Link cards:
+The projection follows the OCGForge control flow independently for each type
+bit. For non-Link cards:
 
 ```text
 Defense = row.defense
@@ -348,9 +364,24 @@ For Link cards:
 
 ```text
 Defense = ABSENT
+```
+
+For Xyz cards:
+
+```text
+Rank = row.level
+```
+
+For a card which is not Xyz and is not Link:
+
+```text
+Level = row.level
+```
+
+For Link cards, independently of the Xyz and Pendulum checks:
+
+```text
 LinkRating = row.level
-Level = ABSENT
-Rank = ABSENT
 LinkMarkers = row.link_marker bits in this order:
     BottomLeft
     Bottom
@@ -360,21 +391,6 @@ LinkMarkers = row.link_marker bits in this order:
     TopLeft
     Top
     TopRight
-```
-
-For Xyz cards:
-
-```text
-Rank = row.level
-Level = ABSENT
-```
-
-For other non-Link, non-Xyz cards:
-
-```text
-Level = row.level
-Rank = ABSENT
-LinkRating = ABSENT
 ```
 
 For Pendulum cards:
@@ -617,7 +633,7 @@ Source/forensic provenance:
 ```text
 babelcdb_repository
 babelcdb_commit
-babelcdb_checkout_sha256?
+babelcdb_checkout_sha256
 cards_cdb_sha256
 transformation_source_repository
 transformation_source_commit
@@ -627,9 +643,11 @@ source_artifact_format_id
 source_artifact_sha256
 ```
 
-Optional forensic fields MAY be unavailable only when a future versioned
-manifest contract explicitly permits their absence. Semantic identity fields
-MUST NOT be absent.
+For this V1 manifest, `babelcdb_checkout_sha256` is required whenever the
+manifest claims the pinned BabelCDB source. No forensic field in the V1
+manifest is implicitly optional. A future manifest revision MAY define an
+alternate source and explicit optionality; it MUST NOT do so silently under
+this V1 contract. Semantic identity fields MUST NOT be absent.
 
 JSON whitespace, JSON property order, and a raw JSON hash are not frozen by
 this contract as gameplay semantics.
