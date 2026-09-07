@@ -1460,6 +1460,10 @@ internal static class I6CPublicFrameSourceTests
 
         (PerspectiveStateMirrorV1 counterMirror, GameplayMessageDecoderV1 counterDecoder) =
             CreateMirror(0);
+        ApplyI6C4Success(
+            counterMirror,
+            counterDecoder,
+            MoveMessage(0x1012, empty, monster, 0));
         ApplyI6C4Success(counterMirror, counterDecoder, CounterMessage(101, 7, 0, 0x04, 0, 3));
         Equal(PerspectiveSafeVisibleEventKindV1.CounterChanged, LastI6C4Event(counterMirror).Kind);
         Equal((uint)7, LastI6C4Event(counterMirror).CounterType);
