@@ -293,21 +293,36 @@ The field types and byte encoding are normative:
 ```text
 scenario_contract_id: string
 scenario_id: string
-perspective_player: u8
-starting_player: u8
+perspective_player: u8, constrained to {0,1}
+starting_player: u8, constrained to {0,1}
 duel_flags: u64be
-seed_words: u32be count, followed by ordered u64be words
-deck_identity.seat0: string
-deck_identity.seat1: string
+seed_words: exactly u32be count 4, followed by exactly four ordered u64be words
+deck_identity.seat0: nonempty canonical token string
+deck_identity.seat1: nonempty canonical token string
 deck_identity.digest: exactly 64 lowercase ASCII hex characters
-all other commit/ID/hash/path/envelope/boundary text fields: string
+Git commit fields: exactly 40 lowercase ASCII hex characters
+SHA-256 fields: exactly 64 lowercase ASCII hex characters
+ID/path/envelope/boundary token fields: nonempty canonical ASCII token strings
 ```
 
 Every `string` is `u32be byte_length || exact UTF-8 bytes`. The manifest
 identity bytes are the domain string
 `OCGFORGE-IGNIS-I6C6-SAME-SCENARIO-REPLAY-V1\0`, followed by the ordered
-fields above. No JSON whitespace, property order, locale, or platform path
-representation participates in the identity.
+fields above. Canonical token strings use lowercase ASCII letters, digits,
+`.` , `_` and `-` only; no whitespace, slash, control character, or locale
+dependent spelling is permitted. No JSON whitespace, property order, locale,
+or platform path representation participates in the identity.
+
+For this V1 manifest, Git commit fields are
+`ocgforge_semantic_commit`, `ocgforge_core_commit`,
+`ocgforge_cardscripts_commit`, `ignis_edopro_commit`,
+`ignis_edopro_core_commit`, and `ignis_cardscripts_commit`. SHA-256 fields are
+`deck_identity.digest`, `rules_bundle_id`,
+`ocgforge_core_patchset_sha256`, `native_setup_transcript_sha256`,
+`native_raw_transcript_sha256`, `ignis_raw_replay_transcript_sha256`,
+`native_public_event_transcript_sha256`,
+`ignis_public_event_transcript_sha256`, and
+`supported_message_family_envelope_sha256`.
 
 Raw runtime transcripts are restricted forensic evidence only. They are not
 required to be byte-equal because OCGForge observes raw core messages while
@@ -424,7 +439,23 @@ canonical_public_event_transcript_sha256
 ```
 
 The relevant script paths are canonical sorted relative paths and their file
-bytes are hashed in path order. The two script closure digests are allowed to
+bytes are hashed in path order. The closure digest grammar is:
+
+```text
+OCGFORGE-IGNIS-I6C6-CARDSCRIPT-CLOSURE-V1\0
+entry_count:u32be
+for each entry in byte-lexicographic path order:
+    path_length:u32be
+    path_utf8_bytes[path_length]
+    file_sha256: exactly 64 lowercase ASCII hex characters
+```
+
+Paths are root-relative UTF-8 paths with `/` separators and no `.` or `..`
+components. The closure is the union of the global required scripts
+`constant.lua`, `utility.lua`, and `proc_normal.lua` plus every
+scenario-relevant dynamically requested script. An execution trace must
+provide the dynamic set; if it cannot, the script-dependent scenario fails
+closed. The two script closure digests are allowed to
 differ because the runtimes use different CardScripts commits. The binding
 passes only when the exact relevant closure is recorded for both runtimes and
 the script-dependent behavior is bound by the exact shared
@@ -627,6 +658,7 @@ IGNIS_I6C5_HEAD_MATCH=PASS
 SCENARIO_PROVENANCE_BINDING=PASS
 CANONICAL_PUBLIC_EVENT_TRANSCRIPT_BINDING=PASS
 RAW_TRANSCRIPTS_RESTRICTED_ONLY=PASS
+CARD_SCRIPT_CLOSURE_CANONICAL=PASS
 CARD_SCRIPT_BEHAVIOR_BINDING=PASS
 PLAYER_TO_ACT_ABSENT_OR_I6D_BLOCKED=PASS
 TYPED_FIELD_COMPARISON=PASS
