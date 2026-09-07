@@ -324,6 +324,12 @@ For this V1 manifest, Git commit fields are
 `ignis_public_event_transcript_sha256`, and
 `supported_message_family_envelope_sha256`.
 
+The complete SameScenario manifest bytes and identity are
+`RESTRICTED_EVIDENCE`. They are not a public gameplay identity, public frame
+field, semantic comparison digest, model input, or public acceptance artifact.
+In particular, raw transcript digests may depend on hidden-dependent transport
+bytes and must remain outside all public outputs.
+
 Raw runtime transcripts are restricted forensic evidence only. They are not
 required to be byte-equal because OCGForge observes raw core messages while
 EDOPro emits player-specific STOC messages, redacts identities, and may add
@@ -380,6 +386,14 @@ CanonicalPublicEventRecordV1 =
     effect_description:optional u64be
     targets:u32be count followed by lexicographically sorted locator strings
 ```
+
+Every optional field is encoded as `presence:u8`, where `0` means absent and
+`1` means present, followed by the value only when present. A signed `i32` is
+encoded as its two's-complement bit pattern in `u32be`. Every locator string
+is `u32be byte_length || exact UTF-8 bytes`. Target ordering is bytewise
+lexicographic ordering of those UTF-8 bytes. Event, zone, position,
+relationship, and visible-event kind values use the exact
+`ocgforge.public_safe_state.v1` code tables; an unknown code fails closed.
 
 The native `project_visible_events` result and the Ignis I6C4 ledger are
 converted to this exact public-event form. `engine_step_index` is omitted.
@@ -620,7 +634,7 @@ No production Ignis file, OCGForge production file, third-party pin, database, o
 - [ ] Build native `PlayerObservation` with `CoreHost` and `ObservationBuildConfig`.
 - [ ] Replay only the explicitly paired supported transcript into `PerspectiveStateMirrorV1`.
 - [ ] Classify every I6C6 V1 scenario as script-dependent and require a passing `CARD_SCRIPT_BEHAVIOR_BINDING`; do not admit a `SCRIPT_DEPENDENCY=NONE` bypass without a separately authorized EDOPro evidence contract.
-- [ ] Require the shared canonical gameplay transcript hash as the script-dependent behavior binding at the selected boundary.
+- [ ] Require `CANONICAL_PUBLIC_EVENT_TRANSCRIPT_BINDING=PASS` plus selected public-safe-state boundary equality as the script-dependent behavior binding; restricted raw transcript hashes remain provenance only.
 - [ ] Reject any scenario whose native and Ignis source histories cannot be bound without inference.
 - [ ] Provision Printed rows externally or use an approved synthetic native catalog; do not add real rows to Ignis.
 
