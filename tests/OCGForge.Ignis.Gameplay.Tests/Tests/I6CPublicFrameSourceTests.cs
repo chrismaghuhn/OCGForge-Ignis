@@ -737,6 +737,7 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C4 historical locators do not rebind", AssertI6C4HistoricalLocators);
         Run("I6C4 paired hidden worlds", AssertI6C4PairedPrivacy);
         Run("I6C4 transport chunking", AssertI6C4TransportChunking);
+        Run("I6C5 outer public frame source", AssertI6C5OuterPublicFrameSource);
     }
 
     private static void AssertI6C4DrawEventLedger()
@@ -1482,6 +1483,284 @@ internal static class I6CPublicFrameSourceTests
             Split(transcript, new[] { 1, 2, 7, 3, 11 }));
         Equal(whole, oneByte);
         Equal(whole, irregular);
+    }
+
+    private static void AssertI6C5OuterPublicFrameSource()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        PerspectiveSafeMatchContextV1 context = CreateValidI6C5MatchContext();
+        ApplyI6C4Success(mirror, decoder, new byte[] { 40, 1 });
+
+        PerspectiveSafeFrameSourceResultV1 missingConfiguration =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(mirror, null);
+        False(missingConfiguration.IsSuccess);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.MissingMatchContext,
+            missingConfiguration.Error!.Value.Code);
+        Null(missingConfiguration.Frame);
+
+        PerspectiveSafeMatchContextV1 contradictoryFlags = new(
+            0,
+            0x1000,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, new uint[] { 1, 2 }, new uint[] { 3 }),
+            new PerspectiveSafeDeckV1(false));
+        PerspectiveSafeFrameSourceResultV1 contradictoryFlagsResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                contradictoryFlags);
+        False(contradictoryFlagsResult.IsSuccess);
+        Null(contradictoryFlagsResult.Frame);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+            contradictoryFlagsResult.Error!.Value.Code);
+
+        PerspectiveSafeFrameSourceResultV1 result =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(mirror, context);
+        True(result.IsSuccess, result.Error?.ToString() ?? "I6C5 frame rejected");
+        NotNull(result.Frame);
+        Equal((ulong)0x234, result.Frame!.Globals.DuelFlags);
+        Equal((byte)0, result.Frame.MatchContext.PerspectivePlayer);
+        Equal(true, result.Frame.MatchContext.Knowledge.OwnDecklistKnown);
+        Equal(false, result.Frame.MatchContext.Knowledge.OpponentDecklistKnown);
+        True(result.Frame.MatchContext.OwnDeck.MainDeck.SequenceEqual(new uint[] { 1, 2 }));
+        True(result.Frame.MatchContext.OwnDeck.ExtraDeck.SequenceEqual(new uint[] { 3 }));
+        Equal(1, result.Frame.VisibleEvents.Count);
+        Equal(PerspectiveSafeVisibleEventKindV1.TurnStarted, result.Frame.VisibleEvents[0].Kind);
+
+        (PerspectiveStateMirrorV1 populatedMirror, GameplayMessageDecoderV1 populatedDecoder) =
+            CreateMirror(0, extraCount0: 0);
+        PerspectiveSafeMatchContextV1 populatedContext = CreateValidI6C5MatchContext();
+        ModernLocInfoV1 populatedSource = new(0, 0x04, 0, 0x04);
+        ModernLocInfoV1 populatedTarget = new(0, 0x04, 1, 0x04);
+        ApplyI6C4Success(
+            populatedMirror,
+            populatedDecoder,
+            MoveMessage(0xc100, new ModernLocInfoV1(0, 0, 0, 0), populatedSource, 0));
+        ApplyI6C4Success(
+            populatedMirror,
+            populatedDecoder,
+            MoveMessage(0xc101, new ModernLocInfoV1(0, 0, 0, 0), populatedTarget, 0));
+        ApplyI6C4Success(
+            populatedMirror,
+            populatedDecoder,
+            EquipMessage(populatedSource, populatedTarget));
+        ApplyI6C4Success(
+            populatedMirror,
+            populatedDecoder,
+            ChainingMessage(populatedSource, 1, 0xc100));
+        PerspectiveSafeI6C3SourceResultV1 populatedState =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C3(populatedMirror);
+        True(populatedState.IsSuccess, populatedState.Error?.ToString() ?? "I6C3 source rejected");
+        PerspectiveSafeFrameSourceResultV1 populatedResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                populatedMirror,
+                populatedContext);
+        True(populatedResult.IsSuccess, populatedResult.Error?.ToString() ?? "populated frame rejected");
+        Equal(2, populatedResult.Frame!.Entities.Count);
+        Equal(1, populatedResult.Frame.Relationships.Count);
+        Equal(1u, populatedResult.Frame.Chain.Length);
+        True(populatedResult.Frame.VisibleEvents.Count >= 4, $"expected populated events; actual {populatedResult.Frame.VisibleEvents.Count}");
+        True(populatedResult.Frame.MatchContext.OwnDeck.MainDeck.SequenceEqual(new uint[] { 1, 2 }), "populated own deck mismatch");
+
+        uint[] mutableOwnDeck = new[] { 1u, 2u };
+        PerspectiveSafeMatchContextV1 immutableContext = new(
+            0,
+            0x234,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, mutableOwnDeck, new[] { 3u }),
+            new PerspectiveSafeDeckV1(false));
+        mutableOwnDeck[0] = 999;
+        PerspectiveSafeFrameSourceResultV1 immutableResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(mirror, immutableContext);
+        True(immutableResult.IsSuccess, immutableResult.Error?.ToString() ?? "immutable frame rejected");
+        Equal((uint)1, immutableResult.Frame!.MatchContext.OwnDeck.MainDeck[0]);
+
+        PerspectiveSafeMatchContextV1 unsorted = new(
+            0,
+            0x234,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, new[] { 2u, 1u }, new[] { 3u }),
+            new PerspectiveSafeDeckV1(false));
+        PerspectiveSafeFrameSourceResultV1 unsortedResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(mirror, unsorted);
+        False(unsortedResult.IsSuccess);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidOrdering,
+            unsortedResult.Error!.Value.Code);
+
+        PerspectiveSafeMatchContextV1 unknownWithPasscodes = new(
+            0,
+            0x234,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, new[] { 1u, 2u }, new[] { 3u }),
+            new PerspectiveSafeDeckV1(false, new[] { 4u }));
+        PerspectiveSafeFrameSourceResultV1 unknownDeckResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(mirror, unknownWithPasscodes);
+        False(unknownDeckResult.IsSuccess);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidDeckState,
+            unknownDeckResult.Error!.Value.Code);
+
+        (PerspectiveStateMirrorV1 layoutMirror, GameplayMessageDecoderV1 layoutDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            layoutMirror,
+            layoutDecoder,
+            MoveMessage(
+                0xb200,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x08, 0, 0x08),
+                0));
+        PerspectiveSafeFrameSourceResultV1 layoutResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                layoutMirror,
+                context);
+        True(layoutResult.IsSuccess, layoutResult.Error?.ToString() ?? "layout frame rejected");
+        Equal(
+            1u,
+            layoutResult.Frame!.Zones.Single(zone =>
+                zone.Player == 0 &&
+                zone.Kind == PerspectiveSafeSemanticZoneV1.SpellTrapZone).TotalCount);
+        Equal(
+            PerspectiveSafeSemanticZoneV1.SpellTrapZone,
+            layoutResult.Frame.Entities.Single().Zone);
+
+        (PerspectiveStateMirrorV1 pendulumMirror, GameplayMessageDecoderV1 pendulumDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            pendulumMirror,
+            pendulumDecoder,
+            MoveMessage(
+                0xb201,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x08, 0, 0x08),
+                0));
+        ApplyI6C4Success(
+            pendulumMirror,
+            pendulumDecoder,
+            UpdateCardMessage(
+                0,
+                0x08,
+                0,
+                DecodeQuery(
+                    QueryRecord(QueryFlagV1.Type, U32(0x01000002)),
+                    QueryRecord(QueryFlagV1.Position, U32(0x08)),
+                    QueryEnd())));
+        PerspectiveSafeMatchContextV1 pendulumContext = new(
+            0,
+            0x800,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, new[] { 1u, 2u }, new[] { 3u }),
+            new PerspectiveSafeDeckV1(false));
+        PerspectiveSafeFrameSourceResultV1 pendulumResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                pendulumMirror,
+                pendulumContext);
+        True(pendulumResult.IsSuccess, pendulumResult.Error?.ToString() ?? "pendulum frame rejected");
+        Equal(
+            PerspectiveSafeSemanticZoneV1.PendulumRelevant,
+            pendulumResult.Frame!.Entities.Single().Zone);
+
+        (PerspectiveStateMirrorV1 unprovenLayoutMirror,
+            GameplayMessageDecoderV1 unprovenLayoutDecoder) = CreateMirror(0);
+        ApplyI6C4Success(
+            unprovenLayoutMirror,
+            unprovenLayoutDecoder,
+            MoveMessage(
+                0xb202,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x08, 0, 0x08),
+                0));
+        PerspectiveSafeFrameSourceResultV1 unprovenLayoutResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                unprovenLayoutMirror,
+                pendulumContext);
+        False(unprovenLayoutResult.IsSuccess);
+        Null(unprovenLayoutResult.Frame);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            unprovenLayoutResult.Error!.Value.Code);
+
+        (PerspectiveStateMirrorV1 pendingRelationMirror,
+            GameplayMessageDecoderV1 pendingRelationDecoder) = CreateMirror(0);
+        ModernLocInfoV1 pendingSource = new(0, 0x08, 0, 0x04);
+        ModernLocInfoV1 pendingTarget = new(0, 0x04, 0, 0x04);
+        ApplyI6C4Success(
+            pendingRelationMirror,
+            pendingRelationDecoder,
+            MoveMessage(
+                0xb203,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                pendingSource,
+                0));
+        ApplyI6C4Success(
+            pendingRelationMirror,
+            pendingRelationDecoder,
+            MoveMessage(
+                0xb204,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                pendingTarget,
+                0));
+        ApplyI6C4Success(
+            pendingRelationMirror,
+            pendingRelationDecoder,
+            EquipMessage(pendingSource, pendingTarget));
+        PerspectiveSafeFrameSourceResultV1 pendingRelationResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                pendingRelationMirror,
+                context);
+        False(pendingRelationResult.IsSuccess);
+        Null(pendingRelationResult.Frame);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            pendingRelationResult.Error!.Value.Code);
+
+        (PerspectiveStateMirrorV1 rejectedMirror, GameplayMessageDecoderV1 rejectedDecoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 source = new(0, 0x04, 0, 0x01);
+        ModernLocInfoV1 target = new(0, 0x04, 1, 0x01);
+        ApplyI6C4Success(
+            rejectedMirror,
+            rejectedDecoder,
+            MoveMessage(0xb100, new ModernLocInfoV1(0, 0, 0, 0), source, 0));
+        ApplyI6C4Success(
+            rejectedMirror,
+            rejectedDecoder,
+            MoveMessage(0xb101, new ModernLocInfoV1(0, 0, 0, 0), target, 0));
+        ApplyI6C4Success(rejectedMirror, rejectedDecoder, EquipMessage(source, target));
+        ApplyI6C4Success(rejectedMirror, rejectedDecoder, UnequipMessage(source));
+        PerspectiveSafeFrameSourceResultV1 rejectedFrame =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                rejectedMirror,
+                context);
+        False(rejectedFrame.IsSuccess);
+        Null(rejectedFrame.Frame);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            rejectedFrame.Error!.Value.Code);
+        ApplyI6C4Success(rejectedMirror, rejectedDecoder, new byte[] { 40, 1 });
+        PerspectiveSafeFrameSourceResultV1 stickyRejectedFrame =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                rejectedMirror,
+                context);
+        False(stickyRejectedFrame.IsSuccess);
+        Null(stickyRejectedFrame.Frame);
+
+        PerspectiveStateMirrorV1 hiddenWorldA = CreateHiddenWorld(0x44110000);
+        PerspectiveStateMirrorV1 hiddenWorldB = CreateHiddenWorld(0x99220000);
+        PerspectiveSafeFrameSourceResultV1 hiddenFrameA =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                hiddenWorldA,
+                context);
+        PerspectiveSafeFrameSourceResultV1 hiddenFrameB =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                hiddenWorldB,
+                context);
+        True(hiddenFrameA.IsSuccess, hiddenFrameA.Error?.ToString() ?? "hidden frame A rejected");
+        True(hiddenFrameB.IsSuccess, hiddenFrameB.Error?.ToString() ?? "hidden frame B rejected");
+        Equal(FrameSignature(hiddenFrameA.Frame!), FrameSignature(hiddenFrameB.Frame!));
     }
 
     private static void AssertI6C2MissingMirror()
@@ -3040,6 +3319,17 @@ internal static class I6CPublicFrameSourceTests
         new(
             perspectivePlayer: 0,
             duelFlags: 0x1234,
+            knowledge: new(true, false),
+            ownDeck: new(
+                known: true,
+                mainDeck: new uint[] { 1, 2 },
+                extraDeck: new uint[] { 3 }),
+            opponentDeck: new(known: false));
+
+    private static PerspectiveSafeMatchContextV1 CreateValidI6C5MatchContext() =>
+        new(
+            perspectivePlayer: 0,
+            duelFlags: 0x234,
             knowledge: new(true, false),
             ownDeck: new(
                 known: true,

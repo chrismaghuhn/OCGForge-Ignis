@@ -105,6 +105,90 @@ public static class PerspectiveSafePublicFrameSourceV1
     }
 
     /// <summary>
+    /// Composes the current I6C2/I6C3 source, the accepted I6C4 event ledger,
+    /// and explicit match configuration into one complete source frame.
+    /// This remains an Ignis semantic source and does not encode OCGForge
+    /// canonical bytes.
+    /// </summary>
+    public static PerspectiveSafeFrameSourceResultV1 TryCreateI6C5(
+        PerspectiveStateMirrorV1? mirror,
+        PerspectiveSafeMatchContextV1? matchContext)
+    {
+        if (mirror is null)
+        {
+            return Failure(
+                PerspectiveSafeFrameSourceErrorCodeV1.MissingMirror,
+                PerspectiveSafeSourceSectionV1.Input);
+        }
+
+        if (matchContext is null)
+        {
+            return Failure(
+                PerspectiveSafeFrameSourceErrorCodeV1.MissingMatchContext,
+                PerspectiveSafeSourceSectionV1.MatchContext);
+        }
+
+        if (!PerspectiveSafeMatchContextValidationV1.TryValidate(
+                matchContext,
+                mirror.Snapshot.Perspective.PlayerType,
+                out PerspectiveSafeFrameSourceErrorV1 error))
+        {
+            return PerspectiveSafeFrameSourceResultV1.Failure(error);
+        }
+
+        if (mirror.EventSourceCertification !=
+            PerspectiveSafeEventSourceCertificationV1.Proven)
+        {
+            return Failure(
+                PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                PerspectiveSafeSourceSectionV1.VisibleEvents);
+        }
+
+        PerspectiveSafeI6C3SourceResultV1 stateResult = TryCreateI6C3(mirror);
+        if (!stateResult.IsSuccess)
+        {
+            return PerspectiveSafeFrameSourceResultV1.Failure(
+                stateResult.Error!.Value);
+        }
+
+        PerspectiveSafeI6C3StateSourceV1 state = stateResult.Source!;
+        if (!TryValidateI6C5State(state, out error) ||
+            !TryCreateI6C5Zones(
+                mirror.Snapshot,
+                state.Zones,
+                state.Entities,
+                matchContext.DuelFlags,
+                out PerspectiveSafeZoneV1[] zones,
+                out PerspectiveSafeEntityV1[] entities,
+                out error))
+        {
+            return PerspectiveSafeFrameSourceResultV1.Failure(error);
+        }
+
+        PerspectiveSafeGlobalsV1 globals = new(
+            matchContext.DuelFlags,
+            state.Globals.LifePoints,
+            playerToAct: null,
+            turnPlayer: state.Globals.TurnPlayer,
+            turnCount: state.Globals.TurnCount,
+            phase: state.Globals.Phase,
+            chainLength: state.Chain.Length,
+            winner: state.Globals.Winner,
+            winReason: state.Globals.WinReason,
+            terminal: state.Globals.Terminal);
+
+        PerspectiveSafeFrameSourceInputV1 input = new(
+            globals,
+            zones,
+            entities,
+            state.Relationships,
+            state.Chain,
+            mirror.VisibleEvents,
+            matchContext);
+        return TryCreate(input);
+    }
+
+    /// <summary>
     /// Extracts the I6C2-owned, perspective-safe facts from a committed Mirror
     /// snapshot. The result is deliberately partial until later I6C slices
     /// close their dependencies.
@@ -250,6 +334,508 @@ public static class PerspectiveSafePublicFrameSourceV1
                 chain,
                 statuses);
         return PerspectiveSafeI6C3SourceResultV1.Success(source);
+    }
+
+    private static bool TryValidateI6C5State(
+        PerspectiveSafeI6C3StateSourceV1 source,
+        out PerspectiveSafeFrameSourceErrorV1 error)
+    {
+        bool hasEntities = source.Entities.Count != 0;
+        bool hasOverlay = source.Entities.Any(
+            entity => entity.Zone == PerspectiveSafeSemanticZoneV1.Overlay) ||
+            source.Zones.Any(
+                zone => zone.Kind == PerspectiveSafeSemanticZoneV1.Overlay &&
+                        zone.TotalCount != 0);
+        bool hasRelationships = source.Relationships.Count != 0;
+        bool hasChain = source.Chain.Length != 0 || source.Chain.Links.Count != 0;
+
+        foreach (PerspectiveSafeI6C2ConstituentStatusV1 status in
+                 source.BaseSource.Statuses)
+        {
+            if (status.Status == PerspectiveSafeI6C2SourceStatusV1.Proven)
+            {
+                continue;
+            }
+
+            bool suppliedByI6C5OrLaterSource = status.Constituent is
+                PerspectiveSafeI6C2ConstituentV1.DuelFlags or
+                PerspectiveSafeI6C2ConstituentV1.PlayerToAct or
+                PerspectiveSafeI6C2ConstituentV1.ChainLength or
+                PerspectiveSafeI6C2ConstituentV1.Relationships or
+                PerspectiveSafeI6C2ConstituentV1.Chain or
+                PerspectiveSafeI6C2ConstituentV1.VisibleEvents or
+                PerspectiveSafeI6C2ConstituentV1.EventIndex or
+                PerspectiveSafeI6C2ConstituentV1.MatchContext or
+                PerspectiveSafeI6C2ConstituentV1.SpellTrapLayout or
+                PerspectiveSafeI6C2ConstituentV1.OverlayZone;
+            bool unusedOptionalConstituent =
+                status.Constituent ==
+                    PerspectiveSafeI6C2ConstituentV1.EntityPrintedProperties ||
+                (!hasEntities && status.Constituent is
+                    PerspectiveSafeI6C2ConstituentV1.EntityLocator or
+                    PerspectiveSafeI6C2ConstituentV1.EntityIdentity) ||
+                status.Constituent == PerspectiveSafeI6C2ConstituentV1.EntityOwner;
+
+            if (!suppliedByI6C5OrLaterSource && !unusedOptionalConstituent)
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    PerspectiveSafeSourceSectionV1.Entities);
+                return false;
+            }
+        }
+
+        foreach (PerspectiveSafeI6C3ConstituentStatusV1 status in source.Statuses)
+        {
+            if (status.Status == PerspectiveSafeI6C3SourceStatusV1.Proven)
+            {
+                continue;
+            }
+
+            if (status.Status ==
+                PerspectiveSafeI6C3SourceStatusV1.BlockedPendingI6C5)
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    status.Constituent is
+                        PerspectiveSafeI6C3ConstituentV1.OverlayZone or
+                        PerspectiveSafeI6C3ConstituentV1.OverlayEntities or
+                        PerspectiveSafeI6C3ConstituentV1.OverlayLocators or
+                        PerspectiveSafeI6C3ConstituentV1.OverlayIdentity or
+                        PerspectiveSafeI6C3ConstituentV1.OverlayCurrentProperties
+                        ? PerspectiveSafeSourceSectionV1.Entities
+                        : status.Constituent is
+                            PerspectiveSafeI6C3ConstituentV1.XyzMaterialRelationships or
+                            PerspectiveSafeI6C3ConstituentV1.EquipRelationships or
+                            PerspectiveSafeI6C3ConstituentV1.TargetRelationships or
+                            PerspectiveSafeI6C3ConstituentV1.RelationshipEndpoints or
+                            PerspectiveSafeI6C3ConstituentV1.RelationshipOrdering
+                            ? PerspectiveSafeSourceSectionV1.Relationships
+                            : PerspectiveSafeSourceSectionV1.Chain);
+                return false;
+            }
+
+            bool constituentUsed = status.Constituent switch
+            {
+                PerspectiveSafeI6C3ConstituentV1.OverlayZone or
+                PerspectiveSafeI6C3ConstituentV1.OverlayEntities or
+                PerspectiveSafeI6C3ConstituentV1.OverlayLocators or
+                PerspectiveSafeI6C3ConstituentV1.OverlayIdentity or
+                PerspectiveSafeI6C3ConstituentV1.OverlayCurrentProperties => hasOverlay,
+                PerspectiveSafeI6C3ConstituentV1.XyzMaterialRelationships or
+                PerspectiveSafeI6C3ConstituentV1.EquipRelationships or
+                PerspectiveSafeI6C3ConstituentV1.TargetRelationships or
+                PerspectiveSafeI6C3ConstituentV1.RelationshipEndpoints or
+                PerspectiveSafeI6C3ConstituentV1.RelationshipOrdering => hasRelationships,
+                _ => hasChain
+            };
+
+            if (constituentUsed)
+            {
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    status.Constituent is
+                        PerspectiveSafeI6C3ConstituentV1.OverlayZone or
+                        PerspectiveSafeI6C3ConstituentV1.OverlayEntities or
+                        PerspectiveSafeI6C3ConstituentV1.OverlayLocators or
+                        PerspectiveSafeI6C3ConstituentV1.OverlayIdentity or
+                        PerspectiveSafeI6C3ConstituentV1.OverlayCurrentProperties
+                        ? PerspectiveSafeSourceSectionV1.Entities
+                        : status.Constituent is
+                            PerspectiveSafeI6C3ConstituentV1.XyzMaterialRelationships or
+                            PerspectiveSafeI6C3ConstituentV1.EquipRelationships or
+                            PerspectiveSafeI6C3ConstituentV1.TargetRelationships or
+                            PerspectiveSafeI6C3ConstituentV1.RelationshipEndpoints or
+                            PerspectiveSafeI6C3ConstituentV1.RelationshipOrdering
+                            ? PerspectiveSafeSourceSectionV1.Relationships
+                            : PerspectiveSafeSourceSectionV1.Chain);
+                return false;
+            }
+        }
+
+        error = default;
+        return true;
+    }
+
+    private static bool TryCreateI6C5Zones(
+        MirrorSnapshotV1 snapshot,
+        IReadOnlyList<PerspectiveSafeZoneV1> baseZones,
+        IReadOnlyList<PerspectiveSafeEntityV1> baseEntities,
+        ulong duelFlags,
+        out PerspectiveSafeZoneV1[] zones,
+        out PerspectiveSafeEntityV1[] entities,
+        out PerspectiveSafeFrameSourceErrorV1 error)
+    {
+        error = default;
+        List<PerspectiveSafeZoneV1> values = baseZones.ToList();
+        List<PerspectiveSafeEntityV1> entityValues = baseEntities.ToList();
+        uint[,] totals = new uint[2, 3];
+        uint[,] publicIdentities = new uint[2, 3];
+        if (!TryGetAbsolutePerspective(snapshot, out byte perspectivePlayer))
+        {
+            zones = Array.Empty<PerspectiveSafeZoneV1>();
+            entities = Array.Empty<PerspectiveSafeEntityV1>();
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                PerspectiveSafeSourceSectionV1.Zones);
+            return false;
+        }
+
+        for (byte absolutePlayer = 0; absolutePlayer < 2; absolutePlayer++)
+        {
+            MirrorParticipantRoleV1 role = absolutePlayer == perspectivePlayer
+                ? MirrorParticipantRoleV1.Self
+                : MirrorParticipantRoleV1.Opponent;
+            if (!TryGetParticipant(snapshot, role, out MirrorParticipantSnapshotV1? participant) ||
+                !TryGetMirrorZone(
+                    participant!,
+                    MirrorZoneV1.SpellTrapZone,
+                    out MirrorZoneSnapshotV1? spellTrapZone) ||
+                !TryReadKnownMirrorValue(
+                    spellTrapZone!.Count,
+                    PerspectiveSafeSourceSectionV1.Zones,
+                    out uint spellTrapCount,
+                    out error) ||
+                spellTrapCount != spellTrapZone.Cards.Count)
+            {
+                zones = Array.Empty<PerspectiveSafeZoneV1>();
+                entities = Array.Empty<PerspectiveSafeEntityV1>();
+                if (error.Code == 0)
+                {
+                    error = Error(
+                        PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                        PerspectiveSafeSourceSectionV1.Zones);
+                }
+
+                return false;
+            }
+
+            foreach (MirrorCardSnapshotV1 card in spellTrapZone.Cards)
+            {
+                if (!TryGetAbsolutePlayer(
+                        snapshot,
+                        card.Controller,
+                        out byte absoluteController,
+                        out error) ||
+                    !TryMapSpellTrapZone(
+                        card,
+                        card.Sequence,
+                        duelFlags,
+                        out PerspectiveSafeSemanticZoneV1 semanticZone,
+                        out error) ||
+                    !TryReadCardCode(
+                        card.CardCode,
+                        out uint? cardCode,
+                        out error) ||
+                    !TryReadPosition(
+                        card.Position,
+                        out _,
+                        out PerspectiveSafePositionV1 position,
+                        out error) ||
+                    !TryReadOwner(
+                        snapshot,
+                        card.Owner,
+                        out byte? owner,
+                        out error))
+                {
+                    zones = Array.Empty<PerspectiveSafeZoneV1>();
+                    entities = Array.Empty<PerspectiveSafeEntityV1>();
+                    return false;
+                }
+
+                bool ownerIsPerspective =
+                    (owner ?? absoluteController) == perspectivePlayer;
+                bool publicIdentity = card.CardCode.IsKnown &&
+                    card.CardCode.Provenance is
+                        MirrorProvenanceV1.PublicProtocolFact or
+                        MirrorProvenanceV1.DerivedFromProvenPublicFacts;
+                bool identityVisible = ownerIsPerspective || publicIdentity;
+                if (card.CardCode.IsKnown &&
+                    card.CardCode.Provenance == MirrorProvenanceV1.PerspectivePrivateFact &&
+                    !ownerIsPerspective)
+                {
+                    zones = Array.Empty<PerspectiveSafeZoneV1>();
+                    entities = Array.Empty<PerspectiveSafeEntityV1>();
+                    error = Error(
+                        PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                        PerspectiveSafeSourceSectionV1.Entities);
+                    return false;
+                }
+
+                if (!TryMapI6C5LocatorZone(
+                        semanticZone,
+                        out PublicSemanticZoneV1 locatorZone) ||
+                    !PublicSemanticLocatorV1.TryCreateIndexed(
+                        absoluteController,
+                        locatorZone,
+                        card.Sequence,
+                        out PublicSemanticLocatorV1? locator))
+                {
+                    zones = Array.Empty<PerspectiveSafeZoneV1>();
+                    entities = Array.Empty<PerspectiveSafeEntityV1>();
+                    error = Error(
+                        PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                        PerspectiveSafeSourceSectionV1.Entities);
+                    return false;
+                }
+
+                PerspectiveSafeCardPropertiesV1? current = null;
+                if (identityVisible && cardCode.HasValue &&
+                    !TryCreateCurrentProperties(
+                        card,
+                        out current,
+                        out error))
+                {
+                    zones = Array.Empty<PerspectiveSafeZoneV1>();
+                    entities = Array.Empty<PerspectiveSafeEntityV1>();
+                    return false;
+                }
+
+                entityValues.Add(new PerspectiveSafeEntityV1(
+                    locator!.Value,
+                    identityVisible,
+                    identityVisible ? cardCode : null,
+                    owner,
+                    absoluteController,
+                    semanticZone,
+                    card.Sequence,
+                    null,
+                    position,
+                    position is
+                        PerspectiveSafePositionV1.FaceUpAttack or
+                        PerspectiveSafePositionV1.FaceUpDefense,
+                    position is
+                        PerspectiveSafePositionV1.FaceDownAttack or
+                        PerspectiveSafePositionV1.FaceDownDefense,
+                    printed: null,
+                    current));
+
+                int zoneIndex = semanticZone switch
+                {
+                    PerspectiveSafeSemanticZoneV1.SpellTrapZone => 0,
+                    PerspectiveSafeSemanticZoneV1.FieldZone => 1,
+                    PerspectiveSafeSemanticZoneV1.PendulumRelevant => 2,
+                    _ => -1
+                };
+                if (zoneIndex < 0)
+                {
+                    zones = Array.Empty<PerspectiveSafeZoneV1>();
+                    entities = Array.Empty<PerspectiveSafeEntityV1>();
+                    error = Error(
+                        PerspectiveSafeFrameSourceErrorCodeV1.UnknownEnum,
+                        PerspectiveSafeSourceSectionV1.Zones);
+                    return false;
+                }
+
+                totals[absolutePlayer, zoneIndex] =
+                    checked(totals[absolutePlayer, zoneIndex] + 1);
+                if (identityVisible)
+                {
+                    publicIdentities[absolutePlayer, zoneIndex] =
+                        checked(publicIdentities[absolutePlayer, zoneIndex] + 1);
+                }
+            }
+
+            PerspectiveSafeSemanticZoneV1[] layoutZones =
+            {
+                PerspectiveSafeSemanticZoneV1.SpellTrapZone,
+                PerspectiveSafeSemanticZoneV1.FieldZone,
+                PerspectiveSafeSemanticZoneV1.PendulumRelevant
+            };
+            for (int zoneIndex = 0; zoneIndex < layoutZones.Length; zoneIndex++)
+            {
+                uint total = totals[absolutePlayer, zoneIndex];
+                uint publicCount = publicIdentities[absolutePlayer, zoneIndex];
+                values.Add(new(
+                    absolutePlayer,
+                    layoutZones[zoneIndex],
+                    total,
+                    publicCount,
+                    total - publicCount,
+                    true));
+            }
+        }
+
+        values.Sort(CompareZones);
+        entityValues.Sort(static (left, right) =>
+            StringComparer.Ordinal.Compare(left.Locator, right.Locator));
+        if (entityValues.Select(entity => entity.Locator)
+                .Distinct(StringComparer.Ordinal)
+                .Count() != entityValues.Count)
+        {
+            zones = Array.Empty<PerspectiveSafeZoneV1>();
+            entities = Array.Empty<PerspectiveSafeEntityV1>();
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.DuplicateLocator,
+                PerspectiveSafeSourceSectionV1.Entities);
+            return false;
+        }
+
+        zones = values.ToArray();
+        entities = entityValues.ToArray();
+        error = default;
+        return true;
+    }
+
+    private static bool TryMapSpellTrapZone(
+        MirrorCardSnapshotV1 card,
+        uint sequence,
+        ulong duelFlags,
+        out PerspectiveSafeSemanticZoneV1 zone,
+        out PerspectiveSafeFrameSourceErrorV1 error)
+    {
+        const ulong duelPzone = 0x800;
+        const ulong duelSeparatePzone = 0x1000;
+        const ulong duelThreeColumnsField = 0x400000;
+        bool hasPzone = (duelFlags & duelPzone) != 0;
+        bool hasSeparatePzone = (duelFlags & duelSeparatePzone) != 0;
+        bool hasThreeColumns = (duelFlags & duelThreeColumnsField) != 0;
+
+        error = default;
+        if (hasSeparatePzone && !hasPzone)
+        {
+            zone = default;
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                PerspectiveSafeSourceSectionV1.Zones);
+            return false;
+        }
+
+        if (sequence == 5)
+        {
+            zone = PerspectiveSafeSemanticZoneV1.FieldZone;
+            return true;
+        }
+
+        if (hasSeparatePzone)
+        {
+            if (sequence == 6 || sequence == 7)
+            {
+                zone = PerspectiveSafeSemanticZoneV1.PendulumRelevant;
+                return true;
+            }
+
+            uint lastSpellTrapSequence = hasThreeColumns ? 3u : 4u;
+            if (sequence >= (hasThreeColumns ? 1u : 0u) &&
+                sequence <= lastSpellTrapSequence)
+            {
+                zone = PerspectiveSafeSemanticZoneV1.SpellTrapZone;
+                return true;
+            }
+
+            zone = default;
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                PerspectiveSafeSourceSectionV1.Zones);
+            return false;
+        }
+
+        uint firstSpellTrapSequence = hasThreeColumns ? 1u : 0u;
+        uint lastSharedSequence = hasThreeColumns ? 3u : 4u;
+        if (sequence < firstSpellTrapSequence ||
+            sequence > lastSharedSequence)
+        {
+            zone = default;
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                PerspectiveSafeSourceSectionV1.Zones);
+            return false;
+        }
+
+        bool isSharedPzoneSlot = hasPzone &&
+            (hasThreeColumns
+                ? sequence is 1 or 3
+                : sequence is 0 or 4);
+        if (!isSharedPzoneSlot)
+        {
+            zone = PerspectiveSafeSemanticZoneV1.SpellTrapZone;
+            return true;
+        }
+
+        if (!TryProveSharedPzoneCard(card, out bool isPzone, out error))
+        {
+            zone = default;
+            return false;
+        }
+
+        zone = isPzone
+            ? PerspectiveSafeSemanticZoneV1.PendulumRelevant
+            : PerspectiveSafeSemanticZoneV1.SpellTrapZone;
+        return true;
+    }
+
+    private static bool TryProveSharedPzoneCard(
+        MirrorCardSnapshotV1 card,
+        out bool isPzone,
+        out PerspectiveSafeFrameSourceErrorV1 error)
+    {
+        const uint typeMonster = 0x01;
+        const uint typeSpell = 0x02;
+        const uint typePendulum = 0x01000000;
+        MirrorQueryFieldSnapshotV1? typeField = null;
+        foreach (MirrorQueryFieldSnapshotV1 field in card.QueryFields)
+        {
+            if (field.Flag != QueryFlagV1.Type)
+            {
+                continue;
+            }
+
+            if (typeField is not null)
+            {
+                isPzone = false;
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                    PerspectiveSafeSourceSectionV1.Zones);
+                return false;
+            }
+
+            typeField = field;
+        }
+
+        if (typeField is null)
+        {
+            isPzone = false;
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                PerspectiveSafeSourceSectionV1.Zones);
+            return false;
+        }
+
+        MirrorQueryValueV1 typeValue = typeField.Value;
+        if (!typeValue.IsKnown ||
+            typeValue.Kind != MirrorQueryValueKindV1.UInt32 ||
+            !IsKnownValue(typeValue.Provenance))
+        {
+            isPzone = false;
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                PerspectiveSafeSourceSectionV1.Zones);
+            return false;
+        }
+
+        uint pzoneType = typePendulum | typeSpell;
+        isPzone = (typeValue.UInt32Value &
+            (typePendulum | typeSpell | typeMonster)) == pzoneType;
+        error = default;
+        return true;
+    }
+
+    private static bool TryMapI6C5LocatorZone(
+        PerspectiveSafeSemanticZoneV1 zone,
+        out PublicSemanticZoneV1 locatorZone)
+    {
+        locatorZone = zone switch
+        {
+            PerspectiveSafeSemanticZoneV1.SpellTrapZone => PublicSemanticZoneV1.SpellTrapZone,
+            PerspectiveSafeSemanticZoneV1.FieldZone => PublicSemanticZoneV1.FieldZone,
+            PerspectiveSafeSemanticZoneV1.PendulumRelevant =>
+                PublicSemanticZoneV1.PendulumRelevantState,
+            _ => default
+        };
+        return zone is
+            PerspectiveSafeSemanticZoneV1.SpellTrapZone or
+            PerspectiveSafeSemanticZoneV1.FieldZone or
+            PerspectiveSafeSemanticZoneV1.PendulumRelevant;
     }
 
     private static bool TryCreateI6C3Entities(
