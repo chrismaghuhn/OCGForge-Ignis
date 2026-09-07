@@ -144,7 +144,9 @@ public static class PerspectiveSafePublicFrameSourceV1
                 PerspectiveSafeSourceSectionV1.VisibleEvents);
         }
 
-        PerspectiveSafeI6C3SourceResultV1 stateResult = TryCreateI6C3(mirror);
+        PerspectiveSafeI6C3SourceResultV1 stateResult = TryCreateI6C3(
+            mirror,
+            matchContext.DuelFlags);
         if (!stateResult.IsSuccess)
         {
             return PerspectiveSafeFrameSourceResultV1.Failure(
@@ -152,15 +154,7 @@ public static class PerspectiveSafePublicFrameSourceV1
         }
 
         PerspectiveSafeI6C3StateSourceV1 state = stateResult.Source!;
-        if (!TryValidateI6C5State(state, out error) ||
-            !TryCreateI6C5Zones(
-                mirror.Snapshot,
-                state.Zones,
-                state.Entities,
-                matchContext.DuelFlags,
-                out PerspectiveSafeZoneV1[] zones,
-                out PerspectiveSafeEntityV1[] entities,
-                out error))
+        if (!TryValidateI6C5State(state, out error))
         {
             return PerspectiveSafeFrameSourceResultV1.Failure(error);
         }
@@ -179,8 +173,8 @@ public static class PerspectiveSafePublicFrameSourceV1
 
         PerspectiveSafeFrameSourceInputV1 input = new(
             globals,
-            zones,
-            entities,
+            state.Zones,
+            state.Entities,
             state.Relationships,
             state.Chain,
             mirror.VisibleEvents,
@@ -255,6 +249,13 @@ public static class PerspectiveSafePublicFrameSourceV1
     public static PerspectiveSafeI6C3SourceResultV1 TryCreateI6C3(
         PerspectiveStateMirrorV1? mirror)
     {
+        return TryCreateI6C3(mirror, duelFlags: null);
+    }
+
+    private static PerspectiveSafeI6C3SourceResultV1 TryCreateI6C3(
+        PerspectiveStateMirrorV1? mirror,
+        ulong? duelFlags)
+    {
         if (mirror is null)
         {
             return PerspectiveSafeI6C3SourceResultV1.Failure(
@@ -282,7 +283,8 @@ public static class PerspectiveSafePublicFrameSourceV1
                 out error,
                 out bool overlayProof,
                 out bool overlayIdentityBlocked,
-                out bool overlayCurrentPropertiesBlocked))
+                out bool overlayCurrentPropertiesBlocked,
+                duelFlags))
         {
             return PerspectiveSafeI6C3SourceResultV1.Failure(error);
         }
@@ -307,6 +309,7 @@ public static class PerspectiveSafePublicFrameSourceV1
                 entities,
                 relationships,
                 targetPending,
+                duelFlags,
                 out PerspectiveSafeChainStateV1 chain,
                 out bool chainPending,
                 out bool activationZonePending,
@@ -340,7 +343,6 @@ public static class PerspectiveSafePublicFrameSourceV1
         PerspectiveSafeI6C3StateSourceV1 source,
         out PerspectiveSafeFrameSourceErrorV1 error)
     {
-        bool hasEntities = source.Entities.Count != 0;
         bool hasOverlay = source.Entities.Any(
             entity => entity.Zone == PerspectiveSafeSemanticZoneV1.Overlay) ||
             source.Zones.Any(
@@ -348,6 +350,19 @@ public static class PerspectiveSafePublicFrameSourceV1
                         zone.TotalCount != 0);
         bool hasRelationships = source.Relationships.Count != 0;
         bool hasChain = source.Chain.Length != 0 || source.Chain.Links.Count != 0;
+        ulong publicIdentityCount = source.Zones.Aggregate<
+            PerspectiveSafeZoneV1,
+            ulong>(0, (total, zone) => checked(total + zone.PublicIdentityCount));
+        ulong knownEntityCount = (ulong)source.Entities.Count(
+            entity => entity.IdentityKnown);
+        bool publicEntityCoverage = knownEntityCount == publicIdentityCount;
+        if (!publicEntityCoverage)
+        {
+            error = Error(
+                PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                PerspectiveSafeSourceSectionV1.Entities);
+            return false;
+        }
 
         foreach (PerspectiveSafeI6C2ConstituentStatusV1 status in
                  source.BaseSource.Statuses)
@@ -369,9 +384,10 @@ public static class PerspectiveSafePublicFrameSourceV1
                 PerspectiveSafeI6C2ConstituentV1.SpellTrapLayout or
                 PerspectiveSafeI6C2ConstituentV1.OverlayZone;
             bool unusedOptionalConstituent =
-                status.Constituent ==
-                    PerspectiveSafeI6C2ConstituentV1.EntityPrintedProperties ||
-                (!hasEntities && status.Constituent is
+                (status.Constituent ==
+                     PerspectiveSafeI6C2ConstituentV1.EntityPrintedProperties &&
+                 knownEntityCount == 0) ||
+                (publicEntityCoverage && status.Constituent is
                     PerspectiveSafeI6C2ConstituentV1.EntityLocator or
                     PerspectiveSafeI6C2ConstituentV1.EntityIdentity) ||
                 status.Constituent == PerspectiveSafeI6C2ConstituentV1.EntityOwner;
@@ -464,9 +480,11 @@ public static class PerspectiveSafePublicFrameSourceV1
         ulong duelFlags,
         out PerspectiveSafeZoneV1[] zones,
         out PerspectiveSafeEntityV1[] entities,
+        out Dictionary<MirrorEntityIdV1, string> locators,
         out PerspectiveSafeFrameSourceErrorV1 error)
     {
         error = default;
+        locators = new();
         List<PerspectiveSafeZoneV1> values = baseZones.ToList();
         List<PerspectiveSafeEntityV1> entityValues = baseEntities.ToList();
         uint[,] totals = new uint[2, 3];
@@ -518,7 +536,6 @@ public static class PerspectiveSafePublicFrameSourceV1
                         out byte absoluteController,
                         out error) ||
                     !TryMapSpellTrapZone(
-                        card,
                         card.Sequence,
                         duelFlags,
                         out PerspectiveSafeSemanticZoneV1 semanticZone,
@@ -609,6 +626,7 @@ public static class PerspectiveSafePublicFrameSourceV1
                         PerspectiveSafePositionV1.FaceDownDefense,
                     printed: null,
                     current));
+                locators[card.EntityId] = locator.Value;
 
                 int zoneIndex = semanticZone switch
                 {
@@ -678,7 +696,6 @@ public static class PerspectiveSafePublicFrameSourceV1
     }
 
     private static bool TryMapSpellTrapZone(
-        MirrorCardSnapshotV1 card,
         uint sequence,
         ulong duelFlags,
         out PerspectiveSafeSemanticZoneV1 zone,
@@ -752,70 +769,7 @@ public static class PerspectiveSafePublicFrameSourceV1
             return true;
         }
 
-        if (!TryProveSharedPzoneCard(card, out bool isPzone, out error))
-        {
-            zone = default;
-            return false;
-        }
-
-        zone = isPzone
-            ? PerspectiveSafeSemanticZoneV1.PendulumRelevant
-            : PerspectiveSafeSemanticZoneV1.SpellTrapZone;
-        return true;
-    }
-
-    private static bool TryProveSharedPzoneCard(
-        MirrorCardSnapshotV1 card,
-        out bool isPzone,
-        out PerspectiveSafeFrameSourceErrorV1 error)
-    {
-        const uint typeMonster = 0x01;
-        const uint typeSpell = 0x02;
-        const uint typePendulum = 0x01000000;
-        MirrorQueryFieldSnapshotV1? typeField = null;
-        foreach (MirrorQueryFieldSnapshotV1 field in card.QueryFields)
-        {
-            if (field.Flag != QueryFlagV1.Type)
-            {
-                continue;
-            }
-
-            if (typeField is not null)
-            {
-                isPzone = false;
-                error = Error(
-                    PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
-                    PerspectiveSafeSourceSectionV1.Zones);
-                return false;
-            }
-
-            typeField = field;
-        }
-
-        if (typeField is null)
-        {
-            isPzone = false;
-            error = Error(
-                PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
-                PerspectiveSafeSourceSectionV1.Zones);
-            return false;
-        }
-
-        MirrorQueryValueV1 typeValue = typeField.Value;
-        if (!typeValue.IsKnown ||
-            typeValue.Kind != MirrorQueryValueKindV1.UInt32 ||
-            !IsKnownValue(typeValue.Provenance))
-        {
-            isPzone = false;
-            error = Error(
-                PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
-                PerspectiveSafeSourceSectionV1.Zones);
-            return false;
-        }
-
-        uint pzoneType = typePendulum | typeSpell;
-        isPzone = (typeValue.UInt32Value &
-            (typePendulum | typeSpell | typeMonster)) == pzoneType;
+        zone = PerspectiveSafeSemanticZoneV1.PendulumRelevant;
         error = default;
         return true;
     }
@@ -848,7 +802,8 @@ public static class PerspectiveSafePublicFrameSourceV1
         out PerspectiveSafeFrameSourceErrorV1 error,
         out bool overlayProof,
         out bool overlayIdentityBlocked,
-        out bool overlayCurrentPropertiesBlocked)
+        out bool overlayCurrentPropertiesBlocked,
+        ulong? duelFlags)
     {
         zones = Array.Empty<PerspectiveSafeZoneV1>();
         entities = Array.Empty<PerspectiveSafeEntityV1>();
@@ -1015,8 +970,42 @@ public static class PerspectiveSafePublicFrameSourceV1
             ordinalCounters[key] = ordinal + 1;
         }
 
-        List<PerspectiveSafeEntityV1> entityValues =
-            baseSource.Entities.ToList();
+        List<PerspectiveSafeZoneV1> zoneValues;
+        List<PerspectiveSafeEntityV1> entityValues;
+        if (duelFlags.HasValue)
+        {
+            if (!TryCreateI6C5Zones(
+                    snapshot,
+                    baseSource.Zones,
+                    baseSource.Entities,
+                    duelFlags.Value,
+                    out PerspectiveSafeZoneV1[] configuredZones,
+                    out PerspectiveSafeEntityV1[] configuredEntities,
+                    out Dictionary<MirrorEntityIdV1, string> configuredLocators,
+                    out error))
+            {
+                return false;
+            }
+
+            zoneValues = configuredZones.ToList();
+            entityValues = configuredEntities.ToList();
+            foreach ((MirrorEntityIdV1 id, string locator) in configuredLocators)
+            {
+                if (!locatorById.TryAdd(id, locator))
+                {
+                    error = Error(
+                        PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                        PerspectiveSafeSourceSectionV1.Entities);
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            zoneValues = baseSource.Zones.ToList();
+            entityValues = baseSource.Entities.ToList();
+        }
+
         Dictionary<MirrorEntityIdV1, List<MirrorRelationSnapshotV1>>
             overlayRelationsByMaterial = new();
         foreach (MirrorRelationSnapshotV1 relation in snapshot.OverlayRelations)
@@ -1176,7 +1165,6 @@ public static class PerspectiveSafePublicFrameSourceV1
             return false;
         }
 
-        List<PerspectiveSafeZoneV1> zoneValues = baseSource.Zones.ToList();
         for (byte player = 0; player < 2; player++)
         {
             zoneValues.Add(new(
@@ -1358,6 +1346,7 @@ public static class PerspectiveSafePublicFrameSourceV1
         IReadOnlyList<PerspectiveSafeEntityV1> entities,
         IReadOnlyList<PerspectiveSafeRelationshipV1> relationships,
         bool targetRelationshipsPending,
+        ulong? duelFlags,
         out PerspectiveSafeChainStateV1 chain,
         out bool chainPending,
         out bool activationZonePending,
@@ -1400,6 +1389,7 @@ public static class PerspectiveSafePublicFrameSourceV1
 
             if (!TryMapChainActivationZone(
                     sourceCard,
+                    duelFlags,
                     out PerspectiveSafeSemanticZoneV1? activationZone,
                     out bool activationPending,
                     out error))
@@ -1565,11 +1555,13 @@ public static class PerspectiveSafePublicFrameSourceV1
 
     private static bool TryMapChainActivationZone(
         MirrorCardSnapshotV1 source,
+        ulong? duelFlags,
         out PerspectiveSafeSemanticZoneV1? zone,
         out bool pendingI6C5,
         out PerspectiveSafeFrameSourceErrorV1 error)
     {
         pendingI6C5 = false;
+        error = default;
         if (source.IsOverlay)
         {
             zone = PerspectiveSafeSemanticZoneV1.Overlay;
@@ -1586,6 +1578,24 @@ public static class PerspectiveSafePublicFrameSourceV1
 
         if (source.Zone == MirrorZoneV1.SpellTrapZone)
         {
+            if (duelFlags.HasValue &&
+                TryMapSpellTrapZone(
+                    source.Sequence,
+                    duelFlags.Value,
+                    out PerspectiveSafeSemanticZoneV1 configuredZone,
+                    out error))
+            {
+                zone = configuredZone;
+                return true;
+            }
+
+            if (duelFlags.HasValue)
+            {
+                zone = null;
+                pendingI6C5 = false;
+                return false;
+            }
+
             zone = null;
             pendingI6C5 = true;
             error = default;
