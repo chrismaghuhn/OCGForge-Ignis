@@ -7,6 +7,12 @@ namespace OCGForge.Ignis.Gameplay;
 /// ledger stores typed event values and private event-time location facts only;
 /// it is not an OCGForge codec and does not expose engine identity.
 /// </summary>
+internal enum PerspectiveSafeEventSourceCertificationV1 : byte
+{
+    Proven = 0,
+    RejectedUnexpectedUnreachableMessage = 1
+}
+
 internal sealed class PerspectiveSafeEventLedgerV1
 {
     private const byte LocationDeck = 0x01;
@@ -25,24 +31,33 @@ internal sealed class PerspectiveSafeEventLedgerV1
 
     private PerspectiveSafeEventLedgerV1(
         IEnumerable<LedgerEntry> entries,
-        ulong nextEventIndex)
+        ulong nextEventIndex,
+        PerspectiveSafeEventSourceCertificationV1 sourceCertification)
     {
         this.entries = entries.ToArray();
         eventsView = Array.AsReadOnly(
             this.entries.Select(entry => entry.Event).ToArray());
         NextEventIndex = nextEventIndex;
+        SourceCertification = sourceCertification;
     }
 
     internal static PerspectiveSafeEventLedgerV1 Empty { get; } =
-        new(Array.Empty<LedgerEntry>(), 0);
+        new(
+            Array.Empty<LedgerEntry>(),
+            0,
+            PerspectiveSafeEventSourceCertificationV1.Proven);
 
     internal static PerspectiveSafeEventLedgerV1 ForTesting(
-        ulong nextEventIndex) =>
-        new(Array.Empty<LedgerEntry>(), nextEventIndex);
+        ulong nextEventIndex,
+        PerspectiveSafeEventSourceCertificationV1 sourceCertification =
+            PerspectiveSafeEventSourceCertificationV1.Proven) =>
+        new(Array.Empty<LedgerEntry>(), nextEventIndex, sourceCertification);
 
     internal IReadOnlyList<PerspectiveSafeVisibleEventV1> Events => eventsView;
 
     internal ulong NextEventIndex { get; }
+
+    internal PerspectiveSafeEventSourceCertificationV1 SourceCertification { get; }
 
     internal IReadOnlyList<PerspectiveSafeEventSourceFactV1> SourceFacts =>
         entries.Select(entry => entry.SourceFact).ToArray();
@@ -57,6 +72,14 @@ internal sealed class PerspectiveSafeEventLedgerV1
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(perspective);
+
+        if (message.Kind == GameplayMessageKindV1.Unequip)
+        {
+            next = previous.WithSourceCertification(
+                PerspectiveSafeEventSourceCertificationV1.RejectedUnexpectedUnreachableMessage);
+            error = GameplayErrorCode.None;
+            return true;
+        }
 
         if (!TryBuildDrafts(message, perspective, out List<EventDraft> drafts, out error))
         {
@@ -104,10 +127,22 @@ internal sealed class PerspectiveSafeEventLedgerV1
             nextEventIndex++;
         }
 
-        next = new PerspectiveSafeEventLedgerV1(staged, nextEventIndex);
+        next = new PerspectiveSafeEventLedgerV1(
+            staged,
+            nextEventIndex,
+            previous.SourceCertification);
         error = GameplayErrorCode.None;
         return true;
     }
+
+    private PerspectiveSafeEventLedgerV1 WithSourceCertification(
+        PerspectiveSafeEventSourceCertificationV1 sourceCertification) =>
+        SourceCertification == sourceCertification
+            ? this
+            : new PerspectiveSafeEventLedgerV1(
+                entries,
+                NextEventIndex,
+                sourceCertification);
 
     private static bool TryBuildDrafts(
         GameplayMessageV1 message,
@@ -251,9 +286,8 @@ internal sealed class PerspectiveSafeEventLedgerV1
                 return TryBuildCounterDraft(message.Counter, perspective, drafts, out error);
 
             case GameplayMessageKindV1.Unequip:
-                // MSG_UNEQUIP remains an I3 compatibility-only message for
-                // the pinned runtime. It is deliberately not an I6C4 event.
-                return true;
+                error = GameplayErrorCode.UnsupportedMessage;
+                return false;
 
             case GameplayMessageKindV1.Start:
             case GameplayMessageKindV1.UpdateData:

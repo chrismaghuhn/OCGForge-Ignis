@@ -32,11 +32,16 @@ public sealed class PerspectiveStateMirrorV1
 
     internal ulong NextEventIndex => state.EventLedger.NextEventIndex;
 
+    internal PerspectiveSafeEventSourceCertificationV1 EventSourceCertification =>
+        state.EventLedger.SourceCertification;
+
     internal IReadOnlyList<PerspectiveSafeEventSourceFactV1> EventSourceFacts =>
         state.EventLedger.SourceFacts;
 
     internal void SetNextEventIndexForTesting(ulong nextEventIndex) =>
-        state.EventLedger = PerspectiveSafeEventLedgerV1.ForTesting(nextEventIndex);
+        state.EventLedger = PerspectiveSafeEventLedgerV1.ForTesting(
+            nextEventIndex,
+            state.EventLedger.SourceCertification);
 
     public static MirrorCreateResult TryCreate(
         GameplayMessageV1 start,

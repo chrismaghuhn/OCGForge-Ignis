@@ -1276,11 +1276,61 @@ internal static class I6CPublicFrameSourceTests
         ApplyI6C4Success(compatibilityMirror, compatibilityDecoder, MoveMessage(0xa001, new ModernLocInfoV1(0, 0, 0, 0), target, 0));
         ApplyI6C4Success(compatibilityMirror, compatibilityDecoder, EquipMessage(source, target));
         int eventCountBeforeUnequip = compatibilityMirror.VisibleEvents.Count;
-        ApplyI6C4Success(compatibilityMirror, compatibilityDecoder, UnequipMessage(source));
+        string snapshotBeforeUnequip = compatibilityMirror.Snapshot.ToDeterministicString();
+        string eventsBeforeUnequip = I6C4EventSignature(compatibilityMirror);
+        ulong nextIndexBeforeUnequip = compatibilityMirror.NextEventIndex;
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.Proven,
+            compatibilityMirror.EventSourceCertification);
+        GameplayMessageDecodeResult decodedUnequip = compatibilityDecoder.Decode(
+            new StocGameMessagePayload(UnequipMessage(source)));
+        True(decodedUnequip.IsSuccess);
+        NotNull(decodedUnequip.Message);
+        MirrorApplyResult acceptedUnequip = compatibilityMirror.Apply(decodedUnequip.Message!);
+        True(acceptedUnequip.IsSuccess, acceptedUnequip.Error.ToString());
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.RejectedUnexpectedUnreachableMessage,
+            compatibilityMirror.EventSourceCertification);
+        NotEqual(snapshotBeforeUnequip, compatibilityMirror.Snapshot.ToDeterministicString());
+        Equal(eventsBeforeUnequip, I6C4EventSignature(compatibilityMirror));
+        Equal(nextIndexBeforeUnequip, compatibilityMirror.NextEventIndex);
         Equal(eventCountBeforeUnequip, compatibilityMirror.VisibleEvents.Count);
         False(compatibilityMirror.VisibleEvents.Any(
             value => value.Kind == PerspectiveSafeVisibleEventKindV1.Unequipped));
         Equal(0, compatibilityMirror.Snapshot.EquipmentRelations.Count);
+
+        ApplyI6C4Success(compatibilityMirror, compatibilityDecoder, new byte[] { 40, 1 });
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.RejectedUnexpectedUnreachableMessage,
+            compatibilityMirror.EventSourceCertification);
+
+        (PerspectiveStateMirrorV1 failedDecodeMirror, GameplayMessageDecoderV1 failedDecodeDecoder) =
+            CreateMirror(0);
+        GameplayMessageDecodeResult malformedUnequip = failedDecodeDecoder.Decode(
+            new StocGameMessagePayload(new byte[] { 95 }));
+        False(malformedUnequip.IsSuccess);
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.Proven,
+            failedDecodeMirror.EventSourceCertification);
+
+        (PerspectiveStateMirrorV1 failedApplyMirror, GameplayMessageDecoderV1 failedApplyDecoder) =
+            CreateMirror(0);
+        GameplayMessageDecodeResult validUnequip = failedApplyDecoder.Decode(
+            new StocGameMessagePayload(UnequipMessage(source)));
+        True(validUnequip.IsSuccess);
+        MirrorApplyResult failedUnequip = failedApplyMirror.Apply(validUnequip.Message!);
+        False(failedUnequip.IsSuccess);
+        Equal(GameplayErrorCode.UnknownMirrorReference, failedUnequip.Error);
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.Proven,
+            failedApplyMirror.EventSourceCertification);
+
+        (PerspectiveStateMirrorV1 zeroEventMirror, GameplayMessageDecoderV1 zeroEventDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(zeroEventMirror, zeroEventDecoder, new byte[] { 100, 0, 1, 0, 0, 0 });
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.Proven,
+            zeroEventMirror.EventSourceCertification);
     }
 
     private static void AssertI6C4AtomicityAndOverflow()
