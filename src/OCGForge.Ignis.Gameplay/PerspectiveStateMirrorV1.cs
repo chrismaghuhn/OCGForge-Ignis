@@ -842,16 +842,15 @@ public sealed class PerspectiveStateMirrorV1
                 false,
                 0);
             ModernQueryV1 query = payload.Queries[index];
+            if (bootstrapExtra && query.IsOnFieldSkipped)
+            {
+                return GameplayErrorCode.UnknownMirrorReference;
+            }
+
             bool bootstrapped = false;
             if (!candidate.Entities.TryGetValue(address, out EntityState? entity))
             {
                 if (!bootstrapExtra)
-                {
-                    return GameplayErrorCode.UnknownMirrorReference;
-                }
-
-                if (query.IsOnFieldSkipped &&
-                    payload.Player == candidate.Perspective.PlayerType)
                 {
                     return GameplayErrorCode.UnknownMirrorReference;
                 }

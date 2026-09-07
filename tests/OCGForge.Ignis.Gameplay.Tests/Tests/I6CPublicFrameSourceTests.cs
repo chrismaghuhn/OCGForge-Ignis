@@ -1813,6 +1813,47 @@ internal static class I6CPublicFrameSourceTests
 
     private static void AssertI6C5ExtraUpdateDataBootstrap()
     {
+        (PerspectiveStateMirrorV1 coverageMirror,
+            GameplayMessageDecoderV1 coverageDecoder) =
+            CreateMirror(0, extraCount0: 2, extraCount1: 0);
+        PerspectiveSafeMatchContextV1 coverageContext =
+            CreateValidI6C5MatchContext();
+        PerspectiveSafeFrameSourceResultV1 beforeBootstrapFrame =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                coverageMirror,
+                coverageContext);
+        False(beforeBootstrapFrame.IsSuccess, "pre-bootstrap frame unexpectedly succeeded");
+        Null(beforeBootstrapFrame.Frame);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            beforeBootstrapFrame.Error!.Value.Code);
+        Equal(
+            PerspectiveSafeI6C2SourceStatusV1.Blocked,
+            GetI6C2Source(coverageMirror).GetStatus(
+                PerspectiveSafeI6C2ConstituentV1.EntityIdentity));
+        ApplyI6C4Success(
+            coverageMirror,
+            coverageDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(
+                    ExtraQuery(0x9A00, 0, 0x08),
+                    ExtraQuery(0x9B00, 0, 0x08))));
+        Equal(
+            PerspectiveSafeI6C2SourceStatusV1.Proven,
+            GetI6C2Source(coverageMirror).GetStatus(
+                PerspectiveSafeI6C2ConstituentV1.EntityIdentity));
+        PerspectiveSafeFrameSourceResultV1 afterBootstrapFrame =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                coverageMirror,
+                coverageContext);
+        False(afterBootstrapFrame.IsSuccess);
+        Null(afterBootstrapFrame.Frame);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            afterBootstrapFrame.Error!.Value.Code);
+
         (PerspectiveStateMirrorV1 selfMirror, GameplayMessageDecoderV1 selfDecoder) =
             CreateMirror(0, extraCount0: 3, extraCount1: 0);
         string selfBefore = selfMirror.Snapshot.ToDeterministicString();
@@ -1881,6 +1922,24 @@ internal static class I6CPublicFrameSourceTests
             moveMirror.Snapshot.GetZone(
                 MirrorParticipantRoleV1.Self,
                 MirrorZoneV1.MonsterZone).Count.Value);
+        ApplyI6C4Success(
+            moveMirror,
+            moveDecoder,
+            MoveMessage(
+                0xB100,
+                new ModernLocInfoV1(0, 0x04, 0, 0x04),
+                new ModernLocInfoV1(0, 0x40, 1, 0x08),
+                0));
+        Equal(
+            (uint)2,
+            moveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.ExtraDeck).Count.Value);
+        Equal(
+            (uint)0,
+            moveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.MonsterZone).Count.Value);
 
         (PerspectiveStateMirrorV1 opponentMirror,
             GameplayMessageDecoderV1 opponentDecoder) =
@@ -1919,6 +1978,71 @@ internal static class I6CPublicFrameSourceTests
         Equal(
             opponentMirror.Snapshot.ToDeterministicString(),
             opponentWorldB.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 skippedMirror,
+            GameplayMessageDecoderV1 skippedDecoder) =
+            CreateMirror(0, extraCount0: 0, extraCount1: 1);
+        string skippedBefore = skippedMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult skippedResult = skippedMirror.Apply(
+            DecodeMessage(
+                skippedDecoder,
+                UpdateDataMessage(
+                    1,
+                    0x40,
+                    new byte[] { 0, 0 })));
+        False(
+            skippedResult.IsSuccess,
+            $"skipped opponent Extra query was accepted: {skippedResult.Error}");
+        Equal(GameplayErrorCode.UnknownMirrorReference, skippedResult.Error);
+        Equal(skippedBefore, skippedMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 playerZeroOrderMirror,
+            GameplayMessageDecoderV1 playerZeroOrderDecoder) =
+            CreateMirror(0, extraCount0: 1, extraCount1: 1);
+        ApplyI6C4Success(
+            playerZeroOrderMirror,
+            playerZeroOrderDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(ExtraQuery(0xD000, 0, 0x08))));
+        ApplyI6C4Success(
+            playerZeroOrderMirror,
+            playerZeroOrderDecoder,
+            UpdateDataMessage(
+                1,
+                0x40,
+                Join(ExtraPublicQuery(1, 0x08))));
+        True(playerZeroOrderMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.Single().CardCode.IsKnown);
+        True(playerZeroOrderMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Opponent,
+            MirrorZoneV1.ExtraDeck).Cards.Single().CardCode.IsKnown == false);
+
+        (PerspectiveStateMirrorV1 playerOneOrderMirror,
+            GameplayMessageDecoderV1 playerOneOrderDecoder) =
+            CreateMirror(1, extraCount0: 1, extraCount1: 1);
+        ApplyI6C4Success(
+            playerOneOrderMirror,
+            playerOneOrderDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(ExtraPublicQuery(0, 0x08))));
+        ApplyI6C4Success(
+            playerOneOrderMirror,
+            playerOneOrderDecoder,
+            UpdateDataMessage(
+                1,
+                0x40,
+                Join(ExtraQuery(0xE000, 1, 0x08))));
+        True(playerOneOrderMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.Single().CardCode.IsKnown);
+        True(playerOneOrderMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Opponent,
+            MirrorZoneV1.ExtraDeck).Cards.Single().CardCode.IsKnown == false);
 
         (PerspectiveStateMirrorV1 mismatchMirror,
             GameplayMessageDecoderV1 mismatchDecoder) =
