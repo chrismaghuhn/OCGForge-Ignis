@@ -218,7 +218,7 @@ ocgforge_babelcdb_commit
 ignis_babelcdb_commit
 EDOPro/runtime provenance
 explicit fixture/deck configuration
-native setup transcript
+native setup descriptor ID
 Ignis replay transcript
 Printed-provider semantic identity and coverage digest
 ```
@@ -265,9 +265,10 @@ perspective_player
 starting_player
 duel_flags
 seed_words[]
-deck_identity.seat0
-deck_identity.seat1
-deck_identity.digest
+seat0_deck_id
+seat0_deck_sha256
+seat1_deck_id
+seat1_deck_sha256
 ocgforge_semantic_commit
 rules_bundle_id
 ocgforge_core_commit
@@ -277,15 +278,15 @@ ocgforge_cardscripts_commit
 ignis_edopro_commit
 ignis_edopro_core_commit
 ignis_cardscripts_commit
-native_setup_transcript_sha256
+native_setup_descriptor_id
 native_raw_transcript_sha256
 ignis_raw_replay_transcript_sha256
 native_public_event_transcript_sha256
 ignis_public_event_transcript_sha256
 supported_message_family_envelope_id
-supported_message_family_envelope_sha256
-native_comparison_boundary
-ignis_comparison_boundary
+comparison_boundary.kind
+comparison_boundary.public_event_prefix_count
+comparison_boundary.state_snapshot_selector
 ```
 
 The field types and byte encoding are normative:
@@ -297,12 +298,23 @@ perspective_player: u8, constrained to {0,1}
 starting_player: u8, constrained to {0,1}
 duel_flags: u64be
 seed_words: exactly u32be count 4, followed by exactly four ordered u64be words
-deck_identity.seat0: nonempty canonical token string
-deck_identity.seat1: nonempty canonical token string
-deck_identity.digest: exactly 64 lowercase ASCII hex characters
+seat0_deck_id: exact nonempty canonical token from the native `deck.id`
+  field used by OCGForge `episode_identity.v1`
+seat0_deck_sha256: exact 64 lowercase ASCII hex `deck.sha256` from the same
+  native deck-identity contract
+seat1_deck_id: exact nonempty canonical token from the native `deck.id`
+  field used by OCGForge `episode_identity.v1`
+seat1_deck_sha256: exact 64 lowercase ASCII hex `deck.sha256` from the same
+  native deck-identity contract
 Git commit fields: exactly 40 lowercase ASCII hex characters
 SHA-256 fields: exactly 64 lowercase ASCII hex characters
-ID/path/envelope/boundary token fields: nonempty canonical ASCII token strings
+native_setup_descriptor_id: nonempty canonical ASCII token string
+supported_message_family_envelope_id: the fixed V1 token
+  `ocgforge-ignis.i6c6.supported-message-family-envelope.v1`
+comparison_boundary.kind: u8, exactly `1` (`PUBLIC_EVENT_PREFIX_AND_STATE`)
+comparison_boundary.public_event_prefix_count: u64be
+comparison_boundary.state_snapshot_selector: u8, exactly `1`
+  (`POST_PUBLIC_EVENT_PREFIX`)
 ```
 
 Every `string` is `u32be byte_length || exact UTF-8 bytes`. The manifest
@@ -313,16 +325,47 @@ fields above. Canonical token strings use lowercase ASCII letters, digits,
 dependent spelling is permitted. No JSON whitespace, property order, locale,
 or platform path representation participates in the identity.
 
+For this V1 manifest, the four deck fields are imported independently from the
+native OCGForge deck vector used by `episode_identity.v1`, in fixed seat order
+`seat0`, then `seat1`. `seat*_deck_sha256` is not recomputed by this contract,
+and there is no combined deck digest. A missing native deck identity, a deck
+digest whose source contract cannot be identified, or a seat-order mismatch
+fails closed.
+
+`native_setup_descriptor_id` identifies the source-controlled OCGForge
+scenario descriptor whose deterministic setup operations are used. It is not a
+free-form label: the descriptor registry must resolve it to exactly one
+versioned setup definition, and the same descriptor must be selected by the
+Ignis replay fixture. V1 deliberately has no separate
+`native_setup_transcript_sha256` field; setup is bound by this descriptor ID
+plus the fixed scenario fields, rather than by an undefined digest domain. If
+the descriptor cannot be resolved or its versioned contents are unavailable,
+the scenario is `UNPROVEN`.
+
+`supported_message_family_envelope_id` is likewise a versioned contract ID,
+not a caller-defined digest. The V1 value above names the fixed admitted
+`GameplayMessageKindV1`/native public-event family table used by this plan.
+Changing that table requires a new envelope ID. There is deliberately no
+`supported_message_family_envelope_sha256` field without a separately frozen
+byte domain.
+
+`ComparisonBoundaryV1` is the shared boundary, not two runtime-specific token
+claims. Its V1 encoding is the three fields
+`kind:u8 || public_event_prefix_count:u64be || state_snapshot_selector:u8`.
+Only `kind=1` and `state_snapshot_selector=1` are accepted. The native and
+Ignis sides must each provide the public-event prefix of that exact length and
+the corresponding post-prefix public-safe-state snapshot. A boundary that
+cannot be selected by this pair is `UNPROVEN`.
+
 For this V1 manifest, Git commit fields are
 `ocgforge_semantic_commit`, `ocgforge_core_commit`,
 `ocgforge_cardscripts_commit`, `ignis_edopro_commit`,
 `ignis_edopro_core_commit`, and `ignis_cardscripts_commit`. SHA-256 fields are
-`deck_identity.digest`, `rules_bundle_id`,
-`ocgforge_core_patchset_sha256`, `native_setup_transcript_sha256`,
+`seat0_deck_sha256`, `seat1_deck_sha256`, `rules_bundle_id`,
+`ocgforge_core_patchset_sha256`,
 `native_raw_transcript_sha256`, `ignis_raw_replay_transcript_sha256`,
 `native_public_event_transcript_sha256`,
-`ignis_public_event_transcript_sha256`, and
-`supported_message_family_envelope_sha256`.
+and `ignis_public_event_transcript_sha256`.
 
 The complete SameScenario manifest bytes and identity are
 `RESTRICTED_EVIDENCE`. They are not a public gameplay identity, public frame
@@ -405,18 +448,19 @@ therefore allowed to differ while the perspective-safe public history and
 state remain bound.
 
 Semantic inputs are `perspective_player`, `starting_player`, `duel_flags`,
-seed words, deck seat assignment, and the explicitly selected comparison
-boundary. Runtime/source commits, patchset IDs, transcript digests, and
-envelope IDs are provenance/evidence fields; they are not public-frame
-semantic values.
+seed words, the seat-ordered deck identity vector, and the structured
+`ComparisonBoundaryV1`. Runtime/source commits, patchset IDs, raw transcript
+digests, the setup descriptor ID, and the message-family envelope ID are
+provenance/evidence fields; they are not public-frame semantic values.
 
-`native_setup_transcript_sha256` covers the deterministic native fixture/setup
-operations. The two raw transcript hashes cover restricted runtime evidence;
-the two public-event transcript hashes cover the common comparison boundary.
-A scenario passes only when the manifest values, supported-message envelope,
-boundary kind, perspective, seed, flags, deck-seat identities, and canonical
-public-event transcripts agree exactly. The selected public-safe-state
-boundary is then compared separately by the native oracle contract.
+The raw transcript hashes cover restricted runtime evidence; the two
+public-event transcript hashes cover the common comparison boundary. The
+native setup descriptor ID owns the deterministic fixture/setup definition and
+is resolved before replay. A scenario passes only when the manifest values,
+fixed message-family envelope, structured boundary, perspective, seed, flags,
+seat-ordered deck identities, and canonical public-event transcripts agree
+exactly. The selected public-safe-state boundary is then compared separately
+by the native oracle contract.
 Missing or unmatched transcript evidence is `UNPROVEN`, not a reduced
 comparison corpus.
 
@@ -427,11 +471,11 @@ and boundary behavior to be evidenced for the scenario.
 ### 10.2 `CardScriptsBehaviorBindingV1`
 
 This is a sub-contract of `SameScenarioReplayBridgeV1`, never a third bridge
-architecture. Every scenario declares `SCRIPT_DEPENDENCY=CLOSURE`. A `NONE`
-mode is not passable in I6C6 V1 because the accepted Ignis boundary does not
-expose authoritative EDOPro script-reader, script-load, or script-callback
-evidence. A future explicitly authorized EDOPro test-evidence source could
-define a later contract revision, but it is not assumed here.
+architecture. Every I6C6 V1 scenario is treated as script-dependent and
+declares `SCRIPT_DEPENDENCY=CLOSURE`. This label records the scenario's
+CardScripts provenance requirement; it does not claim that an external EDOPro
+process has exposed its complete runtime load trace. A `NONE` mode is not a
+behavior-equivalence bypass in I6C6 V1.
 
 ```text
 SCRIPT_DEPENDENCY=CLOSURE
@@ -445,15 +489,15 @@ script-free bypass.
 ```text
 ocgforge_cardscripts_commit
 ignis_cardscripts_commit
-ocgforge_relevant_script_paths[]
-ignis_relevant_script_paths[]
-ocgforge_script_closure_digest
-ignis_script_closure_digest
 canonical_public_event_transcript_sha256
 ```
 
-The relevant script paths are canonical sorted relative paths and their file
-bytes are hashed in path order. The closure digest grammar is:
+The two CardScripts commit fields are restricted source provenance. Optional
+scenario-declared closure evidence may additionally provide
+`ocgforge_script_closure_digest` and `ignis_script_closure_digest`; it is also
+restricted provenance and is not required for the behavior gate. When supplied,
+the closure entries are canonical sorted relative paths and their file bytes
+are hashed in path order. The closure digest grammar is:
 
 ```text
 OCGFORGE-IGNIS-I6C6-CARDSCRIPT-CLOSURE-V1\0
@@ -465,30 +509,37 @@ for each entry in byte-lexicographic path order:
 ```
 
 Paths are root-relative UTF-8 paths with `/` separators and no `.` or `..`
-components. The closure is the union of the global required scripts
-`constant.lua`, `utility.lua`, and `proc_normal.lua` plus the complete,
-scenario-declared relevant script set. The relevant set is an externally
-inspectable scenario input, not an EDOPro runtime trace. If the scenario
-owner cannot prove that the declared set is complete for the selected
-script-dependent behavior, the scenario fails closed. The two script closure
+components. If optional closure evidence is supplied, its declared set must
+include the globally required scripts `constant.lua`, `utility.lua`, and
+`proc_normal.lua`, together with the externally inspectable scenario-declared
+paths. No V1 rule requires an EDOPro script-reader, script-load, or
+script-callback trace, and no V1 rule claims that an externally declared set is
+an exhaustive runtime execution closure. If supplied closure evidence is
+malformed or its digest cannot be reproduced from the declared bytes, the
+scenario fails closed; if it is absent, the scenario remains eligible for the
+behavior gate without that optional provenance detail. The two script closure
 digests are allowed to differ because the runtimes use different CardScripts
-commits. The binding
-passes only when the exact relevant closure is recorded for both runtimes and
-the script-dependent behavior is bound by the exact shared
-`CanonicalPublicEventTranscriptV1` and selected public-safe-state boundary.
-Equal card
+commits.
+
+`CARD_SCRIPT_BEHAVIOR_BINDING=PASS` is determined by the exact shared
+`CanonicalPublicEventTranscriptV1` and selected public-safe-state boundary,
+not by a claim of equal script bytes or equal internal execution. Equal card
 passcodes or equal top-level script commits alone never prove equivalent
-behavior. The transcript hash is behavior-bound evidence; it is not a claim
-that the script bytes are identical.
+behavior. The public behavior evidence is the executable binding for this
+sub-contract; CardScripts commits and optional closure hashes remain
+restricted provenance.
 
 The future acceptance gate is therefore:
 
 ```text
+CARD_SCRIPT_PROVENANCE=PASS
 CARD_SCRIPT_BEHAVIOR_BINDING=PASS
 ```
 
-Otherwise the same-scenario bridge remains unproven. There is no
-`SCRIPT_DEPENDENCY_NONE=PASS` branch in I6C6 V1.
+`CARD_SCRIPT_PROVENANCE=PASS` requires both runtime commit fields and validates
+any supplied optional closure evidence. `CARD_SCRIPT_BEHAVIOR_BINDING=PASS`
+requires the canonical public-event transcript and selected public-safe-state
+boundary to pass; it is not replaced by `SCRIPT_DEPENDENCY=NONE`.
 
 ### 10.3 `PrintedSourceBridgeV1`
 
@@ -635,7 +686,7 @@ No production Ignis file, OCGForge production file, third-party pin, database, o
 - [ ] Include separate `ocgforge_cardscripts_commit` and `ignis_cardscripts_commit` fields, plus the independent OCGForge/Ignis BabelCDB identities.
 - [ ] Build native `PlayerObservation` with `CoreHost` and `ObservationBuildConfig`.
 - [ ] Replay only the explicitly paired supported transcript into `PerspectiveStateMirrorV1`.
-- [ ] Classify every I6C6 V1 scenario as script-dependent and require a passing `CARD_SCRIPT_BEHAVIOR_BINDING`; do not admit a `SCRIPT_DEPENDENCY=NONE` bypass without a separately authorized EDOPro evidence contract.
+- [ ] Record script-dependent scenarios with the two CardScripts commits and any optional, statically declared closure evidence; do not require an unavailable EDOPro runtime script trace or admit a `SCRIPT_DEPENDENCY=NONE` bypass.
 - [ ] Require `CANONICAL_PUBLIC_EVENT_TRANSCRIPT_BINDING=PASS` plus selected public-safe-state boundary equality as the script-dependent behavior binding; restricted raw transcript hashes remain provenance only.
 - [ ] Reject any scenario whose native and Ignis source histories cannot be bound without inference.
 - [ ] Provision Printed rows externally or use an approved synthetic native catalog; do not add real rows to Ignis.
@@ -672,9 +723,13 @@ No production Ignis file, OCGForge production file, third-party pin, database, o
 NATIVE_ORACLE_HEAD_MATCH=PASS
 IGNIS_I6C5_HEAD_MATCH=PASS
 SCENARIO_PROVENANCE_BINDING=PASS
+DECK_IDENTITY_BINDING=PASS
+NATIVE_SETUP_DESCRIPTOR_BINDING=PASS
+MESSAGE_FAMILY_ENVELOPE_BINDING=PASS
+COMPARISON_BOUNDARY_CANONICAL=PASS
 CANONICAL_PUBLIC_EVENT_TRANSCRIPT_BINDING=PASS
 RAW_TRANSCRIPTS_RESTRICTED_ONLY=PASS
-CARD_SCRIPT_CLOSURE_CANONICAL=PASS
+CARD_SCRIPT_PROVENANCE=PASS
 CARD_SCRIPT_BEHAVIOR_BINDING=PASS
 PLAYER_TO_ACT_ABSENT_OR_I6D_BLOCKED=PASS
 TYPED_FIELD_COMPARISON=PASS
