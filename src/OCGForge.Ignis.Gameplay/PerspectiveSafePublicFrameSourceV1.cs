@@ -159,6 +159,13 @@ public static class PerspectiveSafePublicFrameSourceV1
                 stateResult.Error!.Value);
         }
 
+        if (printedProvider is null)
+        {
+            return Failure(
+                PerspectiveSafeFrameSourceErrorCodeV1.MissingPrintedProvider,
+                PerspectiveSafeSourceSectionV1.Entities);
+        }
+
         PerspectiveSafeI6C3StateSourceV1 state = stateResult.Source!;
         if (!TryValidateI6C5State(
                 state,

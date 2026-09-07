@@ -757,11 +757,13 @@ internal static class I6CPublicFrameSourceTests
     private static void AssertI6C5PrintedProviderContract()
     {
         Run("synthetic semantic mappings", AssertPrintedProviderMappings);
+        Run("missing provider fails closed", AssertPrintedProviderRequired);
         Run("hash and digest validation", AssertPrintedProviderDigests);
         Run("coverage and malformed rows fail closed", AssertPrintedProviderFailures);
         Run("environment compatibility fails closed", AssertPrintedProviderEnvironment);
         Run("unknown identities have no reverse lookup surface", AssertPrintedProviderPrivacySurface);
         Run("provider supplies Printed frame properties", AssertPrintedProviderFrameIntegration);
+        Run("session missing provider fails closed", AssertPrintedProviderSessionMissing);
         Run("session provider binding is immutable", AssertPrintedProviderSessionBinding);
     }
 
@@ -1560,7 +1562,10 @@ internal static class I6CPublicFrameSourceTests
             contradictoryFlagsResult.Error!.Value.Code);
 
         PerspectiveSafeFrameSourceResultV1 result =
-            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(mirror, context);
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                context,
+                CreatePrintedProviderForMirror(mirror));
         True(result.IsSuccess, result.Error?.ToString() ?? "I6C5 frame rejected");
         NotNull(result.Frame);
         Equal((ulong)0x234, result.Frame!.Globals.DuelFlags);
@@ -1599,12 +1604,14 @@ internal static class I6CPublicFrameSourceTests
         PerspectiveSafeFrameSourceResultV1 populatedResult =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 populatedMirror,
-                populatedContext);
-        False(populatedResult.IsSuccess);
-        Null(populatedResult.Frame);
-        Equal(
-            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
-            populatedResult.Error!.Value.Code);
+                populatedContext,
+                CreatePrintedProviderForMirror(populatedMirror));
+        True(
+            populatedResult.IsSuccess,
+            populatedResult.Error?.ToString() ?? "provider-backed frame rejected");
+        NotNull(populatedResult.Frame);
+        True(populatedResult.Frame!.Entities.All(entity =>
+            !entity.IdentityKnown || entity.Printed is not null));
 
         uint[] mutableOwnDeck = new[] { 1u, 2u };
         PerspectiveSafeMatchContextV1 immutableContext = new(
@@ -1615,7 +1622,10 @@ internal static class I6CPublicFrameSourceTests
             new PerspectiveSafeDeckV1(false));
         mutableOwnDeck[0] = 999;
         PerspectiveSafeFrameSourceResultV1 immutableResult =
-            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(mirror, immutableContext);
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                immutableContext,
+                CreatePrintedProviderForMirror(mirror));
         True(immutableResult.IsSuccess, immutableResult.Error?.ToString() ?? "immutable frame rejected");
         Equal((uint)1, immutableResult.Frame!.MatchContext.OwnDeck.MainDeck[0]);
 
@@ -1658,7 +1668,8 @@ internal static class I6CPublicFrameSourceTests
         PerspectiveSafeFrameSourceResultV1 layoutResult =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 layoutMirror,
-                context);
+                context,
+                CreatePrintedProviderForMirror(layoutMirror));
         True(layoutResult.IsSuccess, "layout: " + (layoutResult.Error?.ToString() ?? "frame rejected"));
         Equal(
             1u,
@@ -1688,7 +1699,8 @@ internal static class I6CPublicFrameSourceTests
         PerspectiveSafeFrameSourceResultV1 pendulumResult =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 pendulumMirror,
-                pendulumContext);
+                pendulumContext,
+                CreatePrintedProviderForMirror(pendulumMirror));
         True(pendulumResult.IsSuccess, "pendulum: " + (pendulumResult.Error?.ToString() ?? "frame rejected"));
         Equal(
             PerspectiveSafeSemanticZoneV1.PendulumRelevant,
@@ -1714,7 +1726,8 @@ internal static class I6CPublicFrameSourceTests
         PerspectiveSafeFrameSourceResultV1 combinedPzoneResult =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 combinedPzoneMirror,
-                combinedPzoneContext);
+                combinedPzoneContext,
+                CreatePrintedProviderForMirror(combinedPzoneMirror));
         True(
             combinedPzoneResult.IsSuccess,
             "combined PZONE: " +
@@ -1751,7 +1764,8 @@ internal static class I6CPublicFrameSourceTests
         PerspectiveSafeFrameSourceResultV1 pendingRelationResult =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 pendingRelationMirror,
-                context);
+                context,
+                CreatePrintedProviderForMirror(pendingRelationMirror));
         True(
             pendingRelationResult.IsSuccess,
             "relation: " + (pendingRelationResult.Error?.ToString() ??
@@ -1780,7 +1794,8 @@ internal static class I6CPublicFrameSourceTests
         PerspectiveSafeFrameSourceResultV1 pendingChainResult =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 pendingChainMirror,
-                context);
+                context,
+                CreatePrintedProviderForMirror(pendingChainMirror));
         True(
             pendingChainResult.IsSuccess,
             "chain: " + (pendingChainResult.Error?.ToString() ??
@@ -1808,7 +1823,8 @@ internal static class I6CPublicFrameSourceTests
         PerspectiveSafeFrameSourceResultV1 rejectedFrame =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 rejectedMirror,
-                context);
+                context,
+                CreatePrintedProviderForMirror(rejectedMirror));
         False(rejectedFrame.IsSuccess);
         Null(rejectedFrame.Frame);
         Equal(
@@ -1818,7 +1834,8 @@ internal static class I6CPublicFrameSourceTests
         PerspectiveSafeFrameSourceResultV1 stickyRejectedFrame =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 rejectedMirror,
-                context);
+                context,
+                CreatePrintedProviderForMirror(rejectedMirror));
         False(stickyRejectedFrame.IsSuccess);
         Null(stickyRejectedFrame.Frame);
 
@@ -1828,14 +1845,18 @@ internal static class I6CPublicFrameSourceTests
         PerspectiveStateMirrorV1 hiddenWorldB = CreateHiddenWorld(
             0x99220000,
             extraCount0: 0);
+        PerspectiveSafePrintedProviderV1 hiddenProvider =
+            CreatePrintedProviderForCodes(new[] { 1u });
         PerspectiveSafeFrameSourceResultV1 hiddenFrameA =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 hiddenWorldA,
-                context);
+                context,
+                hiddenProvider);
         PerspectiveSafeFrameSourceResultV1 hiddenFrameB =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 hiddenWorldB,
-                context);
+                context,
+                hiddenProvider);
         True(hiddenFrameA.IsSuccess, hiddenFrameA.Error?.ToString() ?? "hidden frame A rejected");
         True(hiddenFrameB.IsSuccess, hiddenFrameB.Error?.ToString() ?? "hidden frame B rejected");
         Equal(FrameSignature(hiddenFrameA.Frame!), FrameSignature(hiddenFrameB.Frame!));
@@ -1863,7 +1884,8 @@ internal static class I6CPublicFrameSourceTests
         PerspectiveSafeFrameSourceResultV1 beforeBootstrapFrame =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 coverageMirror,
-                coverageContext);
+                coverageContext,
+                CreatePrintedProviderForMirror(coverageMirror));
         False(beforeBootstrapFrame.IsSuccess, "pre-bootstrap frame unexpectedly succeeded");
         Null(beforeBootstrapFrame.Frame);
         Equal(
@@ -1889,12 +1911,14 @@ internal static class I6CPublicFrameSourceTests
         PerspectiveSafeFrameSourceResultV1 afterBootstrapFrame =
             PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 coverageMirror,
-                coverageContext);
-        False(afterBootstrapFrame.IsSuccess);
-        Null(afterBootstrapFrame.Frame);
-        Equal(
-            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
-            afterBootstrapFrame.Error!.Value.Code);
+                coverageContext,
+                CreatePrintedProviderForMirror(coverageMirror));
+        True(
+            afterBootstrapFrame.IsSuccess,
+            afterBootstrapFrame.Error?.ToString() ?? "post-bootstrap provider frame rejected");
+        NotNull(afterBootstrapFrame.Frame);
+        True(afterBootstrapFrame.Frame!.Entities.All(entity =>
+            !entity.IdentityKnown || entity.Printed is not null));
 
         (PerspectiveStateMirrorV1 missingSelfPositionMirror,
             GameplayMessageDecoderV1 missingSelfPositionDecoder) =
@@ -2208,7 +2232,10 @@ internal static class I6CPublicFrameSourceTests
             CreateValidI6C5MatchContext();
         (GameplayMirrorSessionV1 session,
             GameplayHandoffConsumerV1 consumer,
-            _) = CreateI6C5Session(0, context);
+            _) = CreateI6C5Session(
+                0,
+                context,
+                CreatePrintedProviderForCodes(new[] { 1u }));
         try
         {
             GameplayMessageDecoderV1 firstDecoder = CreateEstablishedDecoder(0);
@@ -2266,10 +2293,16 @@ internal static class I6CPublicFrameSourceTests
             opponentDeck: new(known: false));
         (GameplayMirrorSessionV1 sessionA,
             GameplayHandoffConsumerV1 consumerA,
-            _) = CreateI6C5Session(0, contextA);
+            _) = CreateI6C5Session(
+                0,
+                contextA,
+                CreatePrintedProviderForCodes(new[] { 1u }));
         (GameplayMirrorSessionV1 sessionB,
             GameplayHandoffConsumerV1 consumerB,
-            _) = CreateI6C5Session(0, contextB);
+            _) = CreateI6C5Session(
+                0,
+                contextB,
+                CreatePrintedProviderForCodes(new[] { 1u }));
         try
         {
             ApplyI6C4Success(
@@ -2409,7 +2442,10 @@ internal static class I6CPublicFrameSourceTests
             opponentDeck: new(false));
         (GameplayMirrorSessionV1 session,
             GameplayHandoffConsumerV1 consumer,
-            _) = CreateI6C5Session(0, context);
+            _) = CreateI6C5Session(
+                0,
+                context,
+                CreatePrintedProviderForCodes(new[] { 1u }));
         try
         {
             mutableMain[0] = 999;
@@ -2452,7 +2488,8 @@ internal static class I6CPublicFrameSourceTests
         GameplayHandoffConsumerV1 Consumer,
         TestTransport Transport) CreateI6C5Session(
         byte perspectivePlayer,
-        PerspectiveSafeMatchContextV1? context)
+        PerspectiveSafeMatchContextV1? context,
+        PerspectiveSafePrintedProviderV1? printedProvider = null)
     {
         (GameplaySessionV1 transportSession,
             PerspectiveStateMirrorV1 mirror,
@@ -2463,12 +2500,19 @@ internal static class I6CPublicFrameSourceTests
                 extraCount1: 0);
         try
         {
-            GameplayMirrorSessionV1 session = context is null
+            GameplayMirrorSessionV1 session = context is null &&
+                printedProvider is null
                 ? new GameplayMirrorSessionV1(transportSession, mirror)
-                : new GameplayMirrorSessionV1(
-                    transportSession,
-                    mirror,
-                    context);
+                : printedProvider is null
+                    ? new GameplayMirrorSessionV1(
+                        transportSession,
+                        mirror,
+                        context)
+                    : new GameplayMirrorSessionV1(
+                        transportSession,
+                        mirror,
+                        context,
+                        printedProvider);
             return (session, consumer, transport);
         }
         catch
@@ -2607,12 +2651,34 @@ internal static class I6CPublicFrameSourceTests
         Equal(PerspectiveSafeLinkMarkerV1.TopRight, xyzLink.LinkMarkers[0]);
     }
 
+    private static void AssertPrintedProviderRequired()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0, extraCount0: 0, extraCount1: 0);
+        ApplyI6C4Success(mirror, decoder, new byte[] { 40, 0 });
+        PerspectiveSafeFrameSourceResultV1 result =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                CreateValidI6C5MatchContext());
+        False(result.IsSuccess);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.MissingPrintedProvider,
+            result.Error!.Value.Code);
+        Null(result.Frame);
+    }
+
     private static void AssertPrintedProviderDigests()
     {
         SyntheticPrintedRow[] rows =
         {
             new(1101, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
         };
+        Equal(
+            "bd8ffdf7bd8103e410da295f0aac67a357107b8e3aa92a39140a28d4accc17d2",
+            TestCoverageDigest(new uint[] { 1101 }));
+        Equal(
+            "6697290980fe48e7a1abae9cb25112069ade98737c54f511bf1a9bea6f8b208e",
+            TestSemanticDigest(rows));
         byte[] artifact = CreatePrintedArtifact(rows);
         PerspectiveSafePrintedProviderManifestV1 validManifest =
             CreatePrintedManifest(rows, artifact);
@@ -2881,6 +2947,37 @@ internal static class I6CPublicFrameSourceTests
         }
     }
 
+    private static void AssertPrintedProviderSessionMissing()
+    {
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer,
+            TestTransport transport) = CreateI6C5Session(
+                0,
+                CreateValidI6C5MatchContext());
+        try
+        {
+            ApplyI6C4Success(
+                session.Mirror,
+                CreateEstablishedDecoder(0),
+                new byte[] { 40, 0 });
+            string before = session.Mirror.Snapshot.ToDeterministicString();
+            int readsBefore = transport.ReadCallCount;
+            PerspectiveSafeFrameSourceResultV1 result =
+                session.TryCreateI6C5Frame();
+            False(result.IsSuccess);
+            Null(result.Frame);
+            Equal(
+                PerspectiveSafeFrameSourceErrorCodeV1.MissingPrintedProvider,
+                result.Error!.Value.Code);
+            Equal(before, session.Mirror.Snapshot.ToDeterministicString());
+            Equal(readsBefore, transport.ReadCallCount);
+        }
+        finally
+        {
+            DisposeI6C5Session(session, consumer);
+        }
+    }
+
     private static PerspectiveSafeCardPropertiesV1 GetPrinted(
         PerspectiveSafePrintedProviderV1 provider,
         uint code)
@@ -2903,6 +3000,43 @@ internal static class I6CPublicFrameSourceTests
         True(result.IsSuccess, result.Error?.ToString() ?? "provider rejected");
         return result.Provider!;
     }
+
+    private static PerspectiveSafePrintedProviderV1 CreatePrintedProviderForCodes(
+        IEnumerable<uint> codes)
+    {
+        SyntheticPrintedRow[] rows = codes
+            .Where(code => code != 0)
+            .Distinct()
+            .OrderBy(code => code)
+            .Select(code => new SyntheticPrintedRow(
+                code,
+                0x00000001,
+                4,
+                1,
+                2,
+                100,
+                200,
+                0,
+                0,
+                0))
+            .ToArray();
+        if (rows.Length == 0)
+        {
+            rows = new[]
+            {
+                new SyntheticPrintedRow(1, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+            };
+        }
+
+        return CreatePrintedProvider(rows, CreatePrintedArtifact(rows));
+    }
+
+    private static PerspectiveSafePrintedProviderV1 CreatePrintedProviderForMirror(
+        PerspectiveStateMirrorV1 mirror) =>
+        CreatePrintedProviderForCodes(
+            mirror.Snapshot.Cards
+                .Where(card => card.CardCode.IsKnown)
+                .Select(card => card.CardCode.Value));
 
     private static PerspectiveSafePrintedProviderManifestV1 CreatePrintedManifest(
         IReadOnlyList<SyntheticPrintedRow> rows,
