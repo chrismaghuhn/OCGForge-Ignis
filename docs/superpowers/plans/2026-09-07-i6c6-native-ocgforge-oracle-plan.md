@@ -466,11 +466,13 @@ for each entry in byte-lexicographic path order:
 
 Paths are root-relative UTF-8 paths with `/` separators and no `.` or `..`
 components. The closure is the union of the global required scripts
-`constant.lua`, `utility.lua`, and `proc_normal.lua` plus every
-scenario-relevant dynamically requested script. An execution trace must
-provide the dynamic set; if it cannot, the script-dependent scenario fails
-closed. The two script closure digests are allowed to
-differ because the runtimes use different CardScripts commits. The binding
+`constant.lua`, `utility.lua`, and `proc_normal.lua` plus the complete,
+scenario-declared relevant script set. The relevant set is an externally
+inspectable scenario input, not an EDOPro runtime trace. If the scenario
+owner cannot prove that the declared set is complete for the selected
+script-dependent behavior, the scenario fails closed. The two script closure
+digests are allowed to differ because the runtimes use different CardScripts
+commits. The binding
 passes only when the exact relevant closure is recorded for both runtimes and
 the script-dependent behavior is bound by the exact shared
 `CanonicalPublicEventTranscriptV1` and selected public-safe-state boundary.
