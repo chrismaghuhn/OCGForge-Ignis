@@ -895,7 +895,9 @@ public sealed class PerspectiveStateMirrorV1
 
             if (bootstrapExtra &&
                 payload.Player == candidate.Perspective.PlayerType &&
-                (!entity!.CardCode.IsKnown || !entity.Position.IsKnown))
+                (!entity!.CardCode.IsKnown ||
+                 entity.CardCode.Value == 0 ||
+                 !entity.Position.IsKnown))
             {
                 return GameplayErrorCode.UnknownMirrorReference;
             }

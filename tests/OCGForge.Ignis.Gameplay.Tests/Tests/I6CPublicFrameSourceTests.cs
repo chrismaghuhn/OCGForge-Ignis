@@ -1892,6 +1892,21 @@ internal static class I6CPublicFrameSourceTests
             missingOpponentPositionBefore,
             missingOpponentPositionMirror.Snapshot.ToDeterministicString());
 
+        (PerspectiveStateMirrorV1 zeroCodeMirror,
+            GameplayMessageDecoderV1 zeroCodeDecoder) =
+            CreateMirror(0, extraCount0: 1, extraCount1: 0);
+        string zeroCodeBefore = zeroCodeMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult zeroCodeResult = zeroCodeMirror.Apply(
+            DecodeMessage(
+                zeroCodeDecoder,
+                UpdateDataMessage(
+                    0,
+                    0x40,
+                    Join(ExtraQuery(0, 0, 0x08)))));
+        False(zeroCodeResult.IsSuccess);
+        Equal(GameplayErrorCode.UnknownMirrorReference, zeroCodeResult.Error);
+        Equal(zeroCodeBefore, zeroCodeMirror.Snapshot.ToDeterministicString());
+
         (PerspectiveStateMirrorV1 selfMirror, GameplayMessageDecoderV1 selfDecoder) =
             CreateMirror(0, extraCount0: 3, extraCount1: 0);
         string selfBefore = selfMirror.Snapshot.ToDeterministicString();
