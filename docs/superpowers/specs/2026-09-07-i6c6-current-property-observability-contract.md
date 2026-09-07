@@ -13,11 +13,20 @@ RefreshExtra uses 0x00381fff, which does not include QUERY_LINK,
 QUERY_RSCALE, or QUERY_COUNTERS. Other normal refresh masks omit different
 current fields.
 
-The observed Current.link_rating mismatch is therefore a real source
-capability gap. Printed data cannot repair it: the pinned core computes Link
-values and markers from dynamic state, effects, status, location, and
-position. Similar gaps exist for Pendulum scales and counters at particular
-boundaries.
+Two of those omissions have a narrow source-proven derivation. Outside
+PZONE, the pinned core returns the static card-data scale values, and outside
+MZONE it returns the static Link rating after the status and assumption
+preconditions are checked. Those are boundary-specific derivations, not a
+generic Current = Printed rule. Link markers remain dynamically dependent,
+and counter events are present in the public stream but are not yet
+reconstructed into the Ignis Current property state.
+
+The observed Current.link_rating mismatch is therefore not by itself proof
+that link_rating is unavailable everywhere; it is proof that the missing
+query record must be replaced by the exact non-MZONE derivation or the
+comparison must fail closed. The remaining unclosed Current capability is
+link markers, together with counter-state reconstruction at the current
+Ignis boundary.
 
 The normative consequence is:
 
@@ -38,7 +47,7 @@ I6C6_3_CAN_RESUME_WITH_EXISTING_EVIDENCE=NO
 ~~~
 
 The minimum separately proposed follow-up is
-I6C6_3A_REFRESH_CURRENT_PROPERTY_EVIDENCE. That name is a proposal only. It
+I6C6_3A_CURRENT_PROPERTY_EVIDENCE_COMPLETION. That name is a proposal only. It
 must decide and prove a privacy-safe source for the missing fields before
 I6C6-3 resumes; this document does not authorize that work.
 
@@ -97,9 +106,17 @@ evidence. This contract relies on the committed sources above.
 | gframe/generic_duel.cpp:1354-1422 | EDOPro 30935... | Bulk and single refresh wire construction |
 | gframe/core_utils.cpp:11-85 and 143-232 | EDOPro 30935... | Query parsing, field emission, and public filtering |
 | gframe/ocgapi_constants.h:168-194 | EDOPro 30935... | Query flag values |
+| gframe/ocgapi_constants.h:274-275 | EDOPro 30935... | MSG_ADD_COUNTER=101 and MSG_REMOVE_COUNTER=102 |
 | card.cpp:120-209 | EDOPro ocgcore 46779... | Core emits requested current values, including Link/scales/counters |
 | ocgapi.cpp:180-247 | EDOPro ocgcore 46779... | DuelQuery and DuelQueryLocation source behavior |
-| card.cpp:989-1030, 1185-1237, and 1239-1277 | EDOPro ocgcore 46779... | Dynamic derivation of Link, scales, and markers |
+| card.cpp:989-1030, 1185-1237, and 1239-1277 | EDOPro ocgcore 46779... | Dynamic and static-location derivation of Link, scales, and markers |
+| card.cpp:1773-1788, 1877-1884, 2010-2040, and 2220-2277 | EDOPro ocgcore 46779... | Counter mutations, emitted events, and silent movement reset |
+| duel.cpp:113-117 and interpreter.cpp:365-372 | EDOPro ocgcore 46779... | Assumption restoration at the outer Lua-call boundary |
+| generic_duel.cpp:1133-1137 | EDOPro 30935... | Unspecialized gameplay messages are forwarded to all recipients |
+| duelclient.cpp:3712-3749 | EDOPro 30935... | Client consumes public counter messages |
+| GameplayMessageDecoderV1.cs:60-61, 238-245, and 945-966 | Ignis 8a225... | Ignis decodes counter messages and their payload |
+| PerspectiveSafeEventLedgerV1.cs:284-286 and 653-685 | Ignis 8a225... | Counter messages become public CounterChanged events |
+| PerspectiveStateMirrorV1.cs:162-174 | Ignis 8a225... | Counter messages are currently state no-ops |
 | client_card.cpp:25-115 | EDOPro 30935... | Client updates only fields whose query flags are present |
 
 ## 4. OCGForge Current semantic authority
@@ -157,8 +174,11 @@ value.
 The current projection does not put a type guard around link_rating,
 left_scale, or right_scale. Consequently, I6C6 must compare the native
 Current object produced by this function rather than invent a stronger
-type-based nulling rule. For Link markers, a known non-Link projection may
-have an empty marker vector; a Link projection requires the Link query evidence.
+type-based nulling rule. A separately proven CoreHost derivation may reproduce
+the value for a boundary where the pinned core is statically determined; that
+derivation is defined in Section 11 and is not a projection rewrite. For Link
+markers, a known non-Link projection may have an empty marker vector; a Link
+projection requires dynamic Link-marker evidence.
 
 ### 4.3 Native acquisition and visibility
 
@@ -433,6 +453,51 @@ the query emitter:
 Therefore the absence of a flag from a server mask is an actual source
 capability limitation at that refresh boundary, not a decoder limitation.
 
+### 6.5 Counter-event source audit
+
+The pinned core defines MSG_ADD_COUNTER as 101 and MSG_REMOVE_COUNTER as 102
+(ocgapi_constants.h:274-275). A successful card::add_counter call updates
+the counter map and emits type, controller, location, sequence, and count
+(card.cpp:2220-2255). card::remove_counter emits the corresponding removal
+payload (2257-2277). RemoveAllCounters and selected reset paths also emit
+remove messages (libcard.cpp:1773-1788, card.cpp:1877-1884, and
+2027-2040).
+
+GenericDuel has no special counter redaction branch. The default Sending path
+forwards otherwise-unhandled gameplay messages to all recipients
+(generic_duel.cpp:1133-1137). The pinned client consumes the same public
+counter payload and updates its local counter map
+(duelclient.cpp:3712-3749). The counter event is therefore present as a
+potential public runtime source, subject to the ordinary public locator and
+visibility checks.
+
+Ignis already decodes the two messages into GameplayCounterPayloadV1
+(GameplayMessageDecoderV1.cs:60-61, 238-245, and 945-966). Its event ledger
+creates a perspective-safe CounterChanged event with controller, locator when
+resolvable, amount, and counter type
+(PerspectiveSafeEventLedgerV1.cs:284-286 and 653-685). The state mirror
+currently accepts both message kinds as a no-op
+(PerspectiveStateMirrorV1.cs:162-174). The precise classification is:
+
+~~~text
+COUNTER_QUERY_SOURCE=ABSENT
+COUNTER_EVENT_SOURCE=PRESENT
+RUNTIME_EVIDENCE_ABSENT=NO
+RUNTIME_EVIDENCE_PRESENT_BUT_NOT_INTEGRATED=YES
+IGNIS_COUNTER_STATE_RECONSTRUCTION=NOT_IMPLEMENTED
+~~~
+
+The event source is not yet a complete Current-state proof. The core clears
+all counters on several movement/reset masks without emitting a corresponding
+remove message (card.cpp:2010-2013), while other reset paths do emit
+removals. A future reconstruction must bind every such reset to the accepted
+Move/Set/position transition and must preserve the correct public entity
+association. The Ignis event ledger intentionally declines to expose a
+guessed ordinary public locator for non-Field SZONE/PZONE meanings
+(PerspectiveSafeEventLedgerV1.cs:725-736), so PZONE counter association also
+needs an explicit safe source. Until those conditions are integrated and
+accepted, Current.counters remains unavailable at the I6C5 frame boundary.
+
 ## 7. Complete Current-property observability matrix
 
 The matrix uses the following interpretation:
@@ -457,14 +522,15 @@ The matrix uses the following interpretation:
 | base_defense | Yes when projected | Yes | QUERY_BASE_DEFENSE; all normal masks | Yes | All normal location refreshes and RefreshSingle | Known Link type: native projection omits BaseDefense | Yes when non-Link and visible | No | DIRECT_PUBLIC_RUNTIME_SOURCE |
 | level | Yes when projected | Yes | QUERY_LEVEL; all normal masks | Yes | All normal location refreshes and RefreshSingle | Known XYZ type: native projection selects Rank instead | Yes for known non-XYZ visible entity | No | DIRECT_PUBLIC_RUNTIME_SOURCE |
 | rank | Yes when projected | Yes | QUERY_RANK; all normal masks | Yes | All normal location refreshes and RefreshSingle | Known non-XYZ type: native projection selects Level instead | Yes for known XYZ visible entity | No | DIRECT_PUBLIC_RUNTIME_SOURCE |
-| link_rating | Yes, raw dynamic Link query | Yes | QUERY_LINK; Mzone/Szone/RefreshSingle only in normal server path | No (0x00381fff) | Mzone, Szone, RefreshSingle; local replay masks are not external evidence | No general Current type-null rule; known Link requires the query value | Only on masks with Link and permitted visibility | No; core value depends on dynamic state | UNAVAILABLE_AT_BOUNDARY |
+| link_rating | Yes, raw dynamic Link query | Yes | QUERY_LINK; Mzone/Szone/RefreshSingle only in normal server path | No (0x00381fff) | Mzone/Szone/RefreshSingle direct; non-MZONE static CoreHost derivation; local replay masks are not external evidence | No general Current type-null rule; known Link requires either direct Link evidence or the exact non-MZONE derivation | Yes directly on Link masks; derived outside MZONE under Section 11.3 | Yes, only under the frozen core preconditions | PROVEN_BOUNDARY_DERIVATION |
 | link_markers | Yes, raw dynamic Link query mapped to typed markers | Yes | QUERY_LINK; Mzone/Szone/RefreshSingle only in normal server path | No (0x00381fff) | Mzone, Szone, RefreshSingle; local replay masks are not external evidence | Known non-Link may have an empty marker vector; Link requires Link evidence | Only on masks with Link and permitted visibility | No; marker bits depend on effects and position | UNAVAILABLE_AT_BOUNDARY |
-| left_scale | Yes, raw query value | Yes | QUERY_LSCALE; absent from Mzone, deck pseudo-refresh, and some explicit masks | Yes | Hand, Szone, RefreshSingle; not Mzone default | The native Current projection has no Pendulum type guard; do not invent one | Only when mask includes LScale and visibility permits | No; PZONE effects can change it | UNAVAILABLE_AT_BOUNDARY |
-| right_scale | Yes, raw query value | Yes | QUERY_RSCALE; absent from Extra, Grave, Mzone, deck pseudo-refresh, and some explicit masks | No (0x00381fff) | Hand, Szone, RefreshSingle; not Extra/Grave default | The native Current projection has no Pendulum type guard; do not invent one | Only when mask includes RScale and visibility permits | No; PZONE effects can change it | UNAVAILABLE_AT_BOUNDARY |
+| left_scale | Yes, raw query value | Yes | QUERY_LSCALE; absent from Mzone, deck pseudo-refresh, and some explicit masks | Yes | Direct on Hand/Szone/RefreshSingle; static-data derivation outside PZONE under Section 11.2 | No generic Pendulum nulling; outside PZONE the pinned core returns data.lscale | Yes when mask includes LScale and visibility permits | Yes outside PZONE with the exact static-data binding; direct in PZONE | PROVEN_BOUNDARY_DERIVATION |
+| right_scale | Yes, raw query value | Yes | QUERY_RSCALE; absent from Extra, Grave, Mzone, deck pseudo-refresh, and some explicit masks | No (0x00381fff) | Direct on Hand/Szone/RefreshSingle; static-data derivation outside PZONE under Section 11.2 | No generic Pendulum nulling; outside PZONE the pinned core returns data.rscale | Yes when mask includes RScale and visibility permits | Yes outside PZONE with the exact static-data binding; direct in PZONE | PROVEN_BOUNDARY_DERIVATION |
 | status_flags | Yes, dynamic query value | Yes | QUERY_STATUS; all normal masks, then public-filtered | Yes | All normal refreshes and RefreshSingle when identity/current data is public | Hidden/redacted entity has no Current object; no field-level default is valid | Yes for visible/public known identity | No; status is dynamic | DIRECT_PUBLIC_RUNTIME_SOURCE |
-| counters | Yes, raw query vector | Yes | QUERY_COUNTERS; absent from all normal GenericDuel network masks | No | 0x02ffdfff local replay/single reload only; not the external server boundary | Empty vector is semantic only when the counter query was present; omitted query is unavailable | No on normal external server path | No; effects may add/remove counters | UNAVAILABLE_AT_BOUNDARY |
+| counters | Yes, raw query vector | Yes | QUERY_COUNTERS; absent from all normal GenericDuel network masks | No | MSG_ADD_COUNTER/MSG_REMOVE_COUNTER are present public events; Ignis decodes and records them but does not reconstruct Current counters | Empty vector is semantic only when the counter query was present; event-derived state requires complete add/remove/reset association | Event fields are present; Current vector is not yet reconstructed | Potentially, from complete events plus reset/move semantics | UNAVAILABLE_AT_BOUNDARY |
 
-The direct classifications are conditional on public visibility. A hidden
+The direct and derived classifications are conditional on public visibility.
+A hidden
 opponent Hand or Extra identity is normally omitted as an entity by the native
 public builder; a hidden opponent field entity may remain as a redacted slot
 without Current properties. Those are privacy-semantic entity outcomes, not
@@ -472,25 +538,27 @@ permission to compare hidden Current fields.
 
 The UNAVAILABLE_AT_BOUNDARY rows are the material gap. They are not made
 available by the fact that Ignis can decode a QueryFlagV1 value or that the
-same flag exists in ocgcore. The external EDOPro server must request and
-deliver the flag at the selected boundary.
+same flag exists in ocgcore. For link markers, the external EDOPro server must
+request and deliver the flag at the selected boundary. For counters, public
+event evidence exists but the current Ignis state does not consume it as a
+complete counter vector.
 
 ## 8. Zone, visibility, and boundary combinations
 
 | Zone / condition | Native public entity behavior | Pinned EDOPro public source | Current classification |
 | --- | --- | --- | --- |
 | Main Deck, either participant | No current entity; only aggregate zone counts are public (observation_builder.cpp:58-65) | PseudoRefreshDeck is replay-only and no Main Deck entity is sent | Current fields are not applicable because no entity is compared |
-| Own Hand, known identity | Entity and Current may be public to the perspective | RefreshHand 0x03781fff | Direct for all fields except Link and counters |
+| Own Hand, known identity | Entity and Current may be public to the perspective | RefreshHand 0x03781fff | Direct for mask-covered fields; Link rating is static-derived outside MZONE; markers and counters need other evidence |
 | Opponent hidden Hand | Entity identity is omitted from the public state | Public query removes private identity/current fields | No Current lookup or comparison; hidden identity is privacy-absent |
-| Opponent public/face-up Hand card | Entity may be retained if the public predicate proves it | RefreshHand 0x03781fff; public filtering retains private fields only when public/face-up | Direct for mask-covered fields; Link and counters unavailable |
-| Own Monster Zone, known identity | Entity and Current are available | RefreshMzone 0x03981fff or RefreshSingle 0x03f81fff | Link direct; both scales and counters unavailable after default Mzone refresh |
+| Opponent public/face-up Hand card | Entity may be retained if the public predicate proves it | RefreshHand 0x03781fff; public filtering retains private fields only when public/face-up | Direct for mask-covered fields; Link rating is static-derived; markers unavailable; counters need event reconstruction |
+| Own Monster Zone, known identity | Entity and Current are available | RefreshMzone 0x03981fff or RefreshSingle 0x03f81fff | Link direct; scales are static-derived because MZONE is not PZONE; counters need event reconstruction |
 | Opponent public/face-up Monster Zone | Entity and Current are public | Same Mzone/Single paths and public filtering | Same mask-dependent result |
 | Opponent face-down field slot | Redacted slot may remain without identity-derived Current | Public filtering removes private Current fields | Current is not compared for the hidden identity |
-| Spell/Trap, Field, or Pendulum-relevant SZONE | Native zone projection may retain a known public entity | Default Szone 0x03f81fff; Tag Swap explicit Szone 0x03781fff | Default Szone covers scales and Link; Tag Swap Szone lacks Link; counters unavailable |
-| Graveyard or Banished, public identity | Known entity may be retained | RefreshGrave 0x00381fff is the audited Grave path; generic location refresh has same mask if used | Link, right scale, and counters unavailable; other mask-covered fields direct |
+| Spell/Trap, Field, or Pendulum-relevant SZONE | Native zone projection may retain a known public entity | Default Szone 0x03f81fff; Tag Swap explicit Szone 0x03781fff | Default Szone covers scales and Link; Tag Swap Szone lacks Link but Link rating is static-derived outside MZONE; markers need Link evidence; counters need event reconstruction |
+| Graveyard or Banished, public identity | Known entity may be retained | RefreshGrave 0x00381fff is the audited Grave path; generic location refresh has same mask if used | Link rating and both scales are static-derived outside MZONE/PZONE; markers unavailable; counters need event reconstruction |
 | Graveyard or Banished, hidden opponent identity | Redacted/omitted under native privacy predicate | Public query removes private fields unless public | No hidden Current lookup |
-| Own Extra Deck, known identity | Own known Extra entities may be retained | RefreshExtra 0x00381fff | Link, right scale, and counters unavailable; this is the observed blocker |
-| Opponent face-up/public Extra | Public entity may be retained | Same Extra mask; public filtering can preserve private fields for face-up/public query | Link, right scale, and counters unavailable |
+| Own Extra Deck, known identity | Own known Extra entities may be retained | RefreshExtra 0x00381fff | Link rating and right scale are static-derived outside MZONE/PZONE; Link markers unavailable; counters need event reconstruction |
+| Opponent face-up/public Extra | Public entity may be retained | Same Extra mask; public filtering can preserve private fields for face-up/public query | Link rating and right scale are static-derived; Link markers unavailable; counters need event reconstruction |
 | Opponent face-down Extra | Hidden identity is not a public entity | Public query removes private fields | No hidden Current lookup |
 | Overlay material | Native documentation records that the pinned per-material overlay query does not provide a general public identity source | Normal GenericDuel refresh paths do not establish a separate Current-bearing overlay refresh | Any Current-bearing overlay case requires separate evidence; no blanket derivation is admitted |
 
@@ -510,24 +578,28 @@ wire record:
 * a known non-XYZ Current projection selects level and omits rank;
 * a hidden/redacted entity has no public Current property object at all.
 
-For a known entity, link_rating, scales, status, and counters must not be
-declared absent solely because a particular query flag was omitted. The native
-Current projection reads those values from query fields without the relevant
-type guard.
+For a known entity, link markers, status, and counters must not be declared
+absent solely because a particular query flag was omitted. The native Current
+projection reads those values from query fields without a relevant
+type-based fallback. Link rating and scales have the narrower derivations in
+Section 11, but those derivations require their exact location and runtime
+preconditions.
 
 ### 9.2 EVIDENCE_AVAILABLE
 
-This state requires a source-controlled query record or an already proven
-public boundary source at or before the selected comparison boundary. A
-present zero is still present. A present empty counter or marker vector is
-still present when its query record was emitted.
+This state requires a source-controlled query record, a proven event-derived
+state, or an already proven public boundary derivation at or before the
+selected comparison boundary. A present zero is still present. A present
+empty counter or marker vector is still present when its query record was
+emitted. An event payload is evidence of a state transition, not by itself
+the complete Current vector.
 
 ### 9.3 EVIDENCE_UNAVAILABLE
 
 This state applies when a Current property is semantically relevant but the
-selected public runtime evidence did not provide its query field. Examples are
-Link data after RefreshExtra, right_scale after RefreshExtra, and counters
-after every normal GenericDuel network refresh.
+selected public runtime evidence did not provide its query field and no
+complete derivation has been proven. Examples are Link markers after
+RefreshExtra and counters before Ignis event-state reconstruction is complete.
 
 EVIDENCE_UNAVAILABLE != SEMANTICALLY_ABSENT.
 
@@ -559,8 +631,9 @@ field. The direct class is conditional on identity visibility and the relevant
 query mask. The unavailable class records a real failure of coverage for the
 full external-boundary matrix.
 
-No field in this audit has a valid generic PROVEN_BOUNDARY_DERIVATION that
-can repair one of the omitted query flags.
+Link rating outside MZONE and both scales outside PZONE have a valid
+PROVEN_BOUNDARY_DERIVATION under Section 11. No generic derivation repairs
+Link markers or counters.
 
 ## 11. Boundary-derivation proofs and rejection
 
@@ -584,22 +657,188 @@ The pinned core demonstrates why:
 * card::get_status() and the counter map are dynamic core state
   (card.h:129-163, card.cpp:182-190).
 
-Printed data therefore cannot prove Link values, markers, scales, status, or
-counters at the selected boundary. It may not fill an unavailable Current
-field.
+Printed data therefore cannot generically replace Current values. It may
+participate only in the exact static-data derivations below, when the frozen
+Printed source bridge proves that the provider row is byte-identical to the
+native card data used by the core.
 
-### 11.2 Structural absence derivation is narrow
+### 11.2 Scale derivation
 
-The only admitted derivations in this contract are the native projection's
-explicit structural choices: Link excludes Defense/BaseDefense, XYZ selects
-Rank, and non-XYZ selects Level. Those derivations require the public Current
-type value itself to be available and unambiguous.
+The pinned core's exact scale rule is:
 
-No type bit proves a dynamic Link rating, marker vector, scale, status, or
-counter vector. A missing query field for one of those values remains
+~~~text
+get_lscale():
+    if current location is not LOCATION_PZONE:
+        return data.lscale
+    otherwise evaluate PZONE scale effects
+
+get_rscale():
+    if current location is not LOCATION_PZONE:
+        return data.rscale
+    otherwise evaluate PZONE scale effects
+~~~
+
+This is source-proven by ocgcore card.cpp:1185-1237. Therefore:
+
+* default Extra, Grave, Hand, and Mzone paths with a missing scale flag may
+  use the matching native static card-data scale, because those locations are
+  not PZONE;
+* default Szone and RefreshSingle paths request both scale flags and provide
+  direct evidence, including the dynamically relevant PZONE case;
+* the explicit MSG_SHUFFLE_SET_CARD mask 0x03181fff is admitted to the static
+  derivation only when the scenario proves that every affected card is not
+  PZONE. The core operation requires MZONE or SZONE and facedown cards
+  (libduel.cpp:1378-1415), but a future fixture must still bind its exact
+  symbolic location. If the PZONE exclusion is not proven, scale comparison
+  fails closed at that boundary.
+
+The premises for this derivation are:
+
+~~~text
+native and Ignis Printed source artifact binding = PASS
+known public card identity = PASS
+exact native static row type and lscale/rscale = PASS
+current location is proven non-PZONE when a scale query flag is absent = PASS
+or QUERY_LSCALE / QUERY_RSCALE is present for the PZONE case = PASS
+~~~
+
+Under these premises:
+
+~~~text
+Current.left_scale  = native data.lscale
+Current.right_scale = native data.rscale
+~~~
+
+No effect can violate the derivation outside PZONE because the pinned core
+returns before evaluating scale effects. PZONE effects are the explicit
+negative case and require direct query evidence.
+
+### 11.3 Link-rating derivation
+
+The pinned core's non-MZONE Link rule is:
+
+~~~text
+if data.type does not contain TYPE_LINK:
+    link_rating = 0
+else if status contains STATUS_NO_LEVEL:
+    link_rating = 0
+else if current location is not LOCATION_MZONE:
+    link_rating = data.level
+else:
+    evaluate ASSUME_LINK and Link-changing effects
+~~~
+
+This is source-proven by ocgcore card.cpp:989-1030. The static data type and
+level are supplied by the native static row; status is directly queried by
+the normal Extra, Hand, and Grave masks. The native full query includes
+QUERY_LINK, but the external RefreshExtra/Hand/Grave masks do not; for those
+non-MZONE cases the formula is the admissible replacement for the absent
+query record.
+
+The derivation requires:
+
+* the public identity and matching Printed/native static row are already
+  proven;
+* the native static data type, not only a potentially changed current query
+  type, is used for the first condition;
+* STATUS_NO_LEVEL is obtained from the public QUERY_STATUS value;
+* the current location is proven not to include LOCATION_MZONE;
+* no active AssumeProperty override exists at the query boundary.
+
+AssumeProperty writes into the card assumption map
+(libcard.cpp:2117-2124). The core restores those assumptions after the
+outermost interpreter call (interpreter.cpp:365-372), and duel-level
+restoration clears the map (duel.cpp:113-117). A query taken after that
+boundary may use the formula; evidence of an active in-call assumption would
+invalidate the derivation and fail closed.
+
+MZONE has direct QUERY_LINK evidence in the normal 0x03981fff and
+0x03f81fff paths. SZONE can use direct evidence when requested, or the
+non-MZONE formula when an explicit SZONE mask omits QUERY_LINK. Thus:
+
+~~~text
+Current.link_rating
+    = DIRECT_PUBLIC_RUNTIME_SOURCE on a permitted QUERY_LINK path
+    = PROVEN_BOUNDARY_DERIVATION on a proven non-MZONE path
+    = UNAVAILABLE_AT_BOUNDARY if any premise is missing
+~~~
+
+### 11.4 Link-marker derivation is rejected
+
+The pinned get_link_marker implementation has no equivalent static-location
+shortcut. It can return zero for a facedown on-field card, honor an
+ASSUME_LINKMARKER override, apply add/remove/change effects, and rotate
+markers based on current position (ocgcore card.cpp:1239-1277). No Printed
+row plus public type/status premise determines this value for every legal
+non-MZONE state.
+
+Therefore Link markers remain UNAVAILABLE_AT_BOUNDARY whenever QUERY_LINK is
+not present and public filtering does not supply it. They are not repaired by
+the link-rating derivation.
+
+### 11.5 Counter-event derivation status
+
+Counter events are a real alternative evidence source, but the current Ignis
+path does not yet turn them into a complete Current counter vector.
+
+The core emits MSG_ADD_COUNTER after a successful add with counter type,
+controller, location, sequence, and count (card.cpp:2220-2255). It emits
+MSG_REMOVE_COUNTER for direct removals (2257-2277), RemoveAllCounters
+(libcard.cpp:1773-1788), effect-permit reset (card.cpp:1877-1884), and the
+negated-counter reset path (2027-2040). GenericDuel forwards these messages to
+all recipients through its default send branch (generic_duel.cpp:1133-1137).
+
+The source is perspective-safe for a public counter event when its location
+resolves to a public entity. The core's ordinary add path requires a face-up
+on-field card when no explicit field location is supplied
+(card.cpp:2279-2305); the event contains no passcode. Ignis validates the
+location and records a CounterChanged event, but its mirror currently treats
+AddCounter and RemoveCounter as state no-ops
+(PerspectiveStateMirrorV1.cs:162-174). PZONE/SZONE locator handling is also
+deliberately conservative in the event ledger
+(PerspectiveSafeEventLedgerV1.cs:725-736).
+
+The core additionally clears counters on several movement/reset masks without
+emitting a matching remove message (card.cpp:2010-2013). A complete
+event-derived proof would therefore need:
+
+~~~text
+counter state starts known and empty
+all supported add/remove messages are present in the replay
+all movement/reset counter clears are bound to accepted transitions
+public controller/location/sequence resolves to the correct entity
+PZONE/SZONE association is proven without a guessed locator
+unsupported transitions fail closed
+~~~
+
+Those premises are not satisfied by the current Ignis mirror. The correct
+classification is:
+
+~~~text
+COUNTER_QUERY_SOURCE=ABSENT
+COUNTER_EVENT_SOURCE=PRESENT
+RUNTIME_EVIDENCE_ABSENT=NO
+RUNTIME_EVIDENCE_PRESENT_BUT_NOT_INTEGRATED=YES
+IGNIS_COUNTER_STATE_RECONSTRUCTION=NOT_IMPLEMENTED
+COUNTERS=UNAVAILABLE_AT_BOUNDARY
+~~~
+
+This is a capability/integration gap, not a claim that the EDOPro runtime
+contains no counter evidence.
+
+### 11.6 Structural absence derivation is narrow
+
+The native projection's structural choices remain the following:
+Link excludes Defense/BaseDefense, XYZ selects Rank, and non-XYZ selects
+Level. Those derivations require the public Current type value itself to be
+available and unambiguous.
+
+The scale and non-MZONE Link-rating derivations in Sections 11.2 and 11.3 are
+separate exact CoreHost proofs. No type bit proves Link markers, status, or
+counters. A missing query field for those values remains
 EVIDENCE_UNAVAILABLE.
 
-### 11.3 Prior-value carry is not a proof
+### 11.7 Prior-value carry is not a proof
 
 The EDOPro UI client uses CHECK_AND_SET at client_card.cpp:25-36 and
 37-115, so fields are updated only when their query flags are present.
@@ -706,7 +945,8 @@ known visible entity
 ~~~
 
 It does not support the complete accepted I6C6 corpus at the Extra boundary.
-The observed failure at entities[0].current.link_rating is expected from:
+The observed missing query record at entities[0].current.link_rating is
+repaired only by the non-MZONE derivation:
 
 ~~~text
 RefreshExtra mask = 0x00381fff
@@ -714,25 +954,32 @@ QUERY_LINK      = 0x00800000
 QUERY_LINK_INCLUDED=NO
 ~~~
 
-At that same boundary, right_scale and counters are also not proven.
-left_scale is available there but is missing from the default Mzone mask;
-the full field matrix is therefore not covered by the external runtime.
+At that same boundary, link_rating and right_scale are derivable only after
+the Printed artifact binding and non-PZONE/non-MZONE premises pass. Link
+markers remain unavailable. Counter events are present, but Current counters
+are not reconstructed by the current mirror. The full field matrix therefore
+still is not covered by the external runtime adapter.
 
 ### 15.2 Resume decision
 
 ~~~text
 I6C6_3_CAN_RESUME_WITH_EXISTING_EVIDENCE=NO
-NEXT_REQUIRED_SLICE=I6C6_3A_REFRESH_CURRENT_PROPERTY_EVIDENCE
+NEXT_REQUIRED_SLICE=I6C6_3A_CURRENT_PROPERTY_EVIDENCE_COMPLETION
 ~~~
 
-The proposed follow-up must choose one separately evidenced route:
+The proposed follow-up must complete two independent evidence obligations:
 
-1. an explicitly authorized EDOPro/runtime query expansion that requests every
-   required missing field at every relevant current-bearing refresh boundary,
-   followed by a privacy review; or
-2. another source-controlled, public, deterministic boundary source that
-   provides the exact Current semantics without changing the accepted
-   comparison boundary.
+1. Link markers need an explicitly authorized EDOPro/runtime query expansion
+   or another source-controlled public source that provides the exact marker
+   value at every relevant boundary, followed by a privacy review.
+2. Counters need a complete event-state reconstruction from
+   MSG_ADD_COUNTER/MSG_REMOVE_COUNTER plus every proven movement/reset clear,
+   including safe PZONE/SZONE association. If that proof cannot be integrated,
+   an authorized QUERY_COUNTERS source is the alternative.
+
+The scale and non-MZONE Link-rating derivations may be integrated as
+boundary-specific source rules, but each use must pass the static artifact,
+location, status, and assumption preconditions in Sections 11.2 and 11.3.
 
 The follow-up must not remove Link, Pendulum, counters, Extra, or model-facing
 coverage from the corpus. It must not use Printed data as a Current fallback.
@@ -745,10 +992,13 @@ implemented here.
 
 The following are capability options, not approvals:
 
-* Expand the normal EDOPro refresh masks to include
-  QUERY_LINK, QUERY_RSCALE, QUERY_LSCALE, and QUERY_COUNTERS wherever
-  the native Current matrix requires them, then prove public redaction for
-  each recipient.
+* Expand the normal EDOPro refresh masks for Link markers or counters only
+  where the corresponding event/field source remains necessary, then prove
+  public redaction for each recipient.
+* Integrate the proven non-PZONE scale and non-MZONE Link-rating derivations
+  without changing the general Printed/Current separation.
+* Reconstruct counters from the public counter events and all movement/reset
+  boundaries, or provide an explicitly authorized QUERY_COUNTERS source.
 * Add a separately authorized evidence seam that records query-field presence
   and public filtering at the exact boundary. Such a seam must remain
   test-only if it observes internals.
@@ -773,10 +1023,14 @@ EDOPRO_ALL_RELEVANT_REFRESH_MASKS_AUDITED=PASS
 QUERY_FLAG_TABLE_AUDITED=PASS
 
 LINK_RATING_CLASSIFIED=PASS
+LINK_RATING_DERIVATION_AUDITED=PASS
 LINK_MARKERS_CLASSIFIED=PASS
 PENDULUM_SCALES_CLASSIFIED=PASS
+PENDULUM_SCALE_DERIVATION_AUDITED=PASS
 STATUS_CLASSIFIED=PASS
 COUNTERS_CLASSIFIED=PASS
+COUNTER_EVENT_SOURCE_AUDITED=PASS
+COUNTER_STATE_RECONSTRUCTION=NOT_IMPLEMENTED
 ALL_CURRENT_FIELDS_CLASSIFIED=PASS
 
 SEMANTIC_ABSENCE_VS_UNAVAILABLE=EXPLICIT
@@ -816,12 +1070,18 @@ REFRESH_EXTRA_MASK_HEX=0x00381fff
 QUERY_LINK_HEX=0x00800000
 QUERY_LINK_INCLUDED=NO
 
-LINK_RATING_CLASSIFICATION=UNAVAILABLE
+LINK_RATING_CLASSIFICATION=DERIVED
 LINK_MARKERS_CLASSIFICATION=UNAVAILABLE
-LEFT_SCALE_CLASSIFICATION=UNAVAILABLE
-RIGHT_SCALE_CLASSIFICATION=UNAVAILABLE
+LEFT_SCALE_CLASSIFICATION=DERIVED
+RIGHT_SCALE_CLASSIFICATION=DERIVED
 STATUS_CLASSIFICATION=DIRECT
 COUNTERS_CLASSIFICATION=UNAVAILABLE
+
+COUNTER_QUERY_SOURCE=ABSENT
+COUNTER_EVENT_SOURCE=PRESENT
+RUNTIME_EVIDENCE_ABSENT=NO
+RUNTIME_EVIDENCE_PRESENT_BUT_NOT_INTEGRATED=YES
+IGNIS_COUNTER_STATE_RECONSTRUCTION=NOT_IMPLEMENTED
 
 ALL_CURRENT_FIELDS_CLASSIFIED=PASS
 
@@ -838,7 +1098,7 @@ REPLAY_ANALYSIS=PASS
 FINAL_DECISION=IGNIS_RUNTIME_CURRENT_PROPERTY_CAPABILITY_GAP
 
 I6C6_3_CAN_RESUME_WITH_EXISTING_EVIDENCE=NO
-NEXT_REQUIRED_SLICE=I6C6_3A_REFRESH_CURRENT_PROPERTY_EVIDENCE
+NEXT_REQUIRED_SLICE=I6C6_3A_CURRENT_PROPERTY_EVIDENCE_COMPLETION
 
 IGNIS_PRODUCTION_CODE_CHANGED=NO
 IGNIS_TEST_CODE_CHANGED=NO
