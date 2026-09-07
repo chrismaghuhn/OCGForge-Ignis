@@ -63,6 +63,7 @@ public sealed class GameplayMessageDecoderV1
     private const byte MsgConfirmCards = 31;
     private const byte MsgShuffleDeck = 32;
     private const byte MsgShuffleHand = 33;
+    private const byte MsgSwapGraveDeck = 35;
     private const byte MsgShuffleSetCard = 36;
     private const byte MsgReverseDeck = 37;
     private const byte MsgShuffleExtra = 39;
@@ -187,6 +188,7 @@ public sealed class GameplayMessageDecoderV1
             MsgPosChange => DecodePositionChange(bytes),
             MsgSet => DecodeSet(bytes),
             MsgSwap => DecodeSwap(bytes),
+            MsgSwapGraveDeck => DecodeSwapGraveDeck(bytes),
             MsgChaining => DecodeChaining(bytes),
             MsgChained => DecodeChainSize(bytes, GameplayMessageKindV1.Chained),
             MsgChainSolving => DecodeChainSize(bytes, GameplayMessageKindV1.ChainSolving),
@@ -402,6 +404,36 @@ public sealed class GameplayMessageDecoderV1
             location0,
             BinaryPrimitives.ReadUInt32LittleEndian(bytes[15..19]),
             location1)));
+    }
+
+    private GameplayMessageDecodeResult DecodeSwapGraveDeck(
+        ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length < 10)
+        {
+            return Failure(GameplayErrorCode.MalformedGameMessage);
+        }
+
+        GameplayErrorCode playerError = ValidatePlayer(bytes[1]);
+        if (playerError != GameplayErrorCode.None)
+        {
+            return Failure(playerError);
+        }
+
+        uint reportedExtraCount =
+            BinaryPrimitives.ReadUInt32LittleEndian(bytes[2..6]);
+        uint maskLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes[6..10]);
+        if (maskLength > int.MaxValue ||
+            (ulong)bytes.Length != 10UL + maskLength)
+        {
+            return Failure(GameplayErrorCode.MalformedGameMessage);
+        }
+
+        return Success(GameplayMessageV1.FromSwapGraveDeck(
+            new GameplaySwapGraveDeckPayloadV1(
+                bytes[1],
+                reportedExtraCount,
+                bytes.Slice(10, (int)maskLength).ToArray())));
     }
 
     private GameplayMessageDecodeResult DecodeChaining(ReadOnlySpan<byte> bytes)
@@ -944,6 +976,7 @@ public sealed class GameplayMessageDecoderV1
             MsgPosChange or
             MsgSet or
             MsgSwap or
+            MsgSwapGraveDeck or
             MsgChaining or
             MsgChained or
             MsgChainSolving or

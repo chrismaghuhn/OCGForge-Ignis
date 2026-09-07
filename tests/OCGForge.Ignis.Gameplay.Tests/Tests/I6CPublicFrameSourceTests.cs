@@ -731,6 +731,7 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C3 SZONE chain boundary", AssertI6C3SzoneChainBoundary);
         Run("I6C3 failed chain apply atomicity", AssertI6C3FailedChainApplyAtomicity);
         Run("I6C3 transport chunking", AssertI6C3TransportChunking);
+        Run("I6C5 MSG_SWAP_GRAVE_DECK transition", AssertSwapGraveDeckTransition);
         Run("I6C4 draw event ledger", AssertI6C4DrawEventLedger);
         Run("I6C4 event index lifecycle", AssertI6C4EventIndexLifecycle);
         Run("I6C4 event kind mapping", AssertI6C4EventKindMapping);
@@ -783,6 +784,397 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C5 invalid context fails closed", AssertI6C5InvalidContext);
         Run("I6C5 bound context owns caller values", AssertI6C5ContextOwnership);
         Run("I6C5 session surface has no replacement API", AssertI6C5SessionSurface);
+    }
+
+    private static void AssertSwapGraveDeckTransition()
+    {
+        foreach (byte player in new byte[] { 0, 1 })
+        {
+            GameplayMessageDecoderV1 decoder = CreateEstablishedDecoder(player);
+            GameplayMessageDecodeResult decoded = decoder.Decode(
+                new StocGameMessagePayload(
+                    SwapGraveDeckMessage(player, 3, 0x05)));
+            True(decoded.IsSuccess, decoded.Error.ToString());
+            Equal(GameplayMessageKindV1.SwapGraveDeck, decoded.Message!.Kind);
+            Equal(player, decoded.Message.SwapGraveDeck!.Player);
+            Equal((uint)3, decoded.Message.SwapGraveDeck.ReportedExtraCount);
+            True(decoded.Message.SwapGraveDeck.ExtraMask.SequenceEqual(
+                new byte[] { 0x05 }));
+
+            GameplayMessageDecodeResult invalidPlayer = decoder.Decode(
+                new StocGameMessagePayload(
+                    SwapGraveDeckMessage(2, 0, 0x00)));
+            False(invalidPlayer.IsSuccess);
+            Equal(GameplayErrorCode.InvalidParticipant, invalidPlayer.Error);
+
+            GameplayMessageDecodeResult truncated = decoder.Decode(
+                new StocGameMessagePayload(new byte[] { 35, player }));
+            False(truncated.IsSuccess);
+            Equal(GameplayErrorCode.MalformedGameMessage, truncated.Error);
+
+            GameplayMessageDecodeResult mismatchedMask = decoder.Decode(
+                new StocGameMessagePayload(
+                    Join(new byte[] { 35, player }, U32(0), U32(1))));
+            False(mismatchedMask.IsSuccess);
+            Equal(GameplayErrorCode.MalformedGameMessage, mismatchedMask.Error);
+        }
+
+        (PerspectiveStateMirrorV1 emptyMirror,
+            GameplayMessageDecoderV1 emptyDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        ApplyI6C4Success(
+            emptyMirror,
+            emptyDecoder,
+            SwapGraveDeckMessage(0, 0));
+        Equal(
+            (uint)0,
+            emptyMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.MainDeck).Count.Value);
+        Equal(
+            (uint)0,
+            emptyMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.Graveyard).Count.Value);
+
+        (PerspectiveStateMirrorV1 deckGraveMirror,
+            GameplayMessageDecoderV1 deckGraveDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 1,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        ApplyI6C4Success(
+            deckGraveMirror,
+            deckGraveDecoder,
+            MoveMessage(
+                0xD200,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x01, 0, 0x08),
+                0));
+        ApplyI6C4Success(
+            deckGraveMirror,
+            deckGraveDecoder,
+            MoveMessage(
+                0xD201,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x10, 0, 0x05),
+                0));
+        ApplyI6C4Success(
+            deckGraveMirror,
+            deckGraveDecoder,
+            SwapGraveDeckMessage(0, 0, 0x00));
+        Equal(
+            (uint)1,
+            deckGraveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.MainDeck).Count.Value);
+        Equal(
+            (uint)2,
+            deckGraveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.Graveyard).Count.Value);
+        MirrorCardSnapshotV1 movedDeckCard = deckGraveMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.Graveyard).Cards.Single();
+        Equal((uint)0xD200, movedDeckCard.CardCode.Value);
+        True(movedDeckCard.Position.IsKnown);
+        Equal((uint)0x05, movedDeckCard.Position.Value);
+        True(movedDeckCard.CardCode.Provenance ==
+             MirrorProvenanceV1.PublicProtocolFact);
+
+        (PerspectiveStateMirrorV1 orderedMirror,
+            GameplayMessageDecoderV1 orderedDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 2,
+                deckCount1: 0,
+                extraCount1: 0);
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(
+                    ExtraQuery(0xA000, 0, 0x08),
+                    ExtraQuery(0xA001, 1, 0x05))));
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            MoveMessage(
+                0xB000,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x10, 0, 0x05),
+                0));
+        string orderedBefore = orderedMirror.Snapshot.ToDeterministicString();
+        int orderedEventCount = orderedMirror.VisibleEvents.Count;
+        ulong orderedEventIndex = orderedMirror.NextEventIndex;
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            SwapGraveDeckMessage(0, 1, 0x01));
+        Equal(
+            orderedEventCount,
+            orderedMirror.VisibleEvents.Count);
+        Equal(orderedEventIndex, orderedMirror.NextEventIndex);
+        NotEqual(orderedBefore, orderedMirror.Snapshot.ToDeterministicString());
+        Equal(
+            (uint)0,
+            orderedMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.MainDeck).Count.Value);
+        Equal(
+            (uint)0,
+            orderedMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.Graveyard).Count.Value);
+        MirrorCardSnapshotV1[] orderedExtra = orderedMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(3, orderedExtra.Length);
+        Equal((uint)0xA000, orderedExtra[0].CardCode.Value);
+        Equal((uint)0xB000, orderedExtra[1].CardCode.Value);
+        Equal((uint)0xA001, orderedExtra[2].CardCode.Value);
+        Equal((uint)0, orderedExtra[0].Sequence);
+        Equal((uint)1, orderedExtra[1].Sequence);
+        Equal((uint)2, orderedExtra[2].Sequence);
+        NotEqual(orderedExtra[0].EntityId, orderedExtra[1].EntityId);
+        NotEqual(orderedExtra[1].EntityId, orderedExtra[2].EntityId);
+        True(orderedExtra[1].CardCode.Provenance ==
+             MirrorProvenanceV1.PerspectivePrivateFact);
+
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            new byte[] { 32, 0 });
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            MoveMessage(
+                0xA000,
+                new ModernLocInfoV1(0, 0x40, 0, 0x08),
+                new ModernLocInfoV1(0, 0x04, 0, 0x05),
+                0));
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            MoveMessage(
+                0xA000,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05),
+                new ModernLocInfoV1(0, 0x40, 2, 0x08),
+                0));
+        Equal(
+            (uint)3,
+            orderedMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.ExtraDeck).Count.Value);
+
+        (PerspectiveStateMirrorV1 duplicateMirror,
+            GameplayMessageDecoderV1 duplicateDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(
+            duplicateMirror,
+            duplicateDecoder,
+            0,
+            0xC100,
+            0xC100,
+            0xC200);
+        ApplyI6C4Success(
+            duplicateMirror,
+            duplicateDecoder,
+            SwapGraveDeckMessage(0, 0, 0x07));
+        MirrorCardSnapshotV1[] duplicateCards = duplicateMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(3, duplicateCards.Length);
+        Equal((uint)0xC100, duplicateCards[0].CardCode.Value);
+        Equal((uint)0xC100, duplicateCards[1].CardCode.Value);
+        Equal((uint)0xC200, duplicateCards[2].CardCode.Value);
+        NotEqual(duplicateCards[0].EntityId, duplicateCards[1].EntityId);
+
+        (PerspectiveStateMirrorV1 playerOneMirror,
+            GameplayMessageDecoderV1 playerOneDecoder) =
+            CreateMirror(
+                1,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(
+            playerOneMirror,
+            playerOneDecoder,
+            1,
+            0xD100,
+            0xD101);
+        ApplyI6C4Success(
+            playerOneMirror,
+            playerOneDecoder,
+            SwapGraveDeckMessage(1, 0, 0x03));
+        MirrorCardSnapshotV1[] playerOneCards = playerOneMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(2, playerOneCards.Length);
+        True(playerOneCards.All(card => card.CardCode.IsKnown));
+        True(playerOneCards.All(card => card.CardCode.Provenance ==
+            MirrorProvenanceV1.PerspectivePrivateFact));
+
+        PerspectiveStateMirrorV1 opponentWorldA =
+            CreateOpponentSwapWorld(0xE100);
+        PerspectiveStateMirrorV1 opponentWorldB =
+            CreateOpponentSwapWorld(0xF100);
+        MirrorCardSnapshotV1[] opponentCards = opponentWorldA.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Opponent,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(2, opponentCards.Length);
+        Equal(
+            0,
+            opponentWorldA.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Opponent,
+                MirrorZoneV1.Graveyard).Cards.Count);
+        True(opponentCards.All(card => !card.CardCode.IsKnown));
+        Equal(
+            opponentWorldA.Snapshot.ToDeterministicString(),
+            opponentWorldB.Snapshot.ToDeterministicString());
+        PerspectiveSafePrintedProviderV1 opponentProvider =
+            CreatePrintedProviderForMirror(opponentWorldA);
+        PerspectiveSafeFrameSourceResultV1 opponentFrameA =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                opponentWorldA,
+                CreateValidI6C5MatchContext(),
+                opponentProvider);
+        PerspectiveSafeFrameSourceResultV1 opponentFrameB =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                opponentWorldB,
+                CreateValidI6C5MatchContext(),
+                opponentProvider);
+        True(opponentFrameA.IsSuccess);
+        True(opponentFrameB.IsSuccess);
+        Equal(0, opponentFrameA.Frame!.Entities.Count);
+        Equal(0, opponentFrameB.Frame!.Entities.Count);
+        True(opponentFrameA.Frame!.Entities.All(
+            entity => entity.Zone == PerspectiveSafeSemanticZoneV1.ExtraDeck));
+        True(opponentFrameB.Frame!.Entities.All(
+            entity => entity.Zone == PerspectiveSafeSemanticZoneV1.ExtraDeck));
+        Equal(
+            FrameSignature(opponentFrameA.Frame!),
+            FrameSignature(opponentFrameB.Frame!));
+
+        (PerspectiveStateMirrorV1 frameMirror,
+            GameplayMessageDecoderV1 frameDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(frameMirror, frameDecoder, 0, 0xF200, 0xF201);
+        ApplyI6C4Success(
+            frameMirror,
+            frameDecoder,
+            SwapGraveDeckMessage(0, 0, 0x03));
+        PerspectiveSafeFrameSourceResultV1 frame =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                frameMirror,
+                CreateValidI6C5MatchContext(),
+                CreatePrintedProviderForMirror(frameMirror));
+        True(frame.IsSuccess, frame.Error?.ToString() ?? "frame rejected");
+        True(frame.Frame!.Entities.Any(entity => entity.Passcode == 0xF200));
+        True(frame.Frame.Entities.Any(entity => entity.Passcode == 0xF201));
+
+        (PerspectiveStateMirrorV1 malformedMirror,
+            GameplayMessageDecoderV1 malformedDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(malformedMirror, malformedDecoder, 0, 0xA300);
+        string malformedBefore = malformedMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult malformed = malformedMirror.Apply(
+            DecodeMessage(
+                malformedDecoder,
+                SwapGraveDeckMessage(0, 0, 0x02)));
+        False(malformed.IsSuccess);
+        Equal(GameplayErrorCode.InvalidStateTransition, malformed.Error);
+        Equal(malformedBefore, malformedMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 countMirror,
+            GameplayMessageDecoderV1 countDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(countMirror, countDecoder, 0, 0xA400);
+        string countBefore = countMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult countFailure = countMirror.Apply(
+            DecodeMessage(
+                countDecoder,
+                SwapGraveDeckMessage(0, 1, 0x01)));
+        False(countFailure.IsSuccess);
+        Equal(GameplayErrorCode.StateCapacityExceeded, countFailure.Error);
+        Equal(countBefore, countMirror.Snapshot.ToDeterministicString());
+    }
+
+    private static void AddGraveCards(
+        PerspectiveStateMirrorV1 mirror,
+        GameplayMessageDecoderV1 decoder,
+        byte player,
+        params uint[] cardCodes)
+    {
+        for (uint sequence = 0; sequence < cardCodes.Length; sequence++)
+        {
+            ApplyI6C4Success(
+                mirror,
+                decoder,
+                MoveMessage(
+                    cardCodes[sequence],
+                    new ModernLocInfoV1(0, 0, 0, 0),
+                    new ModernLocInfoV1(player, 0x10, sequence, 0x05),
+                    0));
+        }
+    }
+
+    private static PerspectiveStateMirrorV1 CreateOpponentSwapWorld(
+        uint firstCode)
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(mirror, decoder, 1, 0, 0);
+        ApplyI6C4Success(
+            mirror,
+            decoder,
+            UpdateDataMessage(
+                1,
+                0x10,
+                Join(
+                    ExtraQuery(firstCode, 1, 0x05),
+                    ExtraQuery(firstCode + 1, 1, 0x05))));
+        ApplyI6C4Success(
+            mirror,
+            decoder,
+            SwapGraveDeckMessage(1, 0, 0x03));
+        return mirror;
     }
 
     private static void AssertI6C4DrawEventLedger()

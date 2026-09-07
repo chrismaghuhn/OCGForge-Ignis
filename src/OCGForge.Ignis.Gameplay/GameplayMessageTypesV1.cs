@@ -140,7 +140,8 @@ public enum GameplayMessageKindV1 : byte
     ShuffleSetCard = 39,
     ReverseDeck = 40,
     AddCounter = 41,
-    RemoveCounter = 42
+    RemoveCounter = 42,
+    SwapGraveDeck = 43
 }
 
 public readonly record struct GameplayWinPayloadV1(byte Player, byte WinType);
@@ -201,6 +202,29 @@ public readonly record struct GameplaySwapPayloadV1(
     ModernLocInfoV1 Location0,
     uint CardCode1,
     ModernLocInfoV1 Location1);
+
+public sealed class GameplaySwapGraveDeckPayloadV1
+{
+    private readonly byte[] extraMask;
+    private readonly ReadOnlyCollection<byte> extraMaskView;
+
+    internal GameplaySwapGraveDeckPayloadV1(
+        byte player,
+        uint reportedExtraCount,
+        IEnumerable<byte> extraMask)
+    {
+        Player = player;
+        ReportedExtraCount = reportedExtraCount;
+        this.extraMask = extraMask.ToArray();
+        extraMaskView = Array.AsReadOnly(this.extraMask);
+    }
+
+    public byte Player { get; }
+
+    public uint ReportedExtraCount { get; }
+
+    public IReadOnlyList<byte> ExtraMask => extraMaskView;
+}
 
 public readonly record struct GameplayChainingPayloadV1(
     uint CardCode,
@@ -362,6 +386,7 @@ public sealed class GameplayMessageV1
         GameplayPositionChangePayloadV1 positionChange = default,
         GameplaySetPayloadV1 set = default,
         GameplaySwapPayloadV1 swap = default,
+        GameplaySwapGraveDeckPayloadV1? swapGraveDeck = null,
         GameplayChainingPayloadV1 chaining = default,
         GameplayChainSizePayloadV1 chainSize = default,
         GameplayLifePointPayloadV1 lifePoints = default,
@@ -384,6 +409,7 @@ public sealed class GameplayMessageV1
         PositionChange = positionChange;
         Set = set;
         Swap = swap;
+        SwapGraveDeck = swapGraveDeck;
         Chaining = chaining;
         ChainSize = chainSize;
         LifePoints = lifePoints;
@@ -421,6 +447,8 @@ public sealed class GameplayMessageV1
     public GameplaySetPayloadV1 Set { get; }
 
     public GameplaySwapPayloadV1 Swap { get; }
+
+    public GameplaySwapGraveDeckPayloadV1? SwapGraveDeck { get; }
 
     public GameplayChainingPayloadV1 Chaining { get; }
 
@@ -490,6 +518,13 @@ public sealed class GameplayMessageV1
     internal static GameplayMessageV1 FromSwap(
         GameplaySwapPayloadV1 swap) =>
         new(55, GameplayMessageKindV1.Swap, swap: swap);
+
+    internal static GameplayMessageV1 FromSwapGraveDeck(
+        GameplaySwapGraveDeckPayloadV1 swapGraveDeck) =>
+        new(
+            35,
+            GameplayMessageKindV1.SwapGraveDeck,
+            swapGraveDeck: swapGraveDeck);
 
     internal static GameplayMessageV1 FromChaining(
         GameplayChainingPayloadV1 chaining) =>

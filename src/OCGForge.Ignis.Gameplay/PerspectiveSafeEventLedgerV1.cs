@@ -293,6 +293,7 @@ internal sealed class PerspectiveSafeEventLedgerV1
             case GameplayMessageKindV1.UpdateData:
             case GameplayMessageKindV1.UpdateCard:
             case GameplayMessageKindV1.Swap:
+            case GameplayMessageKindV1.SwapGraveDeck:
             case GameplayMessageKindV1.ChainNegated:
             case GameplayMessageKindV1.ChainDisabled:
             case GameplayMessageKindV1.PayLpCost:
