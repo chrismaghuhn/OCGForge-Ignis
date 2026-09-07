@@ -28,7 +28,7 @@ IGNIS_EDOPRO_CORE=46779fbe40e6a9bd8967f5dc6a03f4eaa6550d57
 I6C6_SOURCE_AUDIT=PASS
 OCGFORGE_NATIVE_ORACLE_PATH=PROVEN
 IGNIS_I6C5_SOURCE_PATH=PROVEN
-FIELD_MAPPING_COMPLETE=NO
+FIELD_MAPPING_COMPLETE=YES
 PRIVACY_MODEL_COMPLETE=YES
 DETERMINISM_MODEL_COMPLETE=YES
 IMPLEMENTATION_PLAN_COMPLETE=YES
@@ -36,12 +36,12 @@ I6C6_DESIGN_FINAL=NO
 I6C6_IMPLEMENTATION_AUTHORIZED=NO
 ```
 
-The shape and field mapping are sufficiently identified for implementation planning. End-to-end equivalence is not yet proven because two source bridges remain unresolved:
+The shape and field mapping are sufficiently identified for implementation planning. The two bridge contracts are now closed at the design level, but their future execution evidence is not yet present:
 
-1. `SAME_SCENARIO_REPLAY_BRIDGE=UNPROVEN`: no accepted artifact currently binds one native `CoreHost` scenario to the exact Ignis message transcript and mirror history, including relevant CardScripts behavior provenance.
-2. `PRINTED_SOURCE_BRIDGE=UNPROVEN`: I6C5 consumes an external provider artifact; no real OCGForge static-card rows may be copied into Ignis, and no test-time native-to-provider artifact handoff is currently frozen.
+1. `SAME_SCENARIO_REPLAY_EVIDENCE=UNPROVEN`: the later implementation still needs an artifact binding one native `CoreHost` scenario to the exact Ignis message transcript and mirror history, including relevant CardScripts behavior provenance.
+2. `PRINTED_SOURCE_EVIDENCE=UNPROVEN`: I6C5 consumes an external provider artifact; no real OCGForge static-card rows may be copied into Ignis, and the later implementation still needs to supply the exact native artifact externally.
 
-These are design blockers, not permission to infer equality.
+These are implementation-evidence obligations, not permission to infer equality.
 
 ## 2. Native OCGForge authority path
 
@@ -243,7 +243,165 @@ CardScripts behavior does not prove matching Printed rows. The scenario
 manifest must carry both dimensions and the comparator must fail closed when a
 script-dependent transition is not behaviorally bound.
 
-## 10. Supported acceptance corpus
+## 10. Normative bridge contracts
+
+### 10.1 `SameScenarioReplayBridgeV1`
+
+This is a provenance/evidence contract, not a public-frame field. Its canonical
+manifest domain is:
+
+```text
+OCGFORGE-IGNIS-I6C6-SAME-SCENARIO-REPLAY-V1\0
+```
+
+The manifest contains the following fields in this fixed order, encoded with
+the existing I6 identity convention of explicit fixed-width integers, ordered
+vectors, and length-prefixed UTF-8 strings:
+
+```text
+scenario_contract_id
+scenario_id
+perspective_player
+starting_player
+duel_flags
+seed_words[]
+deck_identity.seat0
+deck_identity.seat1
+deck_identity.digest
+ocgforge_semantic_commit
+rules_bundle_id
+ocgforge_core_commit
+ocgforge_core_patchset_id
+ocgforge_core_patchset_sha256
+ocgforge_cardscripts_commit
+ignis_edopro_commit
+ignis_edopro_core_commit
+ignis_cardscripts_commit
+native_setup_transcript_sha256
+native_message_transcript_sha256
+ignis_replay_transcript_sha256
+supported_message_family_envelope_id
+supported_message_family_envelope_sha256
+native_comparison_boundary
+ignis_comparison_boundary
+```
+
+Semantic inputs are `perspective_player`, `starting_player`, `duel_flags`,
+seed words, deck seat assignment, and the explicitly selected comparison
+boundary. Runtime/source commits, patchset IDs, transcript digests, and
+envelope IDs are provenance/evidence fields; they are not public-frame
+semantic values.
+
+`native_setup_transcript_sha256` covers the deterministic native fixture/setup
+operations. `native_message_transcript_sha256` covers the framed native engine
+messages and the selected event-history boundary. `ignis_replay_transcript_sha256`
+covers the exact typed Ignis input bytes/messages and the committed mirror
+boundary. A scenario passes only when the manifest values, supported-message
+envelope, boundary kind, perspective, seed, flags, and deck-seat identities
+agree and both transcripts can be linked without inference. Missing or
+unmatched transcript evidence is `UNPROVEN`, not a reduced comparison corpus.
+
+The bridge does not require `ocgforge_core_commit == ignis_edopro_core_commit`.
+It requires the two runtime identities to be recorded and the public transcript
+and boundary behavior to be evidenced for the scenario.
+
+### 10.2 `CardScriptsBehaviorBindingV1`
+
+This is a sub-contract of `SameScenarioReplayBridgeV1`, never a third bridge
+architecture. Every scenario declares exactly one mode:
+
+```text
+SCRIPT_DEPENDENCY=NONE
+or
+SCRIPT_DEPENDENCY=CLOSURE
+```
+
+`SCRIPT_DEPENDENCY=NONE` is accepted only when both runtime evidence records
+show no script-reader request, script load, script callback, or script-required
+card/effect can affect the scenario before the comparison boundary. An empty
+required-script set alone is insufficient.
+
+`SCRIPT_DEPENDENCY=CLOSURE` requires:
+
+```text
+ocgforge_cardscripts_commit
+ignis_cardscripts_commit
+ocgforge_relevant_script_paths[]
+ignis_relevant_script_paths[]
+ocgforge_script_closure_digest
+ignis_script_closure_digest
+script_sensitive_boundary_trace_digest
+```
+
+The relevant script paths are canonical sorted relative paths and their file
+bytes are hashed in path order. The two script closure digests are allowed to
+differ because the runtimes use different CardScripts commits. The binding
+passes only when the exact relevant closure is recorded for both runtimes and
+the script-sensitive execution/output trace is bound to the same supported
+scenario transcript. Equal card passcodes or equal top-level script commits
+alone never prove equivalent behavior.
+
+The future acceptance gate is therefore:
+
+```text
+CARD_SCRIPT_BEHAVIOR_BINDING=PASS
+or
+SCRIPT_DEPENDENCY_NONE=PASS
+```
+
+Otherwise the same-scenario bridge remains unproven.
+
+### 10.3 `PrintedSourceBridgeV1`
+
+The V1 Printed bridge uses the generated semantic artifact, not BabelCDB
+commit equality. At the exact OCGForge `CoreHost` boundary,
+`RulesBundlePaths.card_data_tsv` identifies the bytes loaded by
+`CardDataStore`. The Ignis provider consumes the same frozen pipe12 artifact
+format. For I6C6 V1 the strongest and simplest rule is required:
+
+```text
+native_card_data_tsv_bytes == ignis_provider_artifact_bytes
+```
+
+The artifact equality is byte equality after both sides have opened the exact
+external files. The bridge manifest must bind:
+
+```text
+source_artifact_format_id
+native_card_data_tsv_sha256
+ignis_provider_artifact_sha256
+coverage_passcodes[]
+coverage_digest_sha256
+semantic_rows_digest_sha256
+ocgforge_semantic_commit
+rules_bundle_id
+transformation_source_commit
+transformation_source_path
+transformation_file_sha256
+```
+
+The two raw artifact hashes must be equal, the coverage sets/digests must be
+equal, and the semantic-row digest must be equal to the Ignis provider
+manifest. `ocgforge_babelcdb_commit` and `ignis_babelcdb_commit` remain
+forensic provenance fields; they need not be equal and do not define Printed
+semantic equality. A source artifact mismatch, absent external artifact, or
+manifest claim without exact file/hash evidence fails closed.
+
+This contract does not permit copying the native artifact or real card rows
+into Ignis. It binds two externally available files at test execution time;
+the repository and release remain free of those bytes.
+
+The Printed bridge gates are:
+
+```text
+PRINTED_SOURCE_ARTIFACT_BINDING=PASS
+PRINTED_COVERAGE_BINDING=PASS
+PRINTED_SEMANTIC_ROWS_BINDING=PASS
+PRINTED_PROVIDER_ENVIRONMENT_BINDING=PASS
+NO_HIDDEN_PROVIDER_LOOKUP=PASS
+```
+
+## 11. Supported acceptance corpus
 
 The later bounded corpus must include, for both perspectives where meaningful:
 
@@ -267,7 +425,7 @@ fresh-process repeated runs
 
 No real third-party card-data rows may be added to Ignis. Existing OCGForge native fixtures may remain owned and executed by OCGForge; any cross-repository use must be an explicit external fixture/provenance input and must not be copied into this repository.
 
-## 11. Failure and diagnostic model
+## 12. Failure and diagnostic model
 
 The comparator returns exactly one structured outcome:
 
@@ -279,7 +437,7 @@ FAIL(schema/field/visibility/order/provenance/determinism)
 
 It must fail closed for missing native fields, unsupported enums, ambiguous mappings, cardinality mismatches, visibility mismatches, Printed/Current mismatches, locator collisions, relationship/chain mismatches, event-index mismatches, and unproven scenario pairing. Diagnostics identify a public-safe field path and stable error code; they must not reveal hidden values.
 
-## 12. Exact later implementation file scope
+## 13. Exact later implementation file scope
 
 This audit creates no implementation files. After separate authorization, the narrowest expected Ignis-side test scope is:
 
@@ -298,7 +456,7 @@ tests/observation/i6c6_native_oracle_test.hpp
 
 No production Ignis file, OCGForge production file, third-party pin, database, or real-data fixture is authorized by this plan.
 
-## 13. Staged implementation plan
+## 14. Staged implementation plan
 
 ### Task I6C6-1: Freeze comparison contract and RED cases
 
@@ -368,7 +526,7 @@ No production Ignis file, OCGForge production file, third-party pin, database, o
 - [ ] Require hosted CI with native and Ignis heads explicitly recorded.
 - [ ] Set `I6C6_FINAL` only by independent review; this plan never authorizes implementation or final acceptance.
 
-## 14. Acceptance gates for the future implementation
+## 15. Acceptance gates for the future implementation
 
 ```text
 NATIVE_ORACLE_HEAD_MATCH=PASS
@@ -378,7 +536,11 @@ CARD_SCRIPT_BEHAVIOR_BINDING=PASS_OR_SCRIPT_DEPENDENCY_NONE=PASS
 PLAYER_TO_ACT_ABSENT_OR_I6D_BLOCKED=PASS
 TYPED_FIELD_COMPARISON=PASS
 NATIVE_SAFE_STATE_BYTES=PASS
-PRINTED_SOURCE_PROVENANCE=PASS
+PRINTED_SOURCE_ARTIFACT_BINDING=PASS
+PRINTED_COVERAGE_BINDING=PASS
+PRINTED_SEMANTIC_ROWS_BINDING=PASS
+PRINTED_PROVIDER_ENVIRONMENT_BINDING=PASS
+NO_HIDDEN_PROVIDER_LOOKUP=PASS
 PAIRED_WORLD_PRIVACY=PASS
 MISMATCH_DIAGNOSTICS_PUBLIC_SAFE=PASS
 FRESH_PROCESS_DETERMINISM=PASS
@@ -388,20 +550,22 @@ NO_I6D_OR_I7_AUTHORITY=PASS
 
 Any unproven bridge, field, or runtime difference remains a fail-closed blocker. I6C6 implementation is not authorized by this document.
 
-## 15. Current stop state
+## 16. Current stop state
 
 ```text
 I6C6_SOURCE_AUDIT=PASS
 OCGFORGE_NATIVE_ORACLE_PATH=PROVEN
 IGNIS_I6C5_SOURCE_PATH=PROVEN
-FIELD_MAPPING_COMPLETE=NO
+FIELD_MAPPING_COMPLETE=YES
 PRIVACY_MODEL_COMPLETE=YES
 DETERMINISM_MODEL_COMPLETE=YES
 IMPLEMENTATION_PLAN_COMPLETE=YES
-SAME_SCENARIO_REPLAY_BRIDGE=UNPROVEN
-CARD_SCRIPT_BEHAVIOR_BINDING=UNPROVEN
-PRINTED_SOURCE_BRIDGE=UNPROVEN
-I6C6_DESIGN_READY_FOR_INDEPENDENT_REVIEW=YES
+SAME_SCENARIO_REPLAY_BRIDGE=PROVEN_CONTRACT
+CARD_SCRIPT_BEHAVIOR_BINDING_CONTRACT=PROVEN
+PRINTED_SOURCE_BRIDGE=PROVEN_CONTRACT
+SAME_SCENARIO_REPLAY_EVIDENCE=UNPROVEN
+PRINTED_SOURCE_EVIDENCE=UNPROVEN
+I6C6_DESIGN_READY_FOR_FINAL_INDEPENDENT_REVIEW=YES
 I6C6_DESIGN_FINAL=NO
 I6C6_IMPLEMENTATION_AUTHORIZED=NO
 I6D_AUTHORIZED=NO
