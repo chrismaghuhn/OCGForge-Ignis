@@ -38,7 +38,7 @@ I6C6_IMPLEMENTATION_AUTHORIZED=NO
 
 The shape and field mapping are sufficiently identified for implementation planning. End-to-end equivalence is not yet proven because two source bridges remain unresolved:
 
-1. `SAME_SCENARIO_REPLAY_BRIDGE=UNPROVEN`: no accepted artifact currently binds one native `CoreHost` scenario to the exact Ignis message transcript and mirror history.
+1. `SAME_SCENARIO_REPLAY_BRIDGE=UNPROVEN`: no accepted artifact currently binds one native `CoreHost` scenario to the exact Ignis message transcript and mirror history, including relevant CardScripts behavior provenance.
 2. `PRINTED_SOURCE_BRIDGE=UNPROVEN`: I6C5 consumes an external provider artifact; no real OCGForge static-card rows may be copied into Ignis, and no test-time native-to-provider artifact handoff is currently frozen.
 
 These are design blockers, not permission to infer equality.
@@ -209,6 +209,13 @@ duel_flags
 seed words
 rules_bundle_id
 OCGForge semantic commit
+ocgforge_core_commit
+ocgforge_core_patchset_id
+ocgforge_core_patchset_sha256
+ocgforge_cardscripts_commit
+ignis_cardscripts_commit
+ocgforge_babelcdb_commit
+ignis_babelcdb_commit
 EDOPro/runtime provenance
 explicit fixture/deck configuration
 native setup transcript
@@ -224,10 +231,17 @@ The semantic comparison digest, if implemented, must cover only the normalized p
 | --- | --- | --- |
 | OCGForge core `9a0c558…` vs EDOPro core `46779fbe…` | Expected provenance difference | Never compare internal state; require behavioral public-frame evidence |
 | OCGForge API-hardening patchset | Requires source/provenance binding | Native oracle manifest must include the patchset; unsupported API differences fail closed |
-| CardScripts/BabelCDB provenance | Requires explicit provider bridge | Values may compare only when the Printed provider artifact is bound to the native semantic rows; no data is copied into Ignis |
+| CardScripts provenance (`ocgforge=f337c870…`, `ignis=00a828b7…`) | Requires scenario behavior binding | Different scripts may change legal transitions, queries, or emitted messages; script-dependent scenarios require `CARD_SCRIPT_BEHAVIOR_BINDING=PASS`, while only an explicitly proven `SCRIPT_DEPENDENCY=NONE` scenario may bypass this gate |
+| BabelCDB/database provenance (`ocgforge=89ad6837…`, `ignis=2142b4b4…`) | Requires Printed source bridge | Exact Printed values require an externally bound provider artifact and semantic-row/coverage evidence; no database data is copied into Ignis |
 | OCGForge query-location builder vs EDOPro wire/mirror | Requires scenario corpus | Compare resulting public semantics, not query payload shape |
 | Native event projector vs Ignis ledger | Requires event corpus | Same accepted message subset and event-index rules must be proven; unsupported families remain out of corpus |
 | Native `player_to_act`/decision context | Outside I6C6 | State-only vectors require absent `player_to_act`; I6D owns decision-boundary values |
+
+CardScripts and BabelCDB are independent provenance dimensions. A matching
+Printed artifact does not prove matching script behavior, and matching
+CardScripts behavior does not prove matching Printed rows. The scenario
+manifest must carry both dimensions and the comparator must fail closed when a
+script-dependent transition is not behaviorally bound.
 
 ## 10. Supported acceptance corpus
 
@@ -321,8 +335,10 @@ No production Ignis file, OCGForge production file, third-party pin, database, o
 - No Ignis production changes
 
 - [ ] Define a scenario manifest binding native setup, Ignis transcript, perspective, seed, duel flags, and provenance.
+- [ ] Include separate `ocgforge_cardscripts_commit` and `ignis_cardscripts_commit` fields, plus the independent OCGForge/Ignis BabelCDB identities.
 - [ ] Build native `PlayerObservation` with `CoreHost` and `ObservationBuildConfig`.
 - [ ] Replay only the explicitly paired supported transcript into `PerspectiveStateMirrorV1`.
+- [ ] Classify each scenario as script-dependent with a passing `CARD_SCRIPT_BEHAVIOR_BINDING`, or as `SCRIPT_DEPENDENCY=NONE` with an explicit proof that no CardScripts behavior can affect the transcript.
 - [ ] Reject any scenario whose native and Ignis source histories cannot be bound without inference.
 - [ ] Provision Printed rows externally or use an approved synthetic native catalog; do not add real rows to Ignis.
 
@@ -358,6 +374,7 @@ No production Ignis file, OCGForge production file, third-party pin, database, o
 NATIVE_ORACLE_HEAD_MATCH=PASS
 IGNIS_I6C5_HEAD_MATCH=PASS
 SCENARIO_PROVENANCE_BINDING=PASS
+CARD_SCRIPT_BEHAVIOR_BINDING=PASS_OR_SCRIPT_DEPENDENCY_NONE=PASS
 PLAYER_TO_ACT_ABSENT_OR_I6D_BLOCKED=PASS
 TYPED_FIELD_COMPARISON=PASS
 NATIVE_SAFE_STATE_BYTES=PASS
@@ -382,6 +399,7 @@ PRIVACY_MODEL_COMPLETE=YES
 DETERMINISM_MODEL_COMPLETE=YES
 IMPLEMENTATION_PLAN_COMPLETE=YES
 SAME_SCENARIO_REPLAY_BRIDGE=UNPROVEN
+CARD_SCRIPT_BEHAVIOR_BINDING=UNPROVEN
 PRINTED_SOURCE_BRIDGE=UNPROVEN
 I6C6_DESIGN_READY_FOR_INDEPENDENT_REVIEW=YES
 I6C6_DESIGN_FINAL=NO
