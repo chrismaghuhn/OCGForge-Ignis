@@ -723,9 +723,9 @@ The provider implementation status above comes from a separate later
 authorization and acceptance decision; it is not backdated into this contract
 or its original freeze decision.
 
-## 17. Future implementation gates
+## 17. Implementation acceptance gates
 
-A later implementation task MUST prove at least:
+The later implementation task was required to prove at least:
 
 ```text
 manifest contract validation
@@ -743,10 +743,21 @@ fresh-process semantic determinism
 paired-world privacy
 ```
 
-The implementation remains blocked until the separate third-party/derived-data
-governance decision is complete.
+These gates have since been satisfied and independently accepted for the
+generic provider-code-only implementation. They remain regression obligations
+for future changes.
+
+The freeze-time status was:
+
+```text
+THIRD_PARTY_GOVERNANCE_CLEARED=NO
+PRINTED_PROVIDER_IMPLEMENTATION_READY=NO
+```
 
 ```text
 PRINTED_PROVIDER_TECHNICAL_CONTRACT_READY=YES
-PRINTED_PROVIDER_IMPLEMENTATION_READY=NO
+PRINTED_PROVIDER_GOVERNANCE_READY=YES
+PRINTED_PROVIDER_IMPLEMENTATION_AUTHORIZED=YES
+PRINTED_PROVIDER_IMPLEMENTATION_READY=YES
+PRINTED_PROVIDER_IMPLEMENTATION=FINAL_PASS
 ```
