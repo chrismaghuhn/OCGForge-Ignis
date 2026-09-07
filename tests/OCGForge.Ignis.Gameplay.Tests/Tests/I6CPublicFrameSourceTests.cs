@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.Collections;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using OCGForge.Ignis.Client;
 using OCGForge.Ignis.Gameplay;
 using OCGForge.Ignis.Protocol;
@@ -740,6 +742,27 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C4 transport chunking", AssertI6C4TransportChunking);
         Run("I6C5 outer public frame source", AssertI6C5OuterPublicFrameSource);
         Run("I6C5 run configuration immutability", AssertI6C5RunConfigurationImmutability);
+        Run("I6C5 printed provider API", AssertI6C5PrintedProviderApi);
+        Run("I6C5 printed provider contract", AssertI6C5PrintedProviderContract);
+    }
+
+    private static void AssertI6C5PrintedProviderApi()
+    {
+        Type? providerType = typeof(PerspectiveSafePublicFrameSourceV1)
+            .Assembly
+            .GetType("OCGForge.Ignis.Gameplay.PerspectiveSafePrintedProviderV1");
+        NotNull(providerType);
+    }
+
+    private static void AssertI6C5PrintedProviderContract()
+    {
+        Run("synthetic semantic mappings", AssertPrintedProviderMappings);
+        Run("hash and digest validation", AssertPrintedProviderDigests);
+        Run("coverage and malformed rows fail closed", AssertPrintedProviderFailures);
+        Run("environment compatibility fails closed", AssertPrintedProviderEnvironment);
+        Run("unknown identities have no reverse lookup surface", AssertPrintedProviderPrivacySurface);
+        Run("provider supplies Printed frame properties", AssertPrintedProviderFrameIntegration);
+        Run("session provider binding is immutable", AssertPrintedProviderSessionBinding);
     }
 
     private static void AssertI6C5RunConfigurationImmutability()
@@ -2533,6 +2556,488 @@ internal static class I6CPublicFrameSourceTests
             context.OpponentDeck.Known,
             string.Join(",", context.OpponentDeck.MainDeck),
             string.Join(",", context.OpponentDeck.ExtraDeck));
+
+    private static void AssertPrintedProviderMappings()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1001, 0x00000001, 4, 1, 2, 1600, 1200, 0, 0, 0),
+            new(1002, 0x00800001, 7, 2, 4, 2500, 2000, 0, 0, 0),
+            new(1003, 0x04000001, 3, 4, 8, 1800, 0, 0, 0, 0x021),
+            new(1004, 0x01000001, 4, 8, 16, 1700, 1500, 2, 8, 0),
+            new(1005, 0x05800001, 6, 16, 32, 0, 0, 1, 9, 0x100)
+        };
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderV1 provider =
+            CreatePrintedProvider(rows, artifact);
+
+        PerspectiveSafeCardPropertiesV1 normal =
+            GetPrinted(provider, 1001);
+        Equal((uint)0x00000001, normal.Type!.Value);
+        Equal((uint)4, normal.Level!.Value);
+        Equal((int)1600, normal.Attack!.Value);
+        Equal((int)1200, normal.Defense!.Value);
+        Null(normal.Rank);
+        Equal(0, normal.LinkMarkers.Count);
+
+        PerspectiveSafeCardPropertiesV1 xyz = GetPrinted(provider, 1002);
+        Equal((uint)7, xyz.Rank!.Value);
+        Null(xyz.Level);
+        Equal((int)2000, xyz.Defense!.Value);
+
+        PerspectiveSafeCardPropertiesV1 link = GetPrinted(provider, 1003);
+        Null(link.Defense);
+        Equal((uint)3, link.LinkRating!.Value);
+        Equal(2, link.LinkMarkers.Count);
+        Equal(PerspectiveSafeLinkMarkerV1.BottomLeft, link.LinkMarkers[0]);
+        Equal(PerspectiveSafeLinkMarkerV1.Right, link.LinkMarkers[1]);
+
+        PerspectiveSafeCardPropertiesV1 pendulum = GetPrinted(provider, 1004);
+        Equal((uint)2, pendulum.LeftScale!.Value);
+        Equal((uint)8, pendulum.RightScale!.Value);
+        Equal((uint)4, pendulum.Level!.Value);
+
+        PerspectiveSafeCardPropertiesV1 xyzLink = GetPrinted(provider, 1005);
+        Equal((uint)6, xyzLink.Rank!.Value);
+        Equal((uint)6, xyzLink.LinkRating!.Value);
+        Null(xyzLink.Level);
+        Null(xyzLink.Defense);
+        Equal((uint)1, xyzLink.LeftScale!.Value);
+        Equal((uint)9, xyzLink.RightScale!.Value);
+        Equal(PerspectiveSafeLinkMarkerV1.TopRight, xyzLink.LinkMarkers[0]);
+    }
+
+    private static void AssertPrintedProviderDigests()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1101, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderManifestV1 validManifest =
+            CreatePrintedManifest(rows, artifact);
+        PerspectiveSafePrintedProviderResultV1 valid =
+            PerspectiveSafePrintedProviderV1.TryCreate(artifact, validManifest);
+        True(valid.IsSuccess, valid.Error?.ToString() ?? "valid provider rejected");
+
+        byte[] changedArtifact = artifact.ToArray();
+        changedArtifact[^2] = (byte)'1';
+        PerspectiveSafePrintedProviderResultV1 rawMismatch =
+            PerspectiveSafePrintedProviderV1.TryCreate(changedArtifact, validManifest);
+        False(rawMismatch.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.InvalidArtifactHash,
+            rawMismatch.Error!.Value.Code);
+
+        PerspectiveSafePrintedProviderManifestV1 semanticMismatch =
+            CreatePrintedManifest(
+                rows,
+                artifact,
+                semanticRowsDigestSha256: new string('0', 64));
+        PerspectiveSafePrintedProviderResultV1 semanticResult =
+            PerspectiveSafePrintedProviderV1.TryCreate(artifact, semanticMismatch);
+        False(semanticResult.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.SemanticDigestMismatch,
+            semanticResult.Error!.Value.Code);
+
+        PerspectiveSafePrintedProviderManifestV1 coverageMismatch =
+            CreatePrintedManifest(
+                rows,
+                artifact,
+                coverageDigestSha256: new string('1', 64));
+        PerspectiveSafePrintedProviderResultV1 coverageResult =
+            PerspectiveSafePrintedProviderV1.TryCreate(artifact, coverageMismatch);
+        False(coverageResult.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.InvalidCoverage,
+            coverageResult.Error!.Value.Code);
+    }
+
+    private static void AssertPrintedProviderFailures()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1201, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0),
+            new(1202, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        byte[] validArtifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderManifestV1 validManifest =
+            CreatePrintedManifest(rows, validArtifact);
+
+        byte[] unsortedArtifact = CreatePrintedArtifact(rows[1], rows[0]);
+        PerspectiveSafePrintedProviderResultV1 unsorted =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                unsortedArtifact,
+                CreatePrintedManifest(rows, unsortedArtifact));
+        False(unsorted.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.MalformedArtifact,
+            unsorted.Error!.Value.Code);
+
+        SyntheticPrintedRow invalidLink =
+            new(1203, 0x04000001, 3, 1, 2, 100, 1, 0, 0, 1);
+        byte[] invalidLinkArtifact = CreatePrintedArtifact(invalidLink);
+        PerspectiveSafePrintedProviderResultV1 invalidLinkResult =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                invalidLinkArtifact,
+                CreatePrintedManifest(new[] { invalidLink }, invalidLinkArtifact));
+        False(invalidLinkResult.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.MalformedArtifact,
+            invalidLinkResult.Error!.Value.Code);
+
+        PerspectiveSafePrintedProviderResultV1 missingArtifact =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                ReadOnlyMemory<byte>.Empty,
+                validManifest);
+        False(missingArtifact.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.InvalidArtifactHash,
+            missingArtifact.Error!.Value.Code);
+
+        PerspectiveSafePrintedProviderManifestV1 uncoveredManifest =
+            CreatePrintedManifest(
+                rows,
+                validArtifact,
+                coveragePasscodes: new uint[] { 1201 });
+        PerspectiveSafePrintedProviderResultV1 uncovered =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                validArtifact,
+                uncoveredManifest);
+        False(uncovered.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.InvalidCoverage,
+            uncovered.Error!.Value.Code);
+    }
+
+    private static void AssertPrintedProviderEnvironment()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1301, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderManifestV1 manifest =
+            CreatePrintedManifest(
+                rows,
+                artifact,
+                ocgForgeSemanticCommit: new string('a', 40));
+        PerspectiveSafePrintedProviderResultV1 result =
+            PerspectiveSafePrintedProviderV1.TryCreate(artifact, manifest);
+        False(result.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.EnvironmentMismatch,
+            result.Error!.Value.Code);
+    }
+
+    private static void AssertPrintedProviderPrivacySurface()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1401, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderResultV1 result =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                artifact,
+                CreatePrintedManifest(rows, artifact));
+        True(result.IsSuccess, result.Error?.ToString() ?? "provider rejected");
+
+        MethodInfo[] publicMethods = typeof(PerspectiveSafePrintedProviderV1)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+        False(publicMethods.Any(method =>
+            method.Name.Contains("Reverse", StringComparison.OrdinalIgnoreCase) ||
+            method.Name.Contains("Find", StringComparison.OrdinalIgnoreCase) ||
+            method.Name.Contains("Enumerate", StringComparison.OrdinalIgnoreCase) ||
+            method.Name.Contains("Possible", StringComparison.OrdinalIgnoreCase)));
+
+        PerspectiveSafePrintedLookupResultV1 unknown =
+            result.Provider!.TryGetPrinted(999999);
+        False(unknown.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.MissingCoverage,
+            unknown.Error!.Value.Code);
+        PerspectiveSafePrintedLookupResultV1 zero =
+            result.Provider.TryGetPrinted(0);
+        False(zero.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.InvalidPasscode,
+            zero.Error!.Value.Code);
+    }
+
+    private static void AssertPrintedProviderFrameIntegration()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1451, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderV1 provider =
+            CreatePrintedProvider(rows, artifact);
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0, deckCount0: 2, extraCount0: 0, deckCount1: 2, extraCount1: 0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ApplyI6C4Success(
+            mirror,
+            decoder,
+            MoveMessage(
+                1451,
+                empty,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05),
+                0));
+        ApplyI6C4Success(mirror, decoder, new byte[] { 40, 0 });
+
+        PerspectiveSafeFrameSourceResultV1 result =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                CreateValidI6C5MatchContext(),
+                provider);
+        True(result.IsSuccess, result.Error?.ToString() ?? "provider frame rejected");
+        PerspectiveSafeEntityV1 entity = result.Frame!.Entities.Single(
+            value => value.Passcode == 1451);
+        NotNull(entity.Printed);
+        Equal((int)100, entity.Printed!.Attack!.Value);
+        Equal((int)200, entity.Printed.Defense!.Value);
+        Equal((uint)4, entity.Printed.Level!.Value);
+
+        SyntheticPrintedRow[] uncoveredRows =
+        {
+            new(1452, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        PerspectiveSafePrintedProviderV1 uncoveredProvider =
+            CreatePrintedProvider(
+                uncoveredRows,
+                CreatePrintedArtifact(uncoveredRows));
+        PerspectiveSafeFrameSourceResultV1 uncoveredResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                CreateValidI6C5MatchContext(),
+                uncoveredProvider);
+        False(uncoveredResult.IsSuccess);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            uncoveredResult.Error!.Value.Code);
+    }
+
+    private static void AssertPrintedProviderSessionBinding()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1501, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderResultV1 providerResult =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                artifact,
+                CreatePrintedManifest(rows, artifact));
+        True(providerResult.IsSuccess, providerResult.Error?.ToString() ?? "provider rejected");
+
+        FieldInfo? providerField = typeof(GameplayMirrorSessionV1)
+            .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+            .SingleOrDefault(field =>
+                field.FieldType == typeof(PerspectiveSafePrintedProviderV1));
+        NotNull(providerField);
+        True(providerField!.IsInitOnly);
+
+        MethodInfo frameMethod = typeof(GameplayMirrorSessionV1)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Single(method => method.Name == "TryCreateI6C5Frame");
+        Equal(0, frameMethod.GetParameters().Length);
+
+        (GameplaySessionV1 transportSession,
+            PerspectiveStateMirrorV1 mirror,
+            GameplayHandoffConsumerV1 consumer,
+            _) = CreateStartedSession(0);
+        GameplayMirrorSessionV1 session = new(
+            transportSession,
+            mirror,
+            CreateValidI6C5MatchContext(),
+            providerResult.Provider);
+        try
+        {
+            ApplyI6C4Success(
+                mirror,
+                CreateEstablishedDecoder(0),
+                MoveMessage(
+                    1501,
+                    new ModernLocInfoV1(0, 0, 0, 0),
+                    new ModernLocInfoV1(0, 0x04, 0, 0x05),
+                    0));
+            ApplyI6C4Success(
+                mirror,
+                CreateEstablishedDecoder(0),
+                new byte[] { 40, 0 });
+            PerspectiveSafeFrameSourceResultV1 frame =
+                session.TryCreateI6C5Frame();
+            True(frame.IsSuccess, frame.Error?.ToString() ?? "bound provider frame rejected");
+            PerspectiveSafeEntityV1 entity = frame.Frame!.Entities.Single(
+                value => value.Passcode == 1501);
+            NotNull(entity.Printed);
+        }
+        finally
+        {
+            DisposeI6C5Session(session, consumer);
+        }
+    }
+
+    private static PerspectiveSafeCardPropertiesV1 GetPrinted(
+        PerspectiveSafePrintedProviderV1 provider,
+        uint code)
+    {
+        PerspectiveSafePrintedLookupResultV1 result =
+            provider.TryGetPrinted(code);
+        True(result.IsSuccess, result.Error?.ToString() ?? "printed lookup failed");
+        NotNull(result.Properties);
+        return result.Properties!;
+    }
+
+    private static PerspectiveSafePrintedProviderV1 CreatePrintedProvider(
+        IReadOnlyList<SyntheticPrintedRow> rows,
+        byte[] artifact)
+    {
+        PerspectiveSafePrintedProviderResultV1 result =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                artifact,
+                CreatePrintedManifest(rows, artifact));
+        True(result.IsSuccess, result.Error?.ToString() ?? "provider rejected");
+        return result.Provider!;
+    }
+
+    private static PerspectiveSafePrintedProviderManifestV1 CreatePrintedManifest(
+        IReadOnlyList<SyntheticPrintedRow> rows,
+        byte[] artifact,
+        IReadOnlyList<uint>? coveragePasscodes = null,
+        string? coverageDigestSha256 = null,
+        string? semanticRowsDigestSha256 = null,
+        string? ocgForgeSemanticCommit = null)
+    {
+        IReadOnlyList<uint> coverage = coveragePasscodes ??
+            rows.Select(row => row.Code).ToArray();
+        return new PerspectiveSafePrintedProviderManifestV1(
+            manifestContractId: "ocgforge-ignis.i6c5.printed-manifest.v1",
+            providerContractId: "ocgforge-ignis.i6c5.printed-provider.v1",
+            semanticRowsContractId: "ocgforge-ignis.i6c5.printed-semantic-rows.v1",
+            fieldMappingContractId: "ocgforge-ignis.i6c5.printed-field-mapping.v1",
+            coverageContractId: "ocgforge-ignis.i6c5.printed-coverage.v1",
+            coverageDigestSha256: coverageDigestSha256 ?? TestCoverageDigest(coverage),
+            semanticRowsDigestSha256: semanticRowsDigestSha256 ?? TestSemanticDigest(rows),
+            ocgForgeSemanticCommit: ocgForgeSemanticCommit ??
+                "f929de0b4d4157327dba003067d2e21e42f7ad75",
+            rulesBundleId: "3adfe6b4cfe2c2805e50b389fc0eb4e70a3b0b6107436614d328fddc865e585f",
+            babelCdbRepository: "https://github.com/ProjectIgnis/BabelCDB.git",
+            babelCdbCommit: new string('a', 40),
+            babelCdbCheckoutSha256: new string('b', 64),
+            cardsCdbSha256: new string('c', 64),
+            transformationSourceRepository: "https://github.com/chrismaghuhn/OCGForge.git",
+            transformationSourceCommit: new string('d', 40),
+            transformationSourcePath: "tools/prepare_card_data.py",
+            transformationFileSha256: new string('e', 64),
+            sourceArtifactFormatId: "ocgforge-ignis.i6c5.printed-source-artifact.pipe12.v1",
+            sourceArtifactSha256: TestHash(artifact),
+            coveragePasscodes: coverage);
+    }
+
+    private static byte[] CreatePrintedArtifact(
+        params SyntheticPrintedRow[] rows)
+    {
+        StringBuilder builder = new();
+        builder.Append(
+                "# code|alias|setcode|type|level|attribute|race|atk|def|lscale|rscale|link_marker")
+            .Append('\n');
+        foreach (SyntheticPrintedRow row in rows)
+        {
+            builder.Append(row.Code).Append('|')
+                .Append(0).Append('|')
+                .Append(0).Append('|')
+                .Append(row.Type).Append('|')
+                .Append(row.Level).Append('|')
+                .Append(row.Attribute).Append('|')
+                .Append(row.Race).Append('|')
+                .Append(row.Attack).Append('|')
+                .Append(row.Defense).Append('|')
+                .Append(row.LeftScale).Append('|')
+                .Append(row.RightScale).Append('|')
+                .Append(row.LinkMarker)
+                .Append('\n');
+        }
+
+        return Encoding.UTF8.GetBytes(builder.ToString());
+    }
+
+    private static string TestHash(ReadOnlySpan<byte> bytes) =>
+        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+    private static string TestCoverageDigest(IReadOnlyList<uint> coverage)
+    {
+        using MemoryStream stream = new();
+        stream.Write(Encoding.ASCII.GetBytes(
+            "OCGFORGE-IGNIS-I6C5-PRINTED-COVERAGE-V1\0"));
+        WriteTestUInt32(stream, checked((uint)coverage.Count));
+        foreach (uint code in coverage)
+        {
+            WriteTestUInt32(stream, code);
+        }
+
+        return TestHash(stream.ToArray());
+    }
+
+    private static string TestSemanticDigest(
+        IReadOnlyList<SyntheticPrintedRow> rows)
+    {
+        using MemoryStream stream = new();
+        stream.Write(Encoding.ASCII.GetBytes(
+            "OCGFORGE-IGNIS-I6C5-PRINTED-ROWS-V1\0"));
+        WriteTestUInt32(stream, checked((uint)rows.Count));
+        foreach (SyntheticPrintedRow row in rows)
+        {
+            WriteTestUInt32(stream, row.Code);
+            WriteTestUInt32(stream, row.Type);
+            WriteTestUInt32(stream, row.Level);
+            WriteTestUInt32(stream, row.Attribute);
+            WriteTestUInt64(stream, row.Race);
+            WriteTestInt32(stream, row.Attack);
+            WriteTestInt32(stream, row.Defense);
+            WriteTestUInt32(stream, row.LeftScale);
+            WriteTestUInt32(stream, row.RightScale);
+            WriteTestUInt32(stream, row.LinkMarker);
+        }
+
+        return TestHash(stream.ToArray());
+    }
+
+    private static void WriteTestUInt32(Stream stream, uint value)
+    {
+        Span<byte> bytes = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(bytes, value);
+        stream.Write(bytes);
+    }
+
+    private static void WriteTestUInt64(Stream stream, ulong value)
+    {
+        Span<byte> bytes = stackalloc byte[8];
+        BinaryPrimitives.WriteUInt64BigEndian(bytes, value);
+        stream.Write(bytes);
+    }
+
+    private static void WriteTestInt32(Stream stream, int value)
+    {
+        Span<byte> bytes = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32BigEndian(bytes, value);
+        stream.Write(bytes);
+    }
+
+    private readonly record struct SyntheticPrintedRow(
+        uint Code,
+        uint Type,
+        uint Level,
+        uint Attribute,
+        ulong Race,
+        int Attack,
+        int Defense,
+        uint LeftScale,
+        uint RightScale,
+        uint LinkMarker);
 
     private static byte[] ExtraQuery(uint code, byte owner, uint position) =>
         Join(

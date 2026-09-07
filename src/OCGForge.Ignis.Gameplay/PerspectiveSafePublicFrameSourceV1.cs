@@ -112,7 +112,13 @@ public static class PerspectiveSafePublicFrameSourceV1
     /// </summary>
     public static PerspectiveSafeFrameSourceResultV1 TryCreateI6C5(
         PerspectiveStateMirrorV1? mirror,
-        PerspectiveSafeMatchContextV1? matchContext)
+        PerspectiveSafeMatchContextV1? matchContext) =>
+        TryCreateI6C5(mirror, matchContext, null);
+
+    public static PerspectiveSafeFrameSourceResultV1 TryCreateI6C5(
+        PerspectiveStateMirrorV1? mirror,
+        PerspectiveSafeMatchContextV1? matchContext,
+        PerspectiveSafePrintedProviderV1? printedProvider)
     {
         if (mirror is null)
         {
@@ -154,7 +160,21 @@ public static class PerspectiveSafePublicFrameSourceV1
         }
 
         PerspectiveSafeI6C3StateSourceV1 state = stateResult.Source!;
-        if (!TryValidateI6C5State(state, out error))
+        if (!TryValidateI6C5State(
+                state,
+                printedProvider is not null,
+                out error))
+        {
+            return PerspectiveSafeFrameSourceResultV1.Failure(error);
+        }
+
+        IReadOnlyList<PerspectiveSafeEntityV1> entities = state.Entities;
+        if (printedProvider is not null &&
+            !TryAttachPrintedProperties(
+                state.Entities,
+                printedProvider,
+                out entities,
+                out error))
         {
             return PerspectiveSafeFrameSourceResultV1.Failure(error);
         }
@@ -174,7 +194,7 @@ public static class PerspectiveSafePublicFrameSourceV1
         PerspectiveSafeFrameSourceInputV1 input = new(
             globals,
             state.Zones,
-            state.Entities,
+            entities,
             state.Relationships,
             state.Chain,
             mirror.VisibleEvents,
@@ -341,6 +361,7 @@ public static class PerspectiveSafePublicFrameSourceV1
 
     private static bool TryValidateI6C5State(
         PerspectiveSafeI6C3StateSourceV1 source,
+        bool printedSourceSupplied,
         out PerspectiveSafeFrameSourceErrorV1 error)
     {
         bool hasOverlay = source.Entities.Any(
@@ -372,17 +393,21 @@ public static class PerspectiveSafePublicFrameSourceV1
                 continue;
             }
 
-            bool suppliedByI6C5OrLaterSource = status.Constituent is
-                PerspectiveSafeI6C2ConstituentV1.DuelFlags or
-                PerspectiveSafeI6C2ConstituentV1.PlayerToAct or
-                PerspectiveSafeI6C2ConstituentV1.ChainLength or
-                PerspectiveSafeI6C2ConstituentV1.Relationships or
-                PerspectiveSafeI6C2ConstituentV1.Chain or
-                PerspectiveSafeI6C2ConstituentV1.VisibleEvents or
-                PerspectiveSafeI6C2ConstituentV1.EventIndex or
-                PerspectiveSafeI6C2ConstituentV1.MatchContext or
-                PerspectiveSafeI6C2ConstituentV1.SpellTrapLayout or
-                PerspectiveSafeI6C2ConstituentV1.OverlayZone;
+            bool suppliedByI6C5OrLaterSource =
+                status.Constituent is
+                    PerspectiveSafeI6C2ConstituentV1.DuelFlags or
+                    PerspectiveSafeI6C2ConstituentV1.PlayerToAct or
+                    PerspectiveSafeI6C2ConstituentV1.ChainLength or
+                    PerspectiveSafeI6C2ConstituentV1.Relationships or
+                    PerspectiveSafeI6C2ConstituentV1.Chain or
+                    PerspectiveSafeI6C2ConstituentV1.VisibleEvents or
+                    PerspectiveSafeI6C2ConstituentV1.EventIndex or
+                    PerspectiveSafeI6C2ConstituentV1.MatchContext or
+                    PerspectiveSafeI6C2ConstituentV1.SpellTrapLayout or
+                    PerspectiveSafeI6C2ConstituentV1.OverlayZone ||
+                (printedSourceSupplied &&
+                 status.Constituent ==
+                     PerspectiveSafeI6C2ConstituentV1.EntityPrintedProperties);
             bool unusedOptionalConstituent =
                 (status.Constituent ==
                      PerspectiveSafeI6C2ConstituentV1.EntityPrintedProperties &&
@@ -469,6 +494,62 @@ public static class PerspectiveSafePublicFrameSourceV1
             }
         }
 
+        error = default;
+        return true;
+    }
+
+    private static bool TryAttachPrintedProperties(
+        IReadOnlyList<PerspectiveSafeEntityV1> source,
+        PerspectiveSafePrintedProviderV1 provider,
+        out IReadOnlyList<PerspectiveSafeEntityV1> entities,
+        out PerspectiveSafeFrameSourceErrorV1 error)
+    {
+        List<PerspectiveSafeEntityV1> result = new(source.Count);
+        foreach (PerspectiveSafeEntityV1 entity in source)
+        {
+            if (!entity.IdentityKnown)
+            {
+                result.Add(entity);
+                continue;
+            }
+
+            if (!entity.Passcode.HasValue || entity.Passcode.Value == 0)
+            {
+                entities = Array.Empty<PerspectiveSafeEntityV1>();
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    PerspectiveSafeSourceSectionV1.Entities);
+                return false;
+            }
+
+            PerspectiveSafePrintedLookupResultV1 lookup =
+                provider.TryGetPrinted(entity.Passcode.Value);
+            if (!lookup.IsSuccess || lookup.Properties is null)
+            {
+                entities = Array.Empty<PerspectiveSafeEntityV1>();
+                error = Error(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    PerspectiveSafeSourceSectionV1.Entities);
+                return false;
+            }
+
+            result.Add(new PerspectiveSafeEntityV1(
+                entity.Locator,
+                entity.IdentityKnown,
+                entity.Passcode,
+                entity.Owner,
+                entity.Controller,
+                entity.Zone,
+                entity.Sequence,
+                entity.OverlaySequence,
+                entity.Position,
+                entity.FaceUp,
+                entity.FaceDown,
+                lookup.Properties,
+                entity.Current));
+        }
+
+        entities = result;
         error = default;
         return true;
     }
