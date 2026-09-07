@@ -889,6 +889,95 @@ internal static class I6CPublicFrameSourceTests
         True(movedDeckCard.CardCode.Provenance ==
              MirrorProvenanceV1.PublicProtocolFact);
 
+        (PerspectiveStateMirrorV1 bulkInsertMirror,
+            GameplayMessageDecoderV1 bulkInsertDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 2,
+                deckCount1: 0,
+                extraCount1: 0);
+        ApplyI6C4Success(
+            bulkInsertMirror,
+            bulkInsertDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(
+                    ExtraQuery(0xD300, 0, 0x08),
+                    ExtraQuery(0xD301, 1, 0x05))));
+        AddGraveCards(
+            bulkInsertMirror,
+            bulkInsertDecoder,
+            0,
+            0xD302,
+            0xD303);
+        MirrorApplyResult bulkInsertResult;
+        try
+        {
+            bulkInsertResult = bulkInsertMirror.Apply(
+                DecodeMessage(
+                    bulkInsertDecoder,
+                    SwapGraveDeckMessage(0, 1, 0x03)));
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException(
+                "multi-card Extra insertion escaped the structured apply path",
+                exception);
+        }
+
+        True(
+            bulkInsertResult.IsSuccess,
+            $"multi-card Extra insertion failed: {bulkInsertResult.Error}");
+        MirrorCardSnapshotV1[] bulkInsertCards =
+            bulkInsertMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(4, bulkInsertCards.Length);
+        Equal((uint)0xD300, bulkInsertCards[0].CardCode.Value);
+        Equal((uint)0xD302, bulkInsertCards[1].CardCode.Value);
+        Equal((uint)0xD303, bulkInsertCards[2].CardCode.Value);
+        Equal((uint)0xD301, bulkInsertCards[3].CardCode.Value);
+
+        (PerspectiveStateMirrorV1 interleavedMirror,
+            GameplayMessageDecoderV1 interleavedDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 2,
+                deckCount1: 0,
+                extraCount1: 0);
+        ApplyI6C4Success(
+            interleavedMirror,
+            interleavedDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(
+                    ExtraQuery(0xD400, 0, 0x08),
+                    ExtraQuery(0xD401, 1, 0x05))));
+        AddGraveCards(
+            interleavedMirror,
+            interleavedDecoder,
+            0,
+            0xD402,
+            0xD403,
+            0xD404);
+        ApplyI6C4Success(
+            interleavedMirror,
+            interleavedDecoder,
+            SwapGraveDeckMessage(0, 1, 0x05));
+        MirrorCardSnapshotV1[] interleavedCards =
+            interleavedMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(4, interleavedCards.Length);
+        Equal((uint)0xD400, interleavedCards[0].CardCode.Value);
+        Equal((uint)0xD402, interleavedCards[1].CardCode.Value);
+        Equal((uint)0xD404, interleavedCards[2].CardCode.Value);
+        Equal((uint)0xD401, interleavedCards[3].CardCode.Value);
+
         (PerspectiveStateMirrorV1 orderedMirror,
             GameplayMessageDecoderV1 orderedDecoder) =
             CreateMirror(

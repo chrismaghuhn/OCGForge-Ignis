@@ -434,6 +434,7 @@ public sealed class PerspectiveStateMirrorV1
             if (!ReindexPileForInsertion(
                     candidate,
                     current,
+                    1,
                     out GameplayErrorCode insertionError))
             {
                 return insertionError;
@@ -604,6 +605,8 @@ public sealed class PerspectiveStateMirrorV1
             .OrderBy(entity => entity.Address.Sequence)
             .ThenBy(entity => entity.Id.Ordinal)
             .ToArray();
+        Dictionary<uint, EntityState> oldGraveBySequence =
+            oldGraveEntities.ToDictionary(entity => entity.Address.Sequence);
         EntityState[] existingExtraEntities = candidate.Entities.Values
             .Where(entity => !entity.Address.IsOverlay &&
                              entity.Address.Controller == player &&
@@ -648,6 +651,7 @@ public sealed class PerspectiveStateMirrorV1
                     payload.ReportedExtraCount,
                     false,
                     0),
+                (uint)extraMoved,
                 out GameplayErrorCode insertionError))
         {
             return insertionError;
@@ -705,9 +709,9 @@ public sealed class PerspectiveStateMirrorV1
                 return GameplayErrorCode.ArithmeticFailure;
             }
 
-            EntityState? entity = oldGraveEntities.FirstOrDefault(
-                value => value.Address.Sequence == (uint)index);
-            if (entity is null)
+            if (!oldGraveBySequence.TryGetValue(
+                    (uint)index,
+                    out EntityState? entity))
             {
                 if (!TryCreateEntity(
                         candidate,
@@ -824,9 +828,15 @@ public sealed class PerspectiveStateMirrorV1
     private static bool ReindexPileForInsertion(
         MirrorState candidate,
         MirrorAddress inserted,
+        uint insertionCount,
         out GameplayErrorCode error)
     {
         error = GameplayErrorCode.None;
+        if (insertionCount == 0)
+        {
+            return true;
+        }
+
         EntityState[] shifted = candidate.Entities.Values
             .Where(entity => !entity.Address.IsOverlay &&
                              entity.Address.Controller == inserted.Controller &&
@@ -835,7 +845,8 @@ public sealed class PerspectiveStateMirrorV1
             .OrderByDescending(entity => entity.Address.Sequence)
             .ToArray();
 
-        if (shifted.Any(entity => entity.Address.Sequence == uint.MaxValue))
+        if (shifted.Any(entity =>
+                entity.Address.Sequence > uint.MaxValue - insertionCount))
         {
             error = GameplayErrorCode.ArithmeticFailure;
             return false;
@@ -851,7 +862,7 @@ public sealed class PerspectiveStateMirrorV1
             entity.Address = new MirrorAddress(
                 entity.Address.Controller,
                 entity.Address.Zone,
-                entity.Address.Sequence + 1,
+                entity.Address.Sequence + insertionCount,
                 false,
                 0);
             candidate.Entities.Add(entity.Address, entity);
