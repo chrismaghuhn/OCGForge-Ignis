@@ -574,6 +574,14 @@ internal static class I6C6ComparisonFixtures
             return false;
         }
 
+        if (entity.FaceUp && entity.FaceDown)
+        {
+            failure = FullFailure(
+                I6C6FullComparisonErrorCodeV1.InvalidInput,
+                $"entities[{sourceIndex}].face_flags");
+            return false;
+        }
+
         if (!entity.IdentityKnown &&
             (entity.Passcode.HasValue || entity.Printed is not null ||
              entity.Current is not null))
@@ -832,14 +840,6 @@ internal static class I6C6ComparisonFixtures
         }
 
         values.Sort(CompareRelationships);
-        if (HasDuplicateRelationship(values))
-        {
-            failure = FullFailure(
-                I6C6FullComparisonErrorCodeV1.DuplicateRelationship,
-                "relationships");
-            return false;
-        }
-
         normalized = values.ToArray();
         failure = default;
         return true;
@@ -881,14 +881,6 @@ internal static class I6C6ComparisonFixtures
         }
 
         values.Sort(CompareRelationships);
-        if (HasDuplicateRelationship(values))
-        {
-            failure = FullFailure(
-                I6C6FullComparisonErrorCodeV1.DuplicateRelationship,
-                "relationships");
-            return false;
-        }
-
         normalized = values.ToArray();
         failure = default;
         return true;
@@ -1067,7 +1059,6 @@ internal static class I6C6ComparisonFixtures
         }
 
         List<I6C6NormalizedVisibleEventV1> values = new(source.Count);
-        ulong? previousIndex = null;
         for (int index = 0; index < source.Count; index++)
         {
             PerspectiveSafeVisibleEventV1 visibleEvent = source[index];
@@ -1076,15 +1067,6 @@ internal static class I6C6ComparisonFixtures
                 failure = FullFailure(
                     I6C6FullComparisonErrorCodeV1.InvalidInput,
                     $"visible_events[{index}]");
-                return false;
-            }
-
-            if (previousIndex.HasValue &&
-                visibleEvent.EventIndex <= previousIndex.Value)
-            {
-                failure = FullFailure(
-                    I6C6FullComparisonErrorCodeV1.InvalidOrdering,
-                    $"visible_events[{index}].event_index");
                 return false;
             }
 
@@ -1126,7 +1108,15 @@ internal static class I6C6ComparisonFixtures
                 visibleEvent.WinReason,
                 visibleEvent.EffectDescription,
                 targets!));
-            previousIndex = visibleEvent.EventIndex;
+        }
+
+        values.Sort(CompareVisibleEvents);
+        if (HasDuplicateEventIndex(values))
+        {
+            failure = FullFailure(
+                I6C6FullComparisonErrorCodeV1.DuplicateEventIndex,
+                "visible_events.event_index");
+            return false;
         }
 
         normalized = values.ToArray();
@@ -1149,7 +1139,6 @@ internal static class I6C6ComparisonFixtures
         }
 
         List<I6C6NormalizedVisibleEventV1> values = new(source.Count);
-        ulong? previousIndex = null;
         for (int index = 0; index < source.Count; index++)
         {
             I6C6NativeVisibleEventV1 visibleEvent = source[index];
@@ -1158,15 +1147,6 @@ internal static class I6C6ComparisonFixtures
                 failure = FullFailure(
                     I6C6FullComparisonErrorCodeV1.InvalidInput,
                     $"visible_events[{index}]");
-                return false;
-            }
-
-            if (previousIndex.HasValue &&
-                visibleEvent.EventIndex <= previousIndex.Value)
-            {
-                failure = FullFailure(
-                    I6C6FullComparisonErrorCodeV1.InvalidOrdering,
-                    $"visible_events[{index}].event_index");
                 return false;
             }
 
@@ -1183,8 +1163,16 @@ internal static class I6C6ComparisonFixtures
                 return false;
             }
 
+            if (visibleEvent.Targets is null)
+            {
+                failure = FullFailure(
+                    I6C6FullComparisonErrorCodeV1.InvalidInput,
+                    $"visible_events[{index}].targets");
+                return false;
+            }
+
             if (!TryNormalizeLocators(
-                    visibleEvent.Targets ?? Array.Empty<string>(),
+                    visibleEvent.Targets,
                     $"visible_events[{index}].targets",
                     out string[]? targets,
                     out failure))
@@ -1208,7 +1196,15 @@ internal static class I6C6ComparisonFixtures
                 visibleEvent.WinReason,
                 visibleEvent.EffectDescription,
                 targets!));
-            previousIndex = visibleEvent.EventIndex;
+        }
+
+        values.Sort(CompareVisibleEvents);
+        if (HasDuplicateEventIndex(values))
+        {
+            failure = FullFailure(
+                I6C6FullComparisonErrorCodeV1.DuplicateEventIndex,
+                "visible_events.event_index");
+            return false;
         }
 
         normalized = values.ToArray();
@@ -1425,17 +1421,6 @@ internal static class I6C6ComparisonFixtures
         }
 
         values.Sort(StringComparer.Ordinal);
-        for (int index = 1; index < values.Count; index++)
-        {
-            if (string.Equals(values[index - 1], values[index], StringComparison.Ordinal))
-            {
-                failure = FullFailure(
-                    I6C6FullComparisonErrorCodeV1.DuplicateLocator,
-                    path);
-                return false;
-            }
-        }
-
         normalized = values.ToArray();
         failure = default;
         return true;
@@ -2156,6 +2141,25 @@ internal static class I6C6ComparisonFixtures
         return result != 0 ? result : left.Count.CompareTo(right.Count);
     }
 
+    private static int CompareVisibleEvents(
+        I6C6NormalizedVisibleEventV1 left,
+        I6C6NormalizedVisibleEventV1 right) =>
+        left.EventIndex.CompareTo(right.EventIndex);
+
+    private static bool HasDuplicateEventIndex(
+        IReadOnlyList<I6C6NormalizedVisibleEventV1> values)
+    {
+        for (int index = 1; index < values.Count; index++)
+        {
+            if (values[index - 1].EventIndex == values[index].EventIndex)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool HasDuplicateEntityLocator(
         IReadOnlyList<I6C6NormalizedEntityV1> values)
     {
@@ -2165,20 +2169,6 @@ internal static class I6C6ComparisonFixtures
                     values[index - 1].Locator,
                     values[index].Locator,
                     StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool HasDuplicateRelationship(
-        IReadOnlyList<I6C6NormalizedRelationshipV1> values)
-    {
-        for (int index = 1; index < values.Count; index++)
-        {
-            if (values[index - 1] == values[index])
             {
                 return true;
             }
@@ -2386,7 +2376,7 @@ internal enum I6C6FullComparisonErrorCodeV1 : byte
     UnknownEnum = 3,
     InvalidLocator = 4,
     DuplicateLocator = 5,
-    DuplicateRelationship = 6,
+    DuplicateEventIndex = 6,
     HiddenIdentityData = 7,
     OptionalPresenceMismatch = 8,
     CardinalityMismatch = 9,

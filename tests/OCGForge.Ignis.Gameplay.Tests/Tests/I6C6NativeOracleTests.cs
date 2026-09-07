@@ -16,6 +16,7 @@ internal static class I6C6NativeOracleTests
         AssertUnprovenPairingFailsClosed();
         AssertFullFrameAndNativeRowBoundary();
         AssertFullBoundaryDiagnosticsArePublicSafe();
+        AssertFullCanonicalizationRules();
     }
 
     private static void AssertPlayerToActBoundary()
@@ -165,7 +166,88 @@ internal static class I6C6NativeOracleTests
             new[] { "7999", "8000", "12345678" });
     }
 
-    private static PerspectiveSafeFrameV1 CreateFullFrame()
+    private static void AssertFullCanonicalizationRules()
+    {
+        PerspectiveSafeFrameV1 frame = CreateFullFrame();
+        I6C6NativePublicSafeStateRowV1 native = CreateEquivalentNativeRow();
+
+        I6C6FullComparisonResultV1 reversedEvents =
+            I6C6ComparisonFixtures.CompareFrameToNative(
+                frame,
+                native with { VisibleEvents = native.VisibleEvents.Reverse().ToArray() });
+        True(reversedEvents.IsSuccess, "reversed events: " + reversedEvents.ErrorCode);
+
+        I6C6FullComparisonResultV1 duplicateEventIndex =
+            I6C6ComparisonFixtures.CompareFrameToNative(
+                frame,
+                native with
+                {
+                    VisibleEvents = new[]
+                    {
+                        native.VisibleEvents[0],
+                        native.VisibleEvents[0]
+                    }
+                });
+        Equal(I6C6FullComparisonErrorCodeV1.DuplicateEventIndex,
+            duplicateEventIndex.ErrorCode);
+        Equal("visible_events.event_index", duplicateEventIndex.PublicSafeFieldPath);
+
+        PerspectiveSafeFrameV1 duplicateRelationshipFrame =
+            CreateFullFrame(duplicateRelationship: true);
+        I6C6NativePublicSafeStateRowV1 duplicateRelationshipNative =
+            CreateEquivalentNativeRow(duplicateRelationship: true);
+        I6C6FullComparisonResultV1 duplicateRelationships =
+            I6C6ComparisonFixtures.CompareFrameToNative(
+                duplicateRelationshipFrame,
+                duplicateRelationshipNative);
+        True(duplicateRelationships.IsSuccess,
+            "duplicate relationships: " + duplicateRelationships.ErrorCode);
+
+        PerspectiveSafeFrameV1 duplicateTargetFrame =
+            CreateFullFrame(duplicateTargets: true);
+        I6C6NativePublicSafeStateRowV1 duplicateTargetNative =
+            CreateEquivalentNativeRow(duplicateTargets: true);
+        I6C6FullComparisonResultV1 duplicateTargets =
+            I6C6ComparisonFixtures.CompareFrameToNative(
+                duplicateTargetFrame,
+                duplicateTargetNative);
+        True(duplicateTargets.IsSuccess,
+            "duplicate targets: " + duplicateTargets.ErrorCode);
+
+        I6C6FullComparisonResultV1 missingTargets =
+            I6C6ComparisonFixtures.CompareFrameToNative(
+                frame,
+                native with
+                {
+                    VisibleEvents = new[]
+                    {
+                        native.VisibleEvents[0] with { Targets = null },
+                        native.VisibleEvents[1]
+                    }
+                });
+        Equal(I6C6FullComparisonErrorCodeV1.InvalidInput,
+            missingTargets.ErrorCode);
+        Equal("visible_events[0].targets", missingTargets.PublicSafeFieldPath);
+
+        I6C6FullComparisonResultV1 contradictoryFaceFlags =
+            I6C6ComparisonFixtures.CompareFrameToNative(
+                frame,
+                native with
+                {
+                    Entities = new[]
+                    {
+                        native.Entities[0] with { FaceUp = true, FaceDown = true },
+                        native.Entities[1]
+                    }
+                });
+        Equal(I6C6FullComparisonErrorCodeV1.InvalidInput,
+            contradictoryFaceFlags.ErrorCode);
+        Equal("entities[0].face_flags", contradictoryFaceFlags.PublicSafeFieldPath);
+    }
+
+    private static PerspectiveSafeFrameV1 CreateFullFrame(
+        bool duplicateRelationship = false,
+        bool duplicateTargets = false)
     {
         PerspectiveSafeCardPropertiesV1 properties =
             new(
@@ -249,13 +331,25 @@ internal static class I6C6NativeOracleTests
                             faceUp: false,
                             faceDown: true)
                     },
-                    new[]
-                    {
-                        new PerspectiveSafeRelationshipV1(
-                            PerspectiveSafeRelationshipKindV1.Target,
-                            knownLocator,
-                            hiddenLocator)
-                    },
+                    duplicateRelationship
+                        ? new[]
+                        {
+                            new PerspectiveSafeRelationshipV1(
+                                PerspectiveSafeRelationshipKindV1.Target,
+                                knownLocator,
+                                hiddenLocator),
+                            new PerspectiveSafeRelationshipV1(
+                                PerspectiveSafeRelationshipKindV1.Target,
+                                knownLocator,
+                                hiddenLocator)
+                        }
+                        : new[]
+                        {
+                            new PerspectiveSafeRelationshipV1(
+                                PerspectiveSafeRelationshipKindV1.Target,
+                                knownLocator,
+                                hiddenLocator)
+                        },
                     new PerspectiveSafeChainStateV1(
                         1,
                         new[]
@@ -266,7 +360,9 @@ internal static class I6C6NativeOracleTests
                                 source: knownLocator,
                                 activationZone: PerspectiveSafeSemanticZoneV1.Hand,
                                 effectDescription: 42,
-                                targets: new[] { knownLocator, hiddenLocator })
+                                targets: duplicateTargets
+                                    ? new[] { knownLocator, knownLocator, hiddenLocator }
+                                    : new[] { knownLocator, hiddenLocator })
                         }),
                     new[]
                     {
@@ -291,12 +387,18 @@ internal static class I6C6NativeOracleTests
                             mainDeck: new uint[] { 1, 2 },
                             extraDeck: new uint[] { 3 }),
                         opponentDeck: new PerspectiveSafeDeckV1(known: false))));
-        True(result.IsSuccess, result.Error?.ToString() ?? "frame rejected");
+        True(
+            result.IsSuccess,
+            $"frame rejected {result.Error?.ToString() ?? "no error"};" +
+                $"duplicateRelationship={duplicateRelationship};" +
+                $"duplicateTargets={duplicateTargets}");
         NotNull(result.Frame);
         return result.Frame!;
     }
 
-    private static I6C6NativePublicSafeStateRowV1 CreateEquivalentNativeRow() =>
+    private static I6C6NativePublicSafeStateRowV1 CreateEquivalentNativeRow(
+        bool duplicateRelationship = false,
+        bool duplicateTargets = false) =>
         new(
             new I6C6NativeGlobalsV1(
                 DuelFlags: 0x1234,
@@ -345,13 +447,25 @@ internal static class I6C6NativeOracleTests
                     null,
                     null)
             },
-            new[]
-            {
-                new I6C6NativeRelationshipV1(
-                    2,
-                    "p0:HAND:public:12345678:0",
-                    "p1:SPELL_TRAP_ZONE:0")
-            },
+            duplicateRelationship
+                ? new[]
+                {
+                    new I6C6NativeRelationshipV1(
+                        2,
+                        "p0:HAND:public:12345678:0",
+                        "p1:SPELL_TRAP_ZONE:0"),
+                    new I6C6NativeRelationshipV1(
+                        2,
+                        "p0:HAND:public:12345678:0",
+                        "p1:SPELL_TRAP_ZONE:0")
+                }
+                : new[]
+                {
+                    new I6C6NativeRelationshipV1(
+                        2,
+                        "p0:HAND:public:12345678:0",
+                        "p1:SPELL_TRAP_ZONE:0")
+                },
             new I6C6NativeChainV1(
                 1,
                 new[]
@@ -362,11 +476,18 @@ internal static class I6C6NativeOracleTests
                         "p0:HAND:public:12345678:0",
                         2,
                         42,
-                        new[]
-                        {
-                            "p0:HAND:public:12345678:0",
-                            "p1:SPELL_TRAP_ZONE:0"
-                        })
+                        duplicateTargets
+                            ? new[]
+                            {
+                                "p0:HAND:public:12345678:0",
+                                "p0:HAND:public:12345678:0",
+                                "p1:SPELL_TRAP_ZONE:0"
+                            }
+                            : new[]
+                            {
+                                "p0:HAND:public:12345678:0",
+                                "p1:SPELL_TRAP_ZONE:0"
+                            })
                 }),
             new[]
             {
@@ -390,7 +511,8 @@ internal static class I6C6NativeOracleTests
                     "p0:HAND:public:12345678:0",
                     null,
                     2,
-                    3)
+                    3,
+                    Targets: Array.Empty<string>())
             },
             new I6C6NativeMatchContextV1(
                 0,
