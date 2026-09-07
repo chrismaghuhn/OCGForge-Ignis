@@ -38,7 +38,7 @@ I6C6_IMPLEMENTATION_AUTHORIZED=NO
 
 The shape and field mapping are sufficiently identified for implementation planning. The two bridge contracts are now closed at the design level, but their future execution evidence is not yet present:
 
-1. `SAME_SCENARIO_REPLAY_EVIDENCE=UNPROVEN`: the later implementation still needs an artifact binding one native `CoreHost` scenario to the exact Ignis message transcript and mirror history, including relevant CardScripts behavior provenance.
+1. `SAME_SCENARIO_REPLAY_EVIDENCE=UNPROVEN`: the later implementation still needs an artifact binding one native `CoreHost` scenario to the same perspective-safe public-event transcript and selected mirror/oracle boundary, including relevant CardScripts behavior provenance.
 2. `PRINTED_SOURCE_EVIDENCE=UNPROVEN`: I6C5 consumes an external provider artifact; no real OCGForge static-card rows may be copied into Ignis, and the later implementation still needs to supply the exact native artifact externally.
 
 These are implementation-evidence obligations, not permission to infer equality.
@@ -278,8 +278,10 @@ ignis_edopro_commit
 ignis_edopro_core_commit
 ignis_cardscripts_commit
 native_setup_transcript_sha256
-native_message_transcript_sha256
-ignis_replay_transcript_sha256
+native_raw_transcript_sha256
+ignis_raw_replay_transcript_sha256
+native_public_event_transcript_sha256
+ignis_public_event_transcript_sha256
 supported_message_family_envelope_id
 supported_message_family_envelope_sha256
 native_comparison_boundary
@@ -307,7 +309,13 @@ identity bytes are the domain string
 fields above. No JSON whitespace, property order, locale, or platform path
 representation participates in the identity.
 
-The two runtime transcripts have one shared comparison normal form:
+Raw runtime transcripts are restricted forensic evidence only. They are not
+required to be byte-equal because OCGForge observes raw core messages while
+EDOPro emits player-specific STOC messages, redacts identities, and may add
+refresh messages.
+
+Each raw transcript may use the following independent canonical container for
+its own provenance hash:
 
 ```text
 CanonicalGameplayMessageV1 =
@@ -316,7 +324,7 @@ CanonicalGameplayMessageV1 =
     payload_length:u32be
     payload_bytes[payload_length]
 
-CanonicalGameplayTranscriptV1 =
+RestrictedRawGameplayTranscriptV1 =
     domain string "OCGFORGE-IGNIS-I6C6-GAMEPLAY-TRANSCRIPT-V1\0"
     message_count:u32be
     CanonicalGameplayMessageV1[message_count]
@@ -327,14 +335,45 @@ For OCGForge, the native event frame is decoded as `u32le frame_length`, then
 removed. For Ignis, the already extracted `StocGameMessagePayload.Bytes` is
 used as `message_id:u8 || payload_bytes`; no additional gameplay bytes are
 removed. The payload bytes are otherwise copied unchanged. The canonical
-message ordinal starts at zero and increments by one.
+message ordinal starts at zero and increments by one. The two restricted raw
+hashes are never compared as a same-scenario equality criterion and never
+enter public comparison artifacts or diagnostics.
 
-I6C6 V1 defines no implicit per-message semantic normalization. A message-ID
-family with different payload bytes, missing frames, extra frames, reordered
-frames, or different boundaries fails closed. A future explicit normalization
-would require a separately versioned message-family rule and KATs; it cannot
-be hidden behind the phrase “linked without inference”. Both transcript hashes
-in the manifest are SHA-256 values of these exact canonical transcript bytes.
+The common cross-runtime boundary is the perspective-safe public event
+transcript, not the raw packet stream:
+
+```text
+CanonicalPublicEventTranscriptV1 =
+    domain string "OCGFORGE-IGNIS-I6C6-PUBLIC-EVENT-TRANSCRIPT-V1\0"
+    event_count:u32be
+    CanonicalPublicEventRecordV1[event_count]
+
+CanonicalPublicEventRecordV1 =
+    event_index:u64be
+    kind:u8
+    player:optional u8
+    entity:optional locator string
+    public_passcode:optional u32be
+    from_zone:optional u8
+    to_zone:optional u8
+    count:optional u32be
+    amount:optional signed i32
+    counter_type:optional u32be
+    phase:optional u32be
+    winner:optional u8
+    win_reason:optional u8
+    effect_description:optional u64be
+    targets:u32be count followed by lexicographically sorted locator strings
+```
+
+The native `project_visible_events` result and the Ignis I6C4 ledger are
+converted to this exact public-event form. `engine_step_index` is omitted.
+The native and Ignis public-event transcript hashes must be equal through the
+selected comparison boundary. A refresh packet that produces no public event
+is represented by the current public-safe-state boundary, not by an invented
+event. Message redaction, refresh packets, and raw transport wrappers are
+therefore allowed to differ while the perspective-safe public history and
+state remain bound.
 
 Semantic inputs are `perspective_player`, `starting_player`, `duel_flags`,
 seed words, deck seat assignment, and the explicitly selected comparison
@@ -343,12 +382,12 @@ envelope IDs are provenance/evidence fields; they are not public-frame
 semantic values.
 
 `native_setup_transcript_sha256` covers the deterministic native fixture/setup
-operations. `native_message_transcript_sha256` covers the canonical native
-gameplay transcript and selected event-history boundary.
-`ignis_replay_transcript_sha256` covers the canonical Ignis replay transcript
-and committed mirror boundary. A scenario passes only when the manifest
-values, supported-message envelope, boundary kind, perspective, seed, flags,
-deck-seat identities, and canonical gameplay transcripts agree exactly.
+operations. The two raw transcript hashes cover restricted runtime evidence;
+the two public-event transcript hashes cover the common comparison boundary.
+A scenario passes only when the manifest values, supported-message envelope,
+boundary kind, perspective, seed, flags, deck-seat identities, and canonical
+public-event transcripts agree exactly. The selected public-safe-state
+boundary is then compared separately by the native oracle contract.
 Missing or unmatched transcript evidence is `UNPROVEN`, not a reduced
 comparison corpus.
 
@@ -381,7 +420,7 @@ ocgforge_relevant_script_paths[]
 ignis_relevant_script_paths[]
 ocgforge_script_closure_digest
 ignis_script_closure_digest
-canonical_gameplay_transcript_sha256
+canonical_public_event_transcript_sha256
 ```
 
 The relevant script paths are canonical sorted relative paths and their file
@@ -389,7 +428,8 @@ bytes are hashed in path order. The two script closure digests are allowed to
 differ because the runtimes use different CardScripts commits. The binding
 passes only when the exact relevant closure is recorded for both runtimes and
 the script-dependent behavior is bound by the exact shared
-`CanonicalGameplayTranscriptV1` through the selected boundary. Equal card
+`CanonicalPublicEventTranscriptV1` and selected public-safe-state boundary.
+Equal card
 passcodes or equal top-level script commits alone never prove equivalent
 behavior. The transcript hash is behavior-bound evidence; it is not a claim
 that the script bytes are identical.
@@ -585,7 +625,8 @@ No production Ignis file, OCGForge production file, third-party pin, database, o
 NATIVE_ORACLE_HEAD_MATCH=PASS
 IGNIS_I6C5_HEAD_MATCH=PASS
 SCENARIO_PROVENANCE_BINDING=PASS
-CANONICAL_GAMEPLAY_TRANSCRIPT_BINDING=PASS
+CANONICAL_PUBLIC_EVENT_TRANSCRIPT_BINDING=PASS
+RAW_TRANSCRIPTS_RESTRICTED_ONLY=PASS
 CARD_SCRIPT_BEHAVIOR_BINDING=PASS
 PLAYER_TO_ACT_ABSENT_OR_I6D_BLOCKED=PASS
 TYPED_FIELD_COMPARISON=PASS
