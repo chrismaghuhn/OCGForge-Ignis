@@ -1651,6 +1651,35 @@ internal static class I6CPublicFrameSourceTests
             PerspectiveSafeSemanticZoneV1.PendulumRelevant,
             pendulumResult.Frame!.Entities.Single().Zone);
 
+        (PerspectiveStateMirrorV1 combinedPzoneMirror,
+            GameplayMessageDecoderV1 combinedPzoneDecoder) =
+            CreateMirror(0, extraCount0: 0);
+        ApplyI6C4Success(
+            combinedPzoneMirror,
+            combinedPzoneDecoder,
+            MoveMessage(
+                0xb206,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(1, 0x08, 1, 0x08),
+                0));
+        PerspectiveSafeMatchContextV1 combinedPzoneContext = new(
+            0,
+            0x800 | 0x1000 | 0x400000,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, new[] { 1u, 2u }, new[] { 3u }),
+            new PerspectiveSafeDeckV1(false));
+        PerspectiveSafeFrameSourceResultV1 combinedPzoneResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                combinedPzoneMirror,
+                combinedPzoneContext);
+        True(
+            combinedPzoneResult.IsSuccess,
+            "combined PZONE: " +
+            (combinedPzoneResult.Error?.ToString() ?? "frame rejected"));
+        Equal(
+            PerspectiveSafeSemanticZoneV1.PendulumRelevant,
+            combinedPzoneResult.Frame!.Entities.Single().Zone);
+
         (PerspectiveStateMirrorV1 pendingRelationMirror,
             GameplayMessageDecoderV1 pendingRelationDecoder) =
             CreateMirror(0, extraCount0: 0);

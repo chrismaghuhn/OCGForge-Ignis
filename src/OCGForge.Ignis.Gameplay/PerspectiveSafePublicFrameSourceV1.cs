@@ -724,52 +724,30 @@ public static class PerspectiveSafePublicFrameSourceV1
             return true;
         }
 
-        if (hasSeparatePzone)
+        if (hasPzone)
         {
-            if (sequence == 6 || sequence == 7)
+            if (hasSeparatePzone && (sequence == 6 || sequence == 7))
             {
                 zone = PerspectiveSafeSemanticZoneV1.PendulumRelevant;
                 return true;
             }
 
-            uint lastSpellTrapSequence = hasThreeColumns ? 3u : 4u;
-            if (sequence >= (hasThreeColumns ? 1u : 0u) &&
-                sequence <= lastSpellTrapSequence)
+            if (hasThreeColumns && (sequence == 1 || sequence == 3))
             {
-                zone = PerspectiveSafeSemanticZoneV1.SpellTrapZone;
+                zone = PerspectiveSafeSemanticZoneV1.PendulumRelevant;
                 return true;
             }
 
-            zone = default;
-            error = Error(
-                PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
-                PerspectiveSafeSourceSectionV1.Zones);
-            return false;
+            if (!hasSeparatePzone &&
+                !hasThreeColumns &&
+                (sequence == 0 || sequence == 4))
+            {
+                zone = PerspectiveSafeSemanticZoneV1.PendulumRelevant;
+                return true;
+            }
         }
 
-        uint firstSpellTrapSequence = hasThreeColumns ? 1u : 0u;
-        uint lastSharedSequence = hasThreeColumns ? 3u : 4u;
-        if (sequence < firstSpellTrapSequence ||
-            sequence > lastSharedSequence)
-        {
-            zone = default;
-            error = Error(
-                PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
-                PerspectiveSafeSourceSectionV1.Zones);
-            return false;
-        }
-
-        bool isSharedPzoneSlot = hasPzone &&
-            (hasThreeColumns
-                ? sequence is 1 or 3
-                : sequence is 0 or 4);
-        if (!isSharedPzoneSlot)
-        {
-            zone = PerspectiveSafeSemanticZoneV1.SpellTrapZone;
-            return true;
-        }
-
-        zone = PerspectiveSafeSemanticZoneV1.PendulumRelevant;
+        zone = PerspectiveSafeSemanticZoneV1.SpellTrapZone;
         error = default;
         return true;
     }
