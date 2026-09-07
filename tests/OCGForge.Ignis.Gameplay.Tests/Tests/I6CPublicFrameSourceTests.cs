@@ -1854,6 +1854,44 @@ internal static class I6CPublicFrameSourceTests
             PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
             afterBootstrapFrame.Error!.Value.Code);
 
+        (PerspectiveStateMirrorV1 missingSelfPositionMirror,
+            GameplayMessageDecoderV1 missingSelfPositionDecoder) =
+            CreateMirror(0, extraCount0: 1, extraCount1: 0);
+        string missingSelfPositionBefore =
+            missingSelfPositionMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult missingSelfPosition =
+            missingSelfPositionMirror.Apply(
+                DecodeMessage(
+                    missingSelfPositionDecoder,
+                    UpdateDataMessage(
+                        0,
+                        0x40,
+                        Join(ExtraQueryWithoutPosition(0x9C00, 0)))));
+        False(missingSelfPosition.IsSuccess);
+        Equal(GameplayErrorCode.UnknownMirrorReference, missingSelfPosition.Error);
+        Equal(
+            missingSelfPositionBefore,
+            missingSelfPositionMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 missingOpponentPositionMirror,
+            GameplayMessageDecoderV1 missingOpponentPositionDecoder) =
+            CreateMirror(0, extraCount0: 0, extraCount1: 1);
+        string missingOpponentPositionBefore =
+            missingOpponentPositionMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult missingOpponentPosition =
+            missingOpponentPositionMirror.Apply(
+                DecodeMessage(
+                    missingOpponentPositionDecoder,
+                    UpdateDataMessage(
+                        1,
+                        0x40,
+                        Join(ExtraPublicQueryWithoutPosition(1)))));
+        False(missingOpponentPosition.IsSuccess);
+        Equal(GameplayErrorCode.UnknownMirrorReference, missingOpponentPosition.Error);
+        Equal(
+            missingOpponentPositionBefore,
+            missingOpponentPositionMirror.Snapshot.ToDeterministicString());
+
         (PerspectiveStateMirrorV1 selfMirror, GameplayMessageDecoderV1 selfDecoder) =
             CreateMirror(0, extraCount0: 3, extraCount1: 0);
         string selfBefore = selfMirror.Snapshot.ToDeterministicString();
@@ -2088,9 +2126,21 @@ internal static class I6CPublicFrameSourceTests
             QueryRecord(QueryFlagV1.Owner, new[] { owner }),
             QueryEnd());
 
+    private static byte[] ExtraQueryWithoutPosition(uint code, byte owner) =>
+        Join(
+            QueryRecord(QueryFlagV1.Code, U32(code)),
+            QueryRecord(QueryFlagV1.Owner, new[] { owner }),
+            QueryEnd());
+
     private static byte[] ExtraPublicQuery(byte owner, uint position) =>
         Join(
             QueryRecord(QueryFlagV1.Position, U32(position)),
+            QueryRecord(QueryFlagV1.Owner, new[] { owner }),
+            QueryRecord(QueryFlagV1.IsHidden, new byte[] { 1 }),
+            QueryEnd());
+
+    private static byte[] ExtraPublicQueryWithoutPosition(byte owner) =>
+        Join(
             QueryRecord(QueryFlagV1.Owner, new[] { owner }),
             QueryRecord(QueryFlagV1.IsHidden, new byte[] { 1 }),
             QueryEnd());

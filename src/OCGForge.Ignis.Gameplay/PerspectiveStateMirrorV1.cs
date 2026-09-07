@@ -847,6 +847,12 @@ public sealed class PerspectiveStateMirrorV1
                 return GameplayErrorCode.UnknownMirrorReference;
             }
 
+            if (bootstrapExtra &&
+                !query.Fields.Any(field => field.Flag == QueryFlagV1.Position))
+            {
+                return GameplayErrorCode.UnknownMirrorReference;
+            }
+
             bool bootstrapped = false;
             if (!candidate.Entities.TryGetValue(address, out EntityState? entity))
             {
