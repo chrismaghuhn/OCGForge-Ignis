@@ -820,6 +820,14 @@ public sealed class PerspectiveStateMirrorV1
             return GameplayErrorCode.InvalidLocation;
         }
 
+        bool bootstrapExtra = zone == MirrorZoneV1.ExtraDeck;
+        if (bootstrapExtra &&
+            (ulong)payload.Queries.Count !=
+                candidate.ZoneCounts[payload.Player, (int)zone])
+        {
+            return GameplayErrorCode.StateCapacityExceeded;
+        }
+
         for (int index = 0; index < payload.Queries.Count; index++)
         {
             if (!IsValidFieldSequence(zone, (uint)index))
@@ -834,9 +842,39 @@ public sealed class PerspectiveStateMirrorV1
                 false,
                 0);
             ModernQueryV1 query = payload.Queries[index];
+            bool bootstrapped = false;
+            if (!candidate.Entities.TryGetValue(address, out EntityState? entity))
+            {
+                if (!bootstrapExtra)
+                {
+                    return GameplayErrorCode.UnknownMirrorReference;
+                }
+
+                if (query.IsOnFieldSkipped &&
+                    payload.Player == candidate.Perspective.PlayerType)
+                {
+                    return GameplayErrorCode.UnknownMirrorReference;
+                }
+
+                if (!TryCreateEntity(
+                        candidate,
+                        address,
+                        cardCode: 0,
+                        position: PositionFaceDown,
+                        hasCardCode: false,
+                        out entity,
+                        out GameplayErrorCode createError))
+                {
+                    return createError;
+                }
+
+                candidate.Entities.Add(address, entity!);
+                bootstrapped = true;
+            }
+
             if (query.IsOnFieldSkipped)
             {
-                if (candidate.Entities.ContainsKey(address))
+                if (!bootstrapped)
                 {
                     return GameplayErrorCode.ConflictingSlotOccupancy;
                 }
@@ -844,15 +882,17 @@ public sealed class PerspectiveStateMirrorV1
                 continue;
             }
 
-            if (!candidate.Entities.TryGetValue(address, out EntityState? entity))
-            {
-                return GameplayErrorCode.UnknownMirrorReference;
-            }
-
-            GameplayErrorCode error = ApplyQuery(candidate, entity, query);
+            GameplayErrorCode error = ApplyQuery(candidate, entity!, query);
             if (error != GameplayErrorCode.None)
             {
                 return error;
+            }
+
+            if (bootstrapExtra &&
+                payload.Player == candidate.Perspective.PlayerType &&
+                (!entity!.CardCode.IsKnown || !entity.Position.IsKnown))
+            {
+                return GameplayErrorCode.UnknownMirrorReference;
             }
         }
 

@@ -30,6 +30,7 @@ internal static class I6CPublicFrameSourceTests
         Run("first invalid invariant is diagnosed", AssertFirstInvalidInvariant);
         Run("public surface has no private escape hatch", AssertPublicSurface);
         Run("I6C2 mirror source closure", TestI6C2MirrorSourceClosure);
+        Run("I6C5 Extra UPDATE_DATA bootstrap", AssertI6C5ExtraUpdateDataBootstrap);
     }
 
     private static void Run(string name, Action test)
@@ -1809,6 +1810,166 @@ internal static class I6CPublicFrameSourceTests
             PerspectiveSafeFrameSourceErrorCodeV1.MissingMirror,
             result.Error!.Value.Code);
     }
+
+    private static void AssertI6C5ExtraUpdateDataBootstrap()
+    {
+        (PerspectiveStateMirrorV1 selfMirror, GameplayMessageDecoderV1 selfDecoder) =
+            CreateMirror(0, extraCount0: 3, extraCount1: 0);
+        string selfBefore = selfMirror.Snapshot.ToDeterministicString();
+        byte[] selfUpdate = UpdateDataMessage(
+            0,
+            0x40,
+            Join(
+                ExtraQuery(0xA100, 0, 0x08),
+                ExtraQuery(0xA100, 0, 0x08),
+                ExtraQuery(0xA200, 0, 0x08)));
+        MirrorApplyResult selfBootstrap = selfMirror.Apply(
+            DecodeMessage(selfDecoder, selfUpdate));
+        True(
+            selfBootstrap.IsSuccess,
+            $"self Extra bootstrap failed: {selfBootstrap.Error}");
+        MirrorCardSnapshotV1[] selfCards = selfMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(3, selfCards.Length);
+        Equal((uint)0xA100, selfCards[0].CardCode.Value);
+        Equal((uint)0xA100, selfCards[1].CardCode.Value);
+        Equal((uint)0xA200, selfCards[2].CardCode.Value);
+        True(selfCards.All(card =>
+            card.CardCode.Provenance == MirrorProvenanceV1.PerspectivePrivateFact));
+        NotEqual(selfBefore, selfMirror.Snapshot.ToDeterministicString());
+
+        MirrorApplyResult shuffled = selfMirror.Apply(
+            DecodeMessage(
+                selfDecoder,
+                ShuffleCodesMessage(39, 0, 0xA200, 0xA100, 0xA100)));
+        True(shuffled.IsSuccess, $"Extra shuffle failed: {shuffled.Error}");
+        MirrorCardSnapshotV1[] shuffledCards = selfMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(3, shuffledCards.Length);
+        Equal((uint)0xA200, shuffledCards[0].CardCode.Value);
+        Equal((uint)0xA100, shuffledCards[1].CardCode.Value);
+        Equal((uint)0xA100, shuffledCards[2].CardCode.Value);
+
+        (PerspectiveStateMirrorV1 moveMirror, GameplayMessageDecoderV1 moveDecoder) =
+            CreateMirror(0, extraCount0: 2, extraCount1: 0);
+        ApplyI6C4Success(
+            moveMirror,
+            moveDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(
+                    ExtraQuery(0xB100, 0, 0x08),
+                    ExtraQuery(0xB200, 0, 0x08))));
+        ApplyI6C4Success(
+            moveMirror,
+            moveDecoder,
+            MoveMessage(
+                0xB100,
+                new ModernLocInfoV1(0, 0x40, 0, 0x08),
+                new ModernLocInfoV1(0, 0x04, 0, 0x04),
+                0));
+        Equal(
+            (uint)1,
+            moveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.ExtraDeck).Count.Value);
+        Equal(
+            (uint)1,
+            moveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.MonsterZone).Count.Value);
+
+        (PerspectiveStateMirrorV1 opponentMirror,
+            GameplayMessageDecoderV1 opponentDecoder) =
+            CreateMirror(0, extraCount0: 0, extraCount1: 2);
+        MirrorApplyResult opponentBootstrap = opponentMirror.Apply(
+            DecodeMessage(
+                opponentDecoder,
+                UpdateDataMessage(
+                    1,
+                    0x40,
+                    Join(
+                        ExtraPublicQuery(1, 0x08),
+                        ExtraPublicQuery(1, 0x08)))));
+        True(
+            opponentBootstrap.IsSuccess,
+            $"opponent Extra bootstrap failed: {opponentBootstrap.Error}");
+        MirrorCardSnapshotV1[] opponentCards = opponentMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Opponent,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(2, opponentCards.Length);
+        True(opponentCards.All(card => !card.CardCode.IsKnown));
+
+        (PerspectiveStateMirrorV1 opponentWorldB,
+            GameplayMessageDecoderV1 opponentWorldBDecoder) =
+            CreateMirror(0, extraCount0: 0, extraCount1: 2);
+        MirrorApplyResult opponentWorldBResult = opponentWorldB.Apply(
+            DecodeMessage(
+                opponentWorldBDecoder,
+                UpdateDataMessage(
+                    1,
+                    0x40,
+                    Join(
+                        ExtraPublicQuery(1, 0x08),
+                        ExtraPublicQuery(1, 0x08)))));
+        True(opponentWorldBResult.IsSuccess);
+        Equal(
+            opponentMirror.Snapshot.ToDeterministicString(),
+            opponentWorldB.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 mismatchMirror,
+            GameplayMessageDecoderV1 mismatchDecoder) =
+            CreateMirror(0, extraCount0: 3, extraCount1: 0);
+        string mismatchBefore = mismatchMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult mismatch = mismatchMirror.Apply(
+            DecodeMessage(
+                mismatchDecoder,
+                UpdateDataMessage(
+                    0,
+                    0x40,
+                    Join(
+                        ExtraQuery(0xC100, 0, 0x08),
+                        ExtraQuery(0xC200, 0, 0x08)))));
+        False(mismatch.IsSuccess);
+        Equal(GameplayErrorCode.StateCapacityExceeded, mismatch.Error);
+        Equal(mismatchBefore, mismatchMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 malformedMirror,
+            GameplayMessageDecoderV1 malformedDecoder) =
+            CreateMirror(0, extraCount0: 1, extraCount1: 0);
+        string malformedBefore = malformedMirror.Snapshot.ToDeterministicString();
+        GameplayMessageDecodeResult malformedDecoded = malformedDecoder.Decode(
+            new StocGameMessagePayload(
+                UpdateDataMessage(0, 0x40, new byte[] { 1, 0, 0 })));
+        False(malformedDecoded.IsSuccess);
+        Equal(malformedBefore, malformedMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 unsupportedMirror,
+            GameplayMessageDecoderV1 unsupportedDecoder) =
+            CreateMirror(0, extraCount0: 1, extraCount1: 0);
+        string unsupportedBefore = unsupportedMirror.Snapshot.ToDeterministicString();
+        GameplayMessageDecodeResult unsupportedDecoded = unsupportedDecoder.Decode(
+            new StocGameMessagePayload(new byte[] { 35, 0 }));
+        False(unsupportedDecoded.IsSuccess);
+        Equal(unsupportedBefore, unsupportedMirror.Snapshot.ToDeterministicString());
+    }
+
+    private static byte[] ExtraQuery(uint code, byte owner, uint position) =>
+        Join(
+            QueryRecord(QueryFlagV1.Code, U32(code)),
+            QueryRecord(QueryFlagV1.Position, U32(position)),
+            QueryRecord(QueryFlagV1.Owner, new[] { owner }),
+            QueryEnd());
+
+    private static byte[] ExtraPublicQuery(byte owner, uint position) =>
+        Join(
+            QueryRecord(QueryFlagV1.Position, U32(position)),
+            QueryRecord(QueryFlagV1.Owner, new[] { owner }),
+            QueryRecord(QueryFlagV1.IsHidden, new byte[] { 1 }),
+            QueryEnd());
 
     private static void AssertI6C2AbsoluteGlobals()
     {
