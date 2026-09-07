@@ -5,8 +5,6 @@ namespace OCGForge.Ignis.Gameplay.Tests;
 
 internal static class I6C6NativeOracleTests
 {
-    // I6C6-1 deliberately references the future I6C6-2 comparison owner.
-    // The missing type is the intended RED build failure.
     internal static void TestI6C6_1RedContract()
     {
         AssertPlayerToActBoundary();
@@ -94,6 +92,13 @@ internal static class I6C6NativeOracleTests
                 secondConstruction,
                 I6C6ScenarioFixtures.SupportedPairing());
         True(result.IsSuccess, result.ErrorCode.ToString());
+
+        I6C6ComparisonResultV1 reverseResult =
+            I6C6ComparisonFixtures.Compare(
+                secondConstruction,
+                firstConstruction,
+                I6C6ScenarioFixtures.SupportedPairing());
+        True(reverseResult.IsSuccess, reverseResult.ErrorCode.ToString());
     }
 
     private static void AssertHiddenIdentityDataIsRejected()
