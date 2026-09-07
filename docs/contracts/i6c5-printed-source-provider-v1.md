@@ -4,16 +4,23 @@ Contract status:
 
 ```text
 FROZEN TECHNICAL CONTRACT
-PENDING THIRD-PARTY GOVERNANCE CLEARANCE
-IMPLEMENTATION NOT AUTHORIZED
+THIRD-PARTY GOVERNANCE CLEARANCE=COMPLETE_FOR_PROVIDER_CODE_ONLY
+PRINTED_PROVIDER_IMPLEMENTATION=FINAL_PASS
 ```
 
 Date: 2026-09-07
 
-This contract freezes the technical boundary for a future I6C5 Printed-card
-provider. It does not authorize a provider implementation, artifact
+This contract freezes the technical boundary for the I6C5 Printed-card
+provider. It remains a technical contract: it does not authorize artifact
 generation, BabelCDB redistribution, derived-data redistribution, I6C5 final
 acceptance, I6C6, I6D, or I7.
+
+Historical authorization note: when this contract was frozen, it did not
+authorize implementation. Third-party governance clearance and implementation
+authorization were separate later decisions. The current status above records
+those later decisions and does not rewrite the historical sequence. This
+contract itself remains separate from all redistribution, acquisition, and
+generation authorization.
 
 The contract is an Ignis source contract. OCGForge remains the semantic owner
 of Printed-card meaning and canonical OCGForge encodings.
@@ -675,19 +682,21 @@ same semantic identity
 
 ## 15. Third-party governance status
 
-This technical contract does not clear governance:
+This technical contract records the current governance boundary:
 
 ```text
 TECHNICAL_CONTRACT_FROZEN=YES
-THIRD_PARTY_GOVERNANCE_CLEARED=NO
+THIRD_PARTY_GOVERNANCE_CLEARED_FOR_PROVIDER_CODE_ONLY=YES
 BABELCDB_REDISTRIBUTION_AUTHORIZED=NO
 DERIVED_DATA_REDISTRIBUTION_AUTHORIZED=NO
-PRINTED_PROVIDER_IMPLEMENTATION_AUTHORIZED=NO
+PRINTED_PROVIDER_IMPLEMENTATION_AUTHORIZED=YES
+PRINTED_PROVIDER_IMPLEMENTATION=FINAL_PASS
 ```
 
 The unresolved BabelCDB license declaration and derived-data redistribution
-question are governance findings, not legal conclusions. No wording in this
-contract asserts that redistribution is lawful or unlawful.
+question remain outside the provider-code-only clearance. They are governance
+findings, not legal conclusions. No wording in this contract asserts that
+redistribution is lawful or unlawful.
 
 ## 16. Non-goals
 
@@ -709,6 +718,10 @@ I6C6
 I6D
 I7
 ```
+
+The provider implementation status above comes from a separate later
+authorization and acceptance decision; it is not backdated into this contract
+or its original freeze decision.
 
 ## 17. Future implementation gates
 

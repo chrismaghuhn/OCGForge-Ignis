@@ -1,6 +1,14 @@
 # ADR-0003: I6C5 External Printed Artifact Governance
 
-Status: ACCEPTED REPOSITORY-GOVERNANCE DECISION / IMPLEMENTATION NOT YET AUTHORIZED
+Status: ACCEPTED REPOSITORY-GOVERNANCE DECISION
+
+Subsequent implementation status:
+
+```text
+OPTION_B_PROVIDER_CODE_AUTHORIZED=YES
+PRINTED_PROVIDER_IMPLEMENTATION_AUTHORIZED=YES
+PRINTED_PROVIDER_IMPLEMENTATION=FINAL_PASS
+```
 
 Date: 2026-09-07
 
@@ -16,9 +24,14 @@ redistribute BabelCDB or derived data.
 
 ## 1. Question and scope
 
-This ADR decides only whether OCGForge-Ignis may later implement generic code
-which consumes an explicitly operator-supplied local Printed-provider artifact
-conforming to the frozen I6C5 technical contract.
+This ADR records the governance decision on whether OCGForge-Ignis may
+implement generic code which consumes an explicitly operator-supplied local
+Printed-provider artifact conforming to the frozen I6C5 technical contract.
+
+At the time of this decision, provider implementation was intentionally left
+to a later separate authorization. That later authorization and implementation
+acceptance are recorded above; they do not retroactively change this ADR's
+original decision or its redistribution and acquisition boundaries.
 
 The decision does not approve:
 
@@ -71,8 +84,8 @@ REAL_CARD_DATA_TEST_FIXTURES_AUTHORIZED=NO
 ```
 
 This decision is limited to code that accepts an explicit operator-supplied
-artifact and validates it against the frozen contract. It does not authorize
-the provider implementation in this turn:
+artifact and validates it against the frozen contract. The decision-time
+status was:
 
 ```text
 PRINTED_PROVIDER_TECHNICAL_CONTRACT_READY=YES
@@ -81,7 +94,10 @@ PRINTED_PROVIDER_IMPLEMENTATION_READY=YES
 PRINTED_PROVIDER_IMPLEMENTATION_AUTHORIZED=NO
 ```
 
-Implementation requires a later, separate authorization.
+The separate implementation authorization has since been granted and the
+provider implementation has independently reached `FINAL_PASS`. This does not
+authorize any BabelCDB or derived-data redistribution, acquisition, generation,
+or real-data fixture path.
 
 ## 4. Allowed boundary
 
@@ -201,6 +217,8 @@ narrow code-only exception authorized by the explicit I6C5 governance review.
 ## 9. Consequence
 
 The technical governance blocker for implementing a generic external-artifact
-consumer is removed. The data itself remains outside the repository and
-outside the release. A later implementation task must still be independently
-authorized and must preserve the frozen technical contract.
+consumer is removed. At the time of this ADR, the later implementation task
+still required separate authorization; that authorization has since been
+granted and independently accepted. The data itself remains outside the
+repository and outside the release, and the frozen technical contract and its
+third-party prohibitions remain binding.
