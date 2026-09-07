@@ -231,7 +231,7 @@ The semantic comparison digest, if implemented, must cover only the normalized p
 | --- | --- | --- |
 | OCGForge core `9a0c558…` vs EDOPro core `46779fbe…` | Expected provenance difference | Never compare internal state; require behavioral public-frame evidence |
 | OCGForge API-hardening patchset | Requires source/provenance binding | Native oracle manifest must include the patchset; unsupported API differences fail closed |
-| CardScripts provenance (`ocgforge=f337c870…`, `ignis=00a828b7…`) | Requires scenario behavior binding | Different scripts may change legal transitions, queries, or emitted messages; script-dependent scenarios require `CARD_SCRIPT_BEHAVIOR_BINDING=PASS`, while only an explicitly proven `SCRIPT_DEPENDENCY=NONE` scenario may bypass this gate |
+| CardScripts provenance (`ocgforge=f337c870…`, `ignis=00a828b7…`) | Requires scenario behavior binding | Different scripts may change legal transitions, queries, or emitted messages; every I6C6 V1 scenario requires `CARD_SCRIPT_BEHAVIOR_BINDING=PASS` |
 | BabelCDB/database provenance (`ocgforge=89ad6837…`, `ignis=2142b4b4…`) | Requires Printed source bridge | Exact Printed values require an externally bound provider artifact and semantic-row/coverage evidence; no database data is copied into Ignis |
 | OCGForge query-location builder vs EDOPro wire/mirror | Requires scenario corpus | Compare resulting public semantics, not query payload shape |
 | Native event projector vs Ignis ledger | Requires event corpus | Same accepted message subset and event-index rules must be proven; unsupported families remain out of corpus |
@@ -286,6 +286,56 @@ native_comparison_boundary
 ignis_comparison_boundary
 ```
 
+The field types and byte encoding are normative:
+
+```text
+scenario_contract_id: string
+scenario_id: string
+perspective_player: u8
+starting_player: u8
+duel_flags: u64be
+seed_words: u32be count, followed by ordered u64be words
+deck_identity.seat0: string
+deck_identity.seat1: string
+deck_identity.digest: exactly 64 lowercase ASCII hex characters
+all other commit/ID/hash/path/envelope/boundary text fields: string
+```
+
+Every `string` is `u32be byte_length || exact UTF-8 bytes`. The manifest
+identity bytes are the domain string
+`OCGFORGE-IGNIS-I6C6-SAME-SCENARIO-REPLAY-V1\0`, followed by the ordered
+fields above. No JSON whitespace, property order, locale, or platform path
+representation participates in the identity.
+
+The two runtime transcripts have one shared comparison normal form:
+
+```text
+CanonicalGameplayMessageV1 =
+    ordinal:u64be
+    message_id:u8
+    payload_length:u32be
+    payload_bytes[payload_length]
+
+CanonicalGameplayTranscriptV1 =
+    domain string "OCGFORGE-IGNIS-I6C6-GAMEPLAY-TRANSCRIPT-V1\0"
+    message_count:u32be
+    CanonicalGameplayMessageV1[message_count]
+```
+
+For OCGForge, the native event frame is decoded as `u32le frame_length`, then
+`message_id:u8 || payload_bytes`; only that native frame-length wrapper is
+removed. For Ignis, the already extracted `StocGameMessagePayload.Bytes` is
+used as `message_id:u8 || payload_bytes`; no additional gameplay bytes are
+removed. The payload bytes are otherwise copied unchanged. The canonical
+message ordinal starts at zero and increments by one.
+
+I6C6 V1 defines no implicit per-message semantic normalization. A message-ID
+family with different payload bytes, missing frames, extra frames, reordered
+frames, or different boundaries fails closed. A future explicit normalization
+would require a separately versioned message-family rule and KATs; it cannot
+be hidden behind the phrase “linked without inference”. Both transcript hashes
+in the manifest are SHA-256 values of these exact canonical transcript bytes.
+
 Semantic inputs are `perspective_player`, `starting_player`, `duel_flags`,
 seed words, deck seat assignment, and the explicitly selected comparison
 boundary. Runtime/source commits, patchset IDs, transcript digests, and
@@ -293,13 +343,14 @@ envelope IDs are provenance/evidence fields; they are not public-frame
 semantic values.
 
 `native_setup_transcript_sha256` covers the deterministic native fixture/setup
-operations. `native_message_transcript_sha256` covers the framed native engine
-messages and the selected event-history boundary. `ignis_replay_transcript_sha256`
-covers the exact typed Ignis input bytes/messages and the committed mirror
-boundary. A scenario passes only when the manifest values, supported-message
-envelope, boundary kind, perspective, seed, flags, and deck-seat identities
-agree and both transcripts can be linked without inference. Missing or
-unmatched transcript evidence is `UNPROVEN`, not a reduced comparison corpus.
+operations. `native_message_transcript_sha256` covers the canonical native
+gameplay transcript and selected event-history boundary.
+`ignis_replay_transcript_sha256` covers the canonical Ignis replay transcript
+and committed mirror boundary. A scenario passes only when the manifest
+values, supported-message envelope, boundary kind, perspective, seed, flags,
+deck-seat identities, and canonical gameplay transcripts agree exactly.
+Missing or unmatched transcript evidence is `UNPROVEN`, not a reduced
+comparison corpus.
 
 The bridge does not require `ocgforge_core_commit == ignis_edopro_core_commit`.
 It requires the two runtime identities to be recorded and the public transcript
@@ -308,18 +359,18 @@ and boundary behavior to be evidenced for the scenario.
 ### 10.2 `CardScriptsBehaviorBindingV1`
 
 This is a sub-contract of `SameScenarioReplayBridgeV1`, never a third bridge
-architecture. Every scenario declares exactly one mode:
+architecture. Every scenario declares `SCRIPT_DEPENDENCY=CLOSURE`. A `NONE`
+mode is not passable in I6C6 V1 because the accepted Ignis boundary does not
+expose authoritative EDOPro script-reader, script-load, or script-callback
+evidence. A future explicitly authorized EDOPro test-evidence source could
+define a later contract revision, but it is not assumed here.
 
 ```text
-SCRIPT_DEPENDENCY=NONE
-or
 SCRIPT_DEPENDENCY=CLOSURE
 ```
 
-`SCRIPT_DEPENDENCY=NONE` is accepted only when both runtime evidence records
-show no script-reader request, script load, script callback, or script-required
-card/effect can affect the scenario before the comparison boundary. An empty
-required-script set alone is insufficient.
+An empty required-script set alone is insufficient and does not create a
+script-free bypass.
 
 `SCRIPT_DEPENDENCY=CLOSURE` requires:
 
@@ -330,26 +381,27 @@ ocgforge_relevant_script_paths[]
 ignis_relevant_script_paths[]
 ocgforge_script_closure_digest
 ignis_script_closure_digest
-script_sensitive_boundary_trace_digest
+canonical_gameplay_transcript_sha256
 ```
 
 The relevant script paths are canonical sorted relative paths and their file
 bytes are hashed in path order. The two script closure digests are allowed to
 differ because the runtimes use different CardScripts commits. The binding
 passes only when the exact relevant closure is recorded for both runtimes and
-the script-sensitive execution/output trace is bound to the same supported
-scenario transcript. Equal card passcodes or equal top-level script commits
-alone never prove equivalent behavior.
+the script-dependent behavior is bound by the exact shared
+`CanonicalGameplayTranscriptV1` through the selected boundary. Equal card
+passcodes or equal top-level script commits alone never prove equivalent
+behavior. The transcript hash is behavior-bound evidence; it is not a claim
+that the script bytes are identical.
 
 The future acceptance gate is therefore:
 
 ```text
 CARD_SCRIPT_BEHAVIOR_BINDING=PASS
-or
-SCRIPT_DEPENDENCY_NONE=PASS
 ```
 
-Otherwise the same-scenario bridge remains unproven.
+Otherwise the same-scenario bridge remains unproven. There is no
+`SCRIPT_DEPENDENCY_NONE=PASS` branch in I6C6 V1.
 
 ### 10.3 `PrintedSourceBridgeV1`
 
@@ -496,7 +548,8 @@ No production Ignis file, OCGForge production file, third-party pin, database, o
 - [ ] Include separate `ocgforge_cardscripts_commit` and `ignis_cardscripts_commit` fields, plus the independent OCGForge/Ignis BabelCDB identities.
 - [ ] Build native `PlayerObservation` with `CoreHost` and `ObservationBuildConfig`.
 - [ ] Replay only the explicitly paired supported transcript into `PerspectiveStateMirrorV1`.
-- [ ] Classify each scenario as script-dependent with a passing `CARD_SCRIPT_BEHAVIOR_BINDING`, or as `SCRIPT_DEPENDENCY=NONE` with an explicit proof that no CardScripts behavior can affect the transcript.
+- [ ] Classify every I6C6 V1 scenario as script-dependent and require a passing `CARD_SCRIPT_BEHAVIOR_BINDING`; do not admit a `SCRIPT_DEPENDENCY=NONE` bypass without a separately authorized EDOPro evidence contract.
+- [ ] Require the shared canonical gameplay transcript hash as the script-dependent behavior binding at the selected boundary.
 - [ ] Reject any scenario whose native and Ignis source histories cannot be bound without inference.
 - [ ] Provision Printed rows externally or use an approved synthetic native catalog; do not add real rows to Ignis.
 
@@ -532,7 +585,8 @@ No production Ignis file, OCGForge production file, third-party pin, database, o
 NATIVE_ORACLE_HEAD_MATCH=PASS
 IGNIS_I6C5_HEAD_MATCH=PASS
 SCENARIO_PROVENANCE_BINDING=PASS
-CARD_SCRIPT_BEHAVIOR_BINDING=PASS_OR_SCRIPT_DEPENDENCY_NONE=PASS
+CANONICAL_GAMEPLAY_TRANSCRIPT_BINDING=PASS
+CARD_SCRIPT_BEHAVIOR_BINDING=PASS
 PLAYER_TO_ACT_ABSENT_OR_I6D_BLOCKED=PASS
 TYPED_FIELD_COMPARISON=PASS
 NATIVE_SAFE_STATE_BYTES=PASS
