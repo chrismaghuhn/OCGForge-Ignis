@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Collections;
 using System.Reflection;
 using OCGForge.Ignis.Client;
@@ -727,6 +728,760 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C3 SZONE chain boundary", AssertI6C3SzoneChainBoundary);
         Run("I6C3 failed chain apply atomicity", AssertI6C3FailedChainApplyAtomicity);
         Run("I6C3 transport chunking", AssertI6C3TransportChunking);
+        Run("I6C4 draw event ledger", AssertI6C4DrawEventLedger);
+        Run("I6C4 event index lifecycle", AssertI6C4EventIndexLifecycle);
+        Run("I6C4 event kind mapping", AssertI6C4EventKindMapping);
+        Run("I6C4 packet shapes and privacy", AssertI6C4PacketShapesAndPrivacy);
+        Run("I6C4 shuffle boundary and knowledge destruction", AssertI6C4ShuffleBoundary);
+        Run("I6C4 atomicity and overflow", AssertI6C4AtomicityAndOverflow);
+        Run("I6C4 historical locators do not rebind", AssertI6C4HistoricalLocators);
+        Run("I6C4 paired hidden worlds", AssertI6C4PairedPrivacy);
+        Run("I6C4 transport chunking", AssertI6C4TransportChunking);
+    }
+
+    private static void AssertI6C4DrawEventLedger()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0, deckCount0: 2);
+
+        ApplyMirrorMessage(
+            mirror,
+            decoder,
+            DrawMessage(0, (0x1000u, 0x05u), (0x1001u, 0x05u)));
+
+        Equal(3, mirror.VisibleEvents.Count);
+        Equal(PerspectiveSafeVisibleEventKindV1.Draw, mirror.VisibleEvents[0].Kind);
+        Equal(PerspectiveSafeVisibleEventKindV1.CardRevealed, mirror.VisibleEvents[1].Kind);
+        Equal(PerspectiveSafeVisibleEventKindV1.CardRevealed, mirror.VisibleEvents[2].Kind);
+        Equal((ulong)0, mirror.VisibleEvents[0].EventIndex);
+        Equal((ulong)1, mirror.VisibleEvents[1].EventIndex);
+        Equal((ulong)2, mirror.VisibleEvents[2].EventIndex);
+    }
+
+    private static void AssertI6C4EventIndexLifecycle()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        Equal((ulong)0, mirror.NextEventIndex);
+        Equal(0, mirror.VisibleEvents.Count);
+
+        ApplyI6C4Success(mirror, decoder, new byte[] { 100, 0, 1, 0, 0, 0 });
+        Equal((ulong)0, mirror.NextEventIndex);
+        Equal(0, mirror.VisibleEvents.Count);
+
+        ApplyI6C4Success(mirror, decoder, new byte[] { 40, 0 });
+        Equal((ulong)1, mirror.NextEventIndex);
+        Equal((ulong)0, mirror.VisibleEvents[0].EventIndex);
+        Equal(PerspectiveSafeVisibleEventKindV1.TurnStarted, mirror.VisibleEvents[0].Kind);
+
+        (PerspectiveStateMirrorV1 drawMirror, GameplayMessageDecoderV1 drawDecoder) =
+            CreateMirror(0, deckCount0: 2);
+        ApplyI6C4Success(
+            drawMirror,
+            drawDecoder,
+            DrawMessage(0, (0x1000u, 0x05u), (0x1001u, 0x05u)));
+        Equal(3, drawMirror.VisibleEvents.Count);
+        Equal((ulong)0, drawMirror.VisibleEvents[0].EventIndex);
+        Equal((ulong)1, drawMirror.VisibleEvents[1].EventIndex);
+        Equal((ulong)2, drawMirror.VisibleEvents[2].EventIndex);
+        Equal((ulong)3, drawMirror.NextEventIndex);
+
+        (PerspectiveStateMirrorV1 shuffleMirror, GameplayMessageDecoderV1 shuffleDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(shuffleMirror, shuffleDecoder, new byte[] { 32, 1 });
+        ApplyI6C4Success(shuffleMirror, shuffleDecoder, new byte[] { 37 });
+        Equal(4, shuffleMirror.VisibleEvents.Count);
+        Equal((ulong)0, shuffleMirror.VisibleEvents[0].EventIndex);
+        Equal((ulong)1, shuffleMirror.VisibleEvents[1].EventIndex);
+        Equal((ulong)2, shuffleMirror.VisibleEvents[2].EventIndex);
+        Equal((ulong)3, shuffleMirror.VisibleEvents[3].EventIndex);
+        Equal((ulong)4, shuffleMirror.NextEventIndex);
+    }
+
+    private static void AssertI6C4EventKindMapping()
+    {
+        (PerspectiveStateMirrorV1 turnMirror, GameplayMessageDecoderV1 turnDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(turnMirror, turnDecoder, new byte[] { 40, 1 });
+        Equal(PerspectiveSafeVisibleEventKindV1.TurnStarted, LastI6C4Event(turnMirror).Kind);
+        ApplyI6C4Success(turnMirror, turnDecoder, new byte[] { 41, 4, 0 });
+        Equal(PerspectiveSafeVisibleEventKindV1.PhaseChanged, LastI6C4Event(turnMirror).Kind);
+
+        (PerspectiveStateMirrorV1 moveMirror, GameplayMessageDecoderV1 moveDecoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 monster = new(0, 0x04, 0, 0x01);
+        ApplyI6C4Success(moveMirror, moveDecoder, MoveMessage(0x1000, empty, monster, 0));
+        Equal(PerspectiveSafeVisibleEventKindV1.CardMoved, LastI6C4Event(moveMirror).Kind);
+        Equal("p0:MONSTER_ZONE:0", LastI6C4Event(moveMirror).EntityLocator);
+        Equal((uint)0x1000, LastI6C4Event(moveMirror).PublicPasscode);
+
+        (PerspectiveStateMirrorV1 destroyedMirror, GameplayMessageDecoderV1 destroyedDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(destroyedMirror, destroyedDecoder, MoveMessage(0x1001, empty, monster, 0));
+        ApplyI6C4Success(
+            destroyedMirror,
+            destroyedDecoder,
+            MoveMessage(0x1001, monster, new ModernLocInfoV1(0, 0x10, 0, 0x01), 0x01));
+        Equal(PerspectiveSafeVisibleEventKindV1.CardDestroyed, LastI6C4Event(destroyedMirror).Kind);
+
+        (PerspectiveStateMirrorV1 banishedMirror, GameplayMessageDecoderV1 banishedDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(banishedMirror, banishedDecoder, MoveMessage(0x1002, empty, monster, 0));
+        ApplyI6C4Success(
+            banishedMirror,
+            banishedDecoder,
+            MoveMessage(0x1002, monster, new ModernLocInfoV1(0, 0x20, 0, 0x01), 0));
+        Equal(PerspectiveSafeVisibleEventKindV1.CardBanished, LastI6C4Event(banishedMirror).Kind);
+
+        (PerspectiveStateMirrorV1 returnedMirror, GameplayMessageDecoderV1 returnedDecoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 graveyard = new(0, 0x10, 0, 0x01);
+        ApplyI6C4Success(returnedMirror, returnedDecoder, MoveMessage(0x1003, empty, graveyard, 0));
+        ApplyI6C4Success(returnedMirror, returnedDecoder, MoveMessage(0x1003, graveyard, monster, 0));
+        Equal(PerspectiveSafeVisibleEventKindV1.CardReturned, LastI6C4Event(returnedMirror).Kind);
+
+        (PerspectiveStateMirrorV1 positionMirror, GameplayMessageDecoderV1 positionDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(positionMirror, positionDecoder, MoveMessage(0x1004, empty, monster, 0));
+        ApplyI6C4Success(positionMirror, positionDecoder, PosChangeMessage(0, 0x04, 0, 0x01, 0x08));
+        Equal(PerspectiveSafeVisibleEventKindV1.PositionChanged, LastI6C4Event(positionMirror).Kind);
+
+        (PerspectiveStateMirrorV1 presentationMirror, GameplayMessageDecoderV1 presentationDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(presentationMirror, presentationDecoder, SetMessage(0x1005, monster));
+        Equal(PerspectiveSafeVisibleEventKindV1.Set, LastI6C4Event(presentationMirror).Kind);
+        ApplyI6C4Success(
+            presentationMirror,
+            presentationDecoder,
+            SummoningMessage(60, 0x1006, monster));
+        Equal(PerspectiveSafeVisibleEventKindV1.Summoned, LastI6C4Event(presentationMirror).Kind);
+        ApplyI6C4Success(presentationMirror, presentationDecoder, new byte[] { 61 });
+        Equal(PerspectiveSafeVisibleEventKindV1.Summoned, LastI6C4Event(presentationMirror).Kind);
+        ApplyI6C4Success(
+            presentationMirror,
+            presentationDecoder,
+            SummoningMessage(62, 0x1007, monster));
+        Equal(PerspectiveSafeVisibleEventKindV1.Summoned, LastI6C4Event(presentationMirror).Kind);
+        ApplyI6C4Success(presentationMirror, presentationDecoder, new byte[] { 63 });
+        Equal(PerspectiveSafeVisibleEventKindV1.Summoned, LastI6C4Event(presentationMirror).Kind);
+        ApplyI6C4Success(
+            presentationMirror,
+            presentationDecoder,
+            SummoningMessage(64, 0x1008, monster));
+        Equal(PerspectiveSafeVisibleEventKindV1.Summoned, LastI6C4Event(presentationMirror).Kind);
+        ApplyI6C4Success(presentationMirror, presentationDecoder, new byte[] { 65 });
+        Equal(PerspectiveSafeVisibleEventKindV1.Summoned, LastI6C4Event(presentationMirror).Kind);
+
+        (PerspectiveStateMirrorV1 lifeMirror, GameplayMessageDecoderV1 lifeDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(lifeMirror, lifeDecoder, new byte[] { 94, 0, 0xf4, 0x01, 0, 0 });
+        Equal(PerspectiveSafeVisibleEventKindV1.LifePointsChanged, LastI6C4Event(lifeMirror).Kind);
+        Equal(500, LastI6C4Event(lifeMirror).Amount);
+        ApplyI6C4Success(lifeMirror, lifeDecoder, new byte[] { 91, 0, 0x64, 0, 0, 0 });
+        Equal(-100, LastI6C4Event(lifeMirror).Amount);
+        ApplyI6C4Success(lifeMirror, lifeDecoder, new byte[] { 92, 0, 0x32, 0, 0, 0 });
+        Equal(50, LastI6C4Event(lifeMirror).Amount);
+
+        (PerspectiveStateMirrorV1 chainMirror, GameplayMessageDecoderV1 chainDecoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 chainTarget = new(0, 0x04, 1, 0x01);
+        ApplyI6C4Success(chainMirror, chainDecoder, MoveMessage(0x1007, empty, monster, 0));
+        ApplyI6C4Success(chainMirror, chainDecoder, MoveMessage(0x1008, empty, chainTarget, 0));
+        ApplyI6C4Success(chainMirror, chainDecoder, ChainingMessage(monster, 1, 0x1007));
+        Equal(PerspectiveSafeVisibleEventKindV1.ChainActivated, LastI6C4Event(chainMirror).Kind);
+        ApplyI6C4Success(chainMirror, chainDecoder, new byte[] { 71, 1 });
+        Equal(PerspectiveSafeVisibleEventKindV1.ChainActivated, LastI6C4Event(chainMirror).Kind);
+        ApplyI6C4Success(chainMirror, chainDecoder, BecomeTargetMessage(chainTarget));
+        Equal(PerspectiveSafeVisibleEventKindV1.Targeted, LastI6C4Event(chainMirror).Kind);
+        ApplyI6C4Success(chainMirror, chainDecoder, new byte[] { 72, 1 });
+        Equal(PerspectiveSafeVisibleEventKindV1.ChainResolved, LastI6C4Event(chainMirror).Kind);
+        ApplyI6C4Success(chainMirror, chainDecoder, new byte[] { 73, 1 });
+        Equal(PerspectiveSafeVisibleEventKindV1.ChainResolved, LastI6C4Event(chainMirror).Kind);
+        ApplyI6C4Success(chainMirror, chainDecoder, new byte[] { 74 });
+        Equal(PerspectiveSafeVisibleEventKindV1.ChainEnded, LastI6C4Event(chainMirror).Kind);
+
+        (PerspectiveStateMirrorV1 negatedMirror, GameplayMessageDecoderV1 negatedDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(negatedMirror, negatedDecoder, MoveMessage(0x1010, empty, monster, 0));
+        ApplyI6C4Success(negatedMirror, negatedDecoder, ChainingMessage(monster, 1, 0x1010));
+        ApplyI6C4Success(negatedMirror, negatedDecoder, new byte[] { 71, 1 });
+        int negatedEventCount = negatedMirror.VisibleEvents.Count;
+        ApplyI6C4Success(negatedMirror, negatedDecoder, new byte[] { 75, 1 });
+        Equal(negatedEventCount, negatedMirror.VisibleEvents.Count);
+
+        (PerspectiveStateMirrorV1 disabledMirror, GameplayMessageDecoderV1 disabledDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(disabledMirror, disabledDecoder, MoveMessage(0x1011, empty, monster, 0));
+        ApplyI6C4Success(disabledMirror, disabledDecoder, ChainingMessage(monster, 1, 0x1011));
+        ApplyI6C4Success(disabledMirror, disabledDecoder, new byte[] { 71, 1 });
+        int disabledEventCount = disabledMirror.VisibleEvents.Count;
+        ApplyI6C4Success(disabledMirror, disabledDecoder, new byte[] { 76, 1 });
+        Equal(disabledEventCount, disabledMirror.VisibleEvents.Count);
+
+        (PerspectiveStateMirrorV1 relationMirror, GameplayMessageDecoderV1 relationDecoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 target = new(0, 0x04, 1, 0x01);
+        ApplyI6C4Success(relationMirror, relationDecoder, MoveMessage(0x1008, empty, monster, 0));
+        ApplyI6C4Success(relationMirror, relationDecoder, MoveMessage(0x1009, empty, target, 0));
+        ApplyI6C4Success(relationMirror, relationDecoder, EquipMessage(monster, target));
+        Equal(PerspectiveSafeVisibleEventKindV1.Equipped, LastI6C4Event(relationMirror).Kind);
+        ApplyI6C4Success(relationMirror, relationDecoder, CardTargetMessage(monster, target));
+        Equal(PerspectiveSafeVisibleEventKindV1.Targeted, LastI6C4Event(relationMirror).Kind);
+        ApplyI6C4Success(relationMirror, relationDecoder, CardTargetMessage(monster, target, cancel: true));
+        Equal(PerspectiveSafeVisibleEventKindV1.Targeted, LastI6C4Event(relationMirror).Kind);
+
+        (PerspectiveStateMirrorV1 counterMirror, GameplayMessageDecoderV1 counterDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(counterMirror, counterDecoder, CounterMessage(101, 7, 0, 0x04, 0, 3));
+        Equal(PerspectiveSafeVisibleEventKindV1.CounterChanged, LastI6C4Event(counterMirror).Kind);
+        Equal((uint)7, LastI6C4Event(counterMirror).CounterType);
+        Equal(3, LastI6C4Event(counterMirror).Amount);
+        ApplyI6C4Success(counterMirror, counterDecoder, CounterMessage(102, 7, 0, 0x04, 0, 1));
+        Equal(PerspectiveSafeVisibleEventKindV1.CounterChanged, LastI6C4Event(counterMirror).Kind);
+        Equal(1, LastI6C4Event(counterMirror).Amount);
+
+        (PerspectiveStateMirrorV1 winMirror, GameplayMessageDecoderV1 winDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(winMirror, winDecoder, new byte[] { 5, 0, 7 });
+        Equal(PerspectiveSafeVisibleEventKindV1.Win, LastI6C4Event(winMirror).Kind);
+        Equal((byte)0, LastI6C4Event(winMirror).Winner);
+        Equal((byte)7, LastI6C4Event(winMirror).WinReason);
+
+        (PerspectiveStateMirrorV1 drawWinMirror, GameplayMessageDecoderV1 drawWinDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(drawWinMirror, drawWinDecoder, new byte[] { 5, 2, 8 });
+        Equal((byte)2, LastI6C4Event(drawWinMirror).Winner);
+
+        False(winMirror.VisibleEvents.Any(
+            value => value.Kind == PerspectiveSafeVisibleEventKindV1.Unknown));
+    }
+
+    private static void AssertI6C4PacketShapesAndPrivacy()
+    {
+        (PerspectiveStateMirrorV1 compactMirror, GameplayMessageDecoderV1 compactDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            compactMirror,
+            compactDecoder,
+            ConfirmMessage(31, 0, (0x2000u, new ModernLocInfoV1(1, 0x02, 2, 0))));
+        PerspectiveSafeVisibleEventV1 compactEvent = LastI6C4Event(compactMirror);
+        Equal(PerspectiveSafeVisibleEventKindV1.CardRevealed, compactEvent.Kind);
+        Equal((uint)0x2000, compactEvent.PublicPasscode);
+        Equal("p1:HAND:2", compactEvent.EntityLocator);
+        Equal(PerspectiveSafeSemanticZoneV1.Hand, compactEvent.ToZone);
+        Equal((byte)0x02, compactMirror.EventSourceFacts[0].SourceLocations[0].Location);
+
+        (PerspectiveStateMirrorV1 deckTopMirror, GameplayMessageDecoderV1 deckTopDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            deckTopMirror,
+            deckTopDecoder,
+            ConfirmMessage(
+                30,
+                0,
+                (0x2003u, new ModernLocInfoV1(0, 0x04, 4, 0x01))));
+        Equal(PerspectiveSafeVisibleEventKindV1.CardRevealed, LastI6C4Event(deckTopMirror).Kind);
+        Equal((uint)0x2003, LastI6C4Event(deckTopMirror).PublicPasscode);
+
+        (PerspectiveStateMirrorV1 extraTopMirror, GameplayMessageDecoderV1 extraTopDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            extraTopMirror,
+            extraTopDecoder,
+            ConfirmMessage(
+                42,
+                0,
+                (0x2004u, new ModernLocInfoV1(0, 0x40, 2, 0x01))));
+        Equal(PerspectiveSafeVisibleEventKindV1.CardRevealed, LastI6C4Event(extraTopMirror).Kind);
+        Equal((uint)0x2004, LastI6C4Event(extraTopMirror).PublicPasscode);
+
+        (PerspectiveStateMirrorV1 zeroConfirmMirror, GameplayMessageDecoderV1 zeroConfirmDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            zeroConfirmMirror,
+            zeroConfirmDecoder,
+            new byte[] { 31, 0, 0, 0, 0, 0 });
+        Equal(0, zeroConfirmMirror.VisibleEvents.Count);
+        Equal((ulong)0, zeroConfirmMirror.NextEventIndex);
+
+        (PerspectiveStateMirrorV1 extendedMirror, GameplayMessageDecoderV1 extendedDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            extendedMirror,
+            extendedDecoder,
+            ConfirmMessage(
+                42,
+                1,
+                (0x2001u, new ModernLocInfoV1(1, 0x04, 3, 0x01)),
+                extended: true));
+        PerspectiveSafeVisibleEventV1 extendedEvent = LastI6C4Event(extendedMirror);
+        Null(extendedEvent.PublicPasscode);
+        Null(extendedEvent.EntityLocator);
+        Equal(PerspectiveSafeSemanticZoneV1.MonsterZone, extendedEvent.ToZone);
+
+        (PerspectiveStateMirrorV1 extraConfirmMirror, GameplayMessageDecoderV1 extraConfirmDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            extraConfirmMirror,
+            extraConfirmDecoder,
+            ConfirmMessage(
+                42,
+                0,
+                (0x2002u, new ModernLocInfoV1(1, 0x40, 1, 0x08))));
+        Equal(PerspectiveSafeVisibleEventKindV1.CardRevealed, LastI6C4Event(extraConfirmMirror).Kind);
+        Equal((uint)0x2002, LastI6C4Event(extraConfirmMirror).PublicPasscode);
+        Equal("p1:EXTRA_DECK:1", LastI6C4Event(extraConfirmMirror).EntityLocator);
+
+        GameplayMessageDecodeResult malformedConfirm = compactDecoder.Decode(
+            new StocGameMessagePayload(new byte[] { 31, 0, 1, 0, 0, 0, 0 }));
+        False(malformedConfirm.IsSuccess);
+        Equal(GameplayErrorCode.QueryLengthMismatch, malformedConfirm.Error);
+
+        GameplayMessageDecodeResult emptySummoning = compactDecoder.Decode(
+            new StocGameMessagePayload(
+                SummoningMessage(60, 0x2005, new ModernLocInfoV1(0, 0, 0, 0))));
+        False(emptySummoning.IsSuccess);
+        Equal(GameplayErrorCode.InvalidLocation, emptySummoning.Error);
+
+        GameplayMessageDecodeResult emptyConfirm = compactDecoder.Decode(
+            new StocGameMessagePayload(
+                ConfirmMessage(31, 0, (0x2006u, new ModernLocInfoV1(0, 0, 0, 0)))));
+        False(emptyConfirm.IsSuccess);
+        Equal(GameplayErrorCode.InvalidLocation, emptyConfirm.Error);
+
+        GameplayMessageDecodeResult emptyCounter = compactDecoder.Decode(
+            new StocGameMessagePayload(CounterMessage(101, 7, 0, 0, 0, 1)));
+        False(emptyCounter.IsSuccess);
+        Equal(GameplayErrorCode.InvalidLocation, emptyCounter.Error);
+
+        (PerspectiveStateMirrorV1 shuffleMirror, GameplayMessageDecoderV1 shuffleDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            shuffleMirror,
+            shuffleDecoder,
+            ShuffleSetCardMessage(
+                0x04,
+                new[]
+                {
+                    new ModernLocInfoV1(0, 0x04, 0, 0x08),
+                    new ModernLocInfoV1(0, 0x04, 1, 0x08)
+                },
+                new[]
+                {
+                    new ModernLocInfoV1(0, 0x04, 1, 0x08),
+                    new ModernLocInfoV1(0, 0, 0, 0)
+                }));
+        Equal(2, shuffleMirror.VisibleEvents.Count);
+        Equal((byte)0, shuffleMirror.VisibleEvents[0].Player);
+        Null(shuffleMirror.VisibleEvents[0].PublicPasscode);
+        Null(shuffleMirror.VisibleEvents[0].EntityLocator);
+        Equal((uint)0, shuffleMirror.VisibleEvents[1].Count);
+
+        byte[] legacyOneVector = Join(
+            new byte[] { 36, 0x04, 1 },
+            LocInfo(0, 0x04, 0, 0x08));
+        GameplayMessageDecodeResult legacyShuffle = shuffleDecoder.Decode(
+            new StocGameMessagePayload(legacyOneVector));
+        False(legacyShuffle.IsSuccess);
+        Equal(GameplayErrorCode.QueryLengthMismatch, legacyShuffle.Error);
+
+        GameplayMessageDecodeResult twoLocationUnequip = shuffleDecoder.Decode(
+            new StocGameMessagePayload(
+                Join(
+                    new byte[] { 95 },
+                    LocInfo(0, 0x04, 0, 0x01),
+                    LocInfo(0, 0x04, 1, 0x01))));
+        False(twoLocationUnequip.IsSuccess);
+        Equal(GameplayErrorCode.MalformedGameMessage, twoLocationUnequip.Error);
+
+        GameplayMessageDecodeResult mixedPreviousShuffle = shuffleDecoder.Decode(
+            new StocGameMessagePayload(
+                ShuffleSetCardMessage(
+                    0x04,
+                    new[]
+                    {
+                        new ModernLocInfoV1(0, 0x04, 0, 0x08),
+                        new ModernLocInfoV1(1, 0x04, 1, 0x08)
+                    },
+                    new[]
+                    {
+                        new ModernLocInfoV1(0, 0x04, 0, 0x08),
+                        new ModernLocInfoV1(0, 0, 0, 0)
+                    })));
+        False(mixedPreviousShuffle.IsSuccess);
+        Equal(GameplayErrorCode.InvalidParticipant, mixedPreviousShuffle.Error);
+
+        GameplayMessageDecodeResult mismatchedCurrentShuffle = shuffleDecoder.Decode(
+            new StocGameMessagePayload(
+                ShuffleSetCardMessage(
+                    0x04,
+                    new[] { new ModernLocInfoV1(0, 0x04, 0, 0x08) },
+                    new[] { new ModernLocInfoV1(1, 0x04, 0, 0x08) })));
+        False(mismatchedCurrentShuffle.IsSuccess);
+        Equal(GameplayErrorCode.InvalidStateTransition, mismatchedCurrentShuffle.Error);
+
+        (PerspectiveStateMirrorV1 hiddenDrawMirror, GameplayMessageDecoderV1 hiddenDrawDecoder) =
+            CreateMirror(0, deckCount1: 1);
+        ApplyI6C4Success(
+            hiddenDrawMirror,
+            hiddenDrawDecoder,
+            DrawMessage(1, (0xfeedbeefu, 0x08u)));
+        Equal(1, hiddenDrawMirror.VisibleEvents.Count);
+        Equal(PerspectiveSafeVisibleEventKindV1.Draw, hiddenDrawMirror.VisibleEvents[0].Kind);
+        Null(hiddenDrawMirror.VisibleEvents[0].PublicPasscode);
+
+        (PerspectiveStateMirrorV1 faceUpDrawMirror, GameplayMessageDecoderV1 faceUpDrawDecoder) =
+            CreateMirror(0, deckCount1: 1);
+        ApplyI6C4Success(
+            faceUpDrawMirror,
+            faceUpDrawDecoder,
+            DrawMessage(1, (0xfeedbeefu, 0x05u)));
+        Equal(2, faceUpDrawMirror.VisibleEvents.Count);
+        Equal(PerspectiveSafeVisibleEventKindV1.CardRevealed, faceUpDrawMirror.VisibleEvents[1].Kind);
+        Equal((uint)0xfeedbeef, faceUpDrawMirror.VisibleEvents[1].PublicPasscode);
+
+        IList<PerspectiveSafeVisibleEventV1> readOnlyEvents =
+            (IList<PerspectiveSafeVisibleEventV1>)compactMirror.VisibleEvents;
+        bool mutationRejected = false;
+        try
+        {
+            readOnlyEvents.Add(new PerspectiveSafeVisibleEventV1(
+                99,
+                PerspectiveSafeVisibleEventKindV1.Win));
+        }
+        catch (NotSupportedException)
+        {
+            mutationRejected = true;
+        }
+
+        True(mutationRejected, "event ledger collection must be read-only");
+        Equal(1, compactMirror.VisibleEvents.Count);
+    }
+
+    private static void AssertI6C4ShuffleBoundary()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0, deckCount1: 2);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 hiddenHand = new(1, 0x02, 0, 0x08);
+        ApplyI6C4Success(mirror, decoder, MoveMessage(0x9000, empty, hiddenHand, 0));
+        Equal(1, mirror.Snapshot.Cards.Count);
+        ApplyI6C4Success(mirror, decoder, ShuffleCodesMessage(33, 1, 0x9000));
+        Equal(3, mirror.VisibleEvents.Count);
+        Equal(PerspectiveSafeVisibleEventKindV1.Shuffle, mirror.VisibleEvents[1].Kind);
+        Equal(PerspectiveSafeVisibleEventKindV1.RandomizationBoundary, mirror.VisibleEvents[2].Kind);
+        Equal((byte)1, mirror.VisibleEvents[1].Player);
+        Null(mirror.VisibleEvents[1].PublicPasscode);
+        Equal(0, mirror.Snapshot.Cards.Count);
+        Equal(1u, mirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Opponent,
+            MirrorZoneV1.Hand).Count.Value);
+
+        (PerspectiveStateMirrorV1 selfHandMirror, GameplayMessageDecoderV1 selfHandDecoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 selfHandFirst = new(0, 0x02, 0, 0x08);
+        ModernLocInfoV1 selfHandSecond = new(0, 0x02, 1, 0x08);
+        ApplyI6C4Success(
+            selfHandMirror,
+            selfHandDecoder,
+            MoveMessage(0x9100, new ModernLocInfoV1(0, 0, 0, 0), selfHandFirst, 0));
+        ApplyI6C4Success(
+            selfHandMirror,
+            selfHandDecoder,
+            MoveMessage(0x9101, new ModernLocInfoV1(0, 0, 0, 0), selfHandSecond, 0));
+        ApplyI6C4Success(
+            selfHandMirror,
+            selfHandDecoder,
+            ShuffleCodesMessage(33, 0, 0x9101, 0x9100));
+        MirrorCardSnapshotV1[] selfHandCards = selfHandMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.Hand).Cards.ToArray();
+        Equal(2, selfHandCards.Length);
+        Equal((uint)0x9101, selfHandCards[0].CardCode.Value);
+        Equal((uint)0x9100, selfHandCards[1].CardCode.Value);
+
+        (PerspectiveStateMirrorV1 selfExtraMirror, GameplayMessageDecoderV1 selfExtraDecoder) =
+            CreateMirror(0, extraCount0: 0);
+        ApplyI6C4Success(
+            selfExtraMirror,
+            selfExtraDecoder,
+            MoveMessage(
+                0x9200,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x40, 0, 0x08),
+                0));
+        ApplyI6C4Success(selfExtraMirror, selfExtraDecoder, ShuffleCodesMessage(39, 0, 0x9200));
+        MirrorCardSnapshotV1 selfExtraCard = selfExtraMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.Single();
+        Equal((uint)0x9200, selfExtraCard.CardCode.Value);
+
+        (PerspectiveStateMirrorV1 publicHandMirror, GameplayMessageDecoderV1 publicHandDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            publicHandMirror,
+            publicHandDecoder,
+            MoveMessage(
+                0x9300,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(1, 0x02, 0, 0x05),
+                0));
+        ApplyI6C4Success(
+            publicHandMirror,
+            publicHandDecoder,
+            MoveMessage(
+                0x9301,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(1, 0x02, 1, 0x08),
+                0));
+        ApplyI6C4Success(
+            publicHandMirror,
+            publicHandDecoder,
+            ShuffleCodesMessage(33, 1, 0x9300, 0x9301));
+        MirrorCardSnapshotV1[] publicHandCards = publicHandMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Opponent,
+            MirrorZoneV1.Hand).Cards.ToArray();
+        Equal(1, publicHandCards.Length);
+        Equal((uint)0x9300, publicHandCards[0].CardCode.Value);
+
+        (PerspectiveStateMirrorV1 extraMirror, GameplayMessageDecoderV1 extraDecoder) =
+            CreateMirror(0, extraCount1: 1);
+        ApplyI6C4Success(extraMirror, extraDecoder, ShuffleCodesMessage(39, 1, 0x9010));
+        Equal(2, extraMirror.VisibleEvents.Count);
+        Equal(PerspectiveSafeVisibleEventKindV1.Shuffle, extraMirror.VisibleEvents[0].Kind);
+        Equal(PerspectiveSafeVisibleEventKindV1.RandomizationBoundary, extraMirror.VisibleEvents[1].Kind);
+        Equal((byte)1, extraMirror.VisibleEvents[0].Player);
+        Null(extraMirror.VisibleEvents[0].PublicPasscode);
+
+        (PerspectiveStateMirrorV1 setMirror, GameplayMessageDecoderV1 setDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            setMirror,
+            setDecoder,
+            ShuffleSetCardMessage(
+                0x08,
+                new[] { new ModernLocInfoV1(1, 0x08, 0, 0x08) },
+                new[] { new ModernLocInfoV1(0, 0, 0, 0) }));
+        Equal((byte)1, setMirror.VisibleEvents[0].Player);
+        Null(setMirror.VisibleEvents[0].ToZone);
+        Equal((byte)0x08, setMirror.EventSourceFacts[0].SourceLocations[0].Location);
+        Equal(2, setMirror.VisibleEvents.Count);
+
+        (PerspectiveStateMirrorV1 compatibilityMirror, GameplayMessageDecoderV1 compatibilityDecoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 source = new(0, 0x04, 0, 0x01);
+        ModernLocInfoV1 target = new(0, 0x04, 1, 0x01);
+        ApplyI6C4Success(compatibilityMirror, compatibilityDecoder, MoveMessage(0xa000, new ModernLocInfoV1(0, 0, 0, 0), source, 0));
+        ApplyI6C4Success(compatibilityMirror, compatibilityDecoder, MoveMessage(0xa001, new ModernLocInfoV1(0, 0, 0, 0), target, 0));
+        ApplyI6C4Success(compatibilityMirror, compatibilityDecoder, EquipMessage(source, target));
+        int eventCountBeforeUnequip = compatibilityMirror.VisibleEvents.Count;
+        string snapshotBeforeUnequip = compatibilityMirror.Snapshot.ToDeterministicString();
+        string eventsBeforeUnequip = I6C4EventSignature(compatibilityMirror);
+        ulong nextIndexBeforeUnequip = compatibilityMirror.NextEventIndex;
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.Proven,
+            compatibilityMirror.EventSourceCertification);
+        GameplayMessageDecodeResult decodedUnequip = compatibilityDecoder.Decode(
+            new StocGameMessagePayload(UnequipMessage(source)));
+        True(decodedUnequip.IsSuccess);
+        NotNull(decodedUnequip.Message);
+        MirrorApplyResult acceptedUnequip = compatibilityMirror.Apply(decodedUnequip.Message!);
+        True(acceptedUnequip.IsSuccess, acceptedUnequip.Error.ToString());
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.RejectedUnexpectedUnreachableMessage,
+            compatibilityMirror.EventSourceCertification);
+        NotEqual(snapshotBeforeUnequip, compatibilityMirror.Snapshot.ToDeterministicString());
+        Equal(eventsBeforeUnequip, I6C4EventSignature(compatibilityMirror));
+        Equal(nextIndexBeforeUnequip, compatibilityMirror.NextEventIndex);
+        Equal(eventCountBeforeUnequip, compatibilityMirror.VisibleEvents.Count);
+        False(compatibilityMirror.VisibleEvents.Any(
+            value => value.Kind == PerspectiveSafeVisibleEventKindV1.Unequipped));
+        Equal(0, compatibilityMirror.Snapshot.EquipmentRelations.Count);
+
+        ApplyI6C4Success(compatibilityMirror, compatibilityDecoder, new byte[] { 40, 1 });
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.RejectedUnexpectedUnreachableMessage,
+            compatibilityMirror.EventSourceCertification);
+
+        (PerspectiveStateMirrorV1 failedDecodeMirror, GameplayMessageDecoderV1 failedDecodeDecoder) =
+            CreateMirror(0);
+        GameplayMessageDecodeResult malformedUnequip = failedDecodeDecoder.Decode(
+            new StocGameMessagePayload(new byte[] { 95 }));
+        False(malformedUnequip.IsSuccess);
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.Proven,
+            failedDecodeMirror.EventSourceCertification);
+
+        (PerspectiveStateMirrorV1 failedApplyMirror, GameplayMessageDecoderV1 failedApplyDecoder) =
+            CreateMirror(0);
+        GameplayMessageDecodeResult validUnequip = failedApplyDecoder.Decode(
+            new StocGameMessagePayload(UnequipMessage(source)));
+        True(validUnequip.IsSuccess);
+        MirrorApplyResult failedUnequip = failedApplyMirror.Apply(validUnequip.Message!);
+        False(failedUnequip.IsSuccess);
+        Equal(GameplayErrorCode.UnknownMirrorReference, failedUnequip.Error);
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.Proven,
+            failedApplyMirror.EventSourceCertification);
+
+        (PerspectiveStateMirrorV1 zeroEventMirror, GameplayMessageDecoderV1 zeroEventDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(zeroEventMirror, zeroEventDecoder, new byte[] { 100, 0, 1, 0, 0, 0 });
+        Equal(
+            PerspectiveSafeEventSourceCertificationV1.Proven,
+            zeroEventMirror.EventSourceCertification);
+    }
+
+    private static void AssertI6C4AtomicityAndOverflow()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        string beforeSnapshot = mirror.Snapshot.ToDeterministicString();
+        string beforeEvents = I6C4EventSignature(mirror);
+        ulong beforeIndex = mirror.NextEventIndex;
+
+        GameplayMessageDecodeResult failedDecode = decoder.Decode(
+            new StocGameMessagePayload(new byte[] { 31, 0, 1, 0, 0, 0, 0 }));
+        False(failedDecode.IsSuccess);
+        Equal(beforeSnapshot, mirror.Snapshot.ToDeterministicString());
+        Equal(beforeEvents, I6C4EventSignature(mirror));
+        Equal(beforeIndex, mirror.NextEventIndex);
+
+        MirrorApplyResult failedApply = mirror.Apply(DecodeMessage(
+            decoder,
+            MoveMessage(
+                0xb000,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x02, 9, 0x08),
+                0)));
+        False(failedApply.IsSuccess);
+        Equal(beforeSnapshot, mirror.Snapshot.ToDeterministicString());
+        Equal(beforeEvents, I6C4EventSignature(mirror));
+        Equal(beforeIndex, mirror.NextEventIndex);
+
+        MirrorApplyResult failedProjection = mirror.Apply(DecodeMessage(
+            decoder,
+            ConfirmMessage(
+                31,
+                0,
+                (0xb001u, new ModernLocInfoV1(0, 0xff, 0, 0)))));
+        False(failedProjection.IsSuccess);
+        Equal(GameplayErrorCode.InvalidLocation, failedProjection.Error);
+        Equal(beforeSnapshot, mirror.Snapshot.ToDeterministicString());
+        Equal(beforeEvents, I6C4EventSignature(mirror));
+        Equal(beforeIndex, mirror.NextEventIndex);
+
+        byte[] partiallyInvalidConfirm = Join(
+            new byte[] { 31, 0 },
+            U32(2),
+            U32(0xb002),
+            new byte[] { 0, 0x04 },
+            U32(0),
+            U32(0xb003),
+            new byte[] { 0, 0xff },
+            U32(0));
+        MirrorApplyResult failedMultiEventProjection = mirror.Apply(DecodeMessage(
+            decoder,
+            partiallyInvalidConfirm));
+        False(failedMultiEventProjection.IsSuccess);
+        Equal(GameplayErrorCode.InvalidLocation, failedMultiEventProjection.Error);
+        Equal(beforeSnapshot, mirror.Snapshot.ToDeterministicString());
+        Equal(beforeEvents, I6C4EventSignature(mirror));
+        Equal(beforeIndex, mirror.NextEventIndex);
+
+        mirror.SetNextEventIndexForTesting(ulong.MaxValue);
+        MirrorApplyResult overflow = mirror.Apply(DecodeMessage(decoder, new byte[] { 40, 0 }));
+        False(overflow.IsSuccess);
+        Equal(GameplayErrorCode.ArithmeticFailure, overflow.Error);
+        Equal((ulong)0, mirror.Snapshot.TurnCount);
+        Equal(0, mirror.VisibleEvents.Count);
+        Equal(ulong.MaxValue, mirror.NextEventIndex);
+    }
+
+    private static void AssertI6C4HistoricalLocators()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ModernLocInfoV1 slot = new(0, 0x04, 0, 0x01);
+        ApplyI6C4Success(mirror, decoder, MoveMessage(0xc000, empty, slot, 0));
+        PerspectiveSafeVisibleEventV1 historical = mirror.VisibleEvents[0];
+        string historicalLocator = historical.EntityLocator!;
+        uint historicalCode = historical.PublicPasscode!.Value;
+
+        ApplyI6C4Success(
+            mirror,
+            decoder,
+            MoveMessage(0xc000, slot, new ModernLocInfoV1(0, 0x10, 0, 0x01), 0));
+        ApplyI6C4Success(
+            mirror,
+            decoder,
+            MoveMessage(0xc001, empty, slot, 0));
+
+        Equal(historicalLocator, historical.EntityLocator);
+        Equal(historicalCode, historical.PublicPasscode);
+        Equal("p0:MONSTER_ZONE:0", historical.EntityLocator);
+        Equal((uint)0xc000, historical.PublicPasscode);
+    }
+
+    private static void AssertI6C4PairedPrivacy()
+    {
+        PerspectiveStateMirrorV1 first = CreateHiddenWorld(0x11112222);
+        PerspectiveStateMirrorV1 second = CreateHiddenWorld(0xaaaabbbb);
+        Equal(I6C4EventSignature(first), I6C4EventSignature(second));
+
+        (PerspectiveStateMirrorV1 hiddenConfirmFirst, GameplayMessageDecoderV1 hiddenConfirmFirstDecoder) =
+            CreateMirror(0);
+        (PerspectiveStateMirrorV1 hiddenConfirmSecond, GameplayMessageDecoderV1 hiddenConfirmSecondDecoder) =
+            CreateMirror(0);
+        ApplyI6C4Success(
+            hiddenConfirmFirst,
+            hiddenConfirmFirstDecoder,
+            ConfirmMessage(31, 1, (0x11112222u, new ModernLocInfoV1(1, 0x02, 0, 0x08))));
+        ApplyI6C4Success(
+            hiddenConfirmSecond,
+            hiddenConfirmSecondDecoder,
+            ConfirmMessage(31, 1, (0xaaaabbbbu, new ModernLocInfoV1(1, 0x02, 0, 0x08))));
+        Equal(I6C4EventSignature(hiddenConfirmFirst), I6C4EventSignature(hiddenConfirmSecond));
+
+        (GameplayMessageDecoderV1 firstDecoder, GameplayMessageDecoderV1 secondDecoder) =
+            (new GameplayMessageDecoderV1(first.Snapshot.Perspective),
+             new GameplayMessageDecoderV1(second.Snapshot.Perspective));
+        ApplyI6C4Success(first, firstDecoder, ShuffleCodesMessage(33, 1, 0x11112222));
+        ApplyI6C4Success(second, secondDecoder, ShuffleCodesMessage(33, 1, 0xaaaabbbb));
+        Equal(I6C4EventSignature(first), I6C4EventSignature(second));
+        ApplyI6C4Success(first, firstDecoder, ShuffleCodesMessage(39, 1, 0x11112222, 0x33334444));
+        ApplyI6C4Success(second, secondDecoder, ShuffleCodesMessage(39, 1, 0xaaaabbbb, 0xccccdddd));
+        Equal(I6C4EventSignature(first), I6C4EventSignature(second));
+        AssertDoesNotContainForbidden(
+            I6C4EventSignature(first),
+            new[] { "286335522", "2863311530", "socket", "MirrorEntity", "raw" });
+    }
+
+    private static void AssertI6C4TransportChunking()
+    {
+        byte[] start = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            CreateStartBytes(0, deckCount0: 2));
+        byte[] draw = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            DrawMessage(0, (0xd000u, 0x05u)));
+        byte[] turn = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            new byte[] { 40, 1 });
+        byte[] shuffle = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            new byte[] { 32, 0 });
+        byte[] transcript = Join(start, draw, turn, shuffle);
+
+        string whole = RunI6C4TransportTranscript(new[] { transcript });
+        string oneByte = RunI6C4TransportTranscript(
+            transcript.Select(value => new[] { value }).ToArray());
+        string irregular = RunI6C4TransportTranscript(
+            Split(transcript, new[] { 1, 2, 7, 3, 11 }));
+        Equal(whole, oneByte);
+        Equal(whole, irregular);
     }
 
     private static void AssertI6C2MissingMirror()
@@ -2421,5 +3176,164 @@ internal static class I6CPublicFrameSourceTests
             properties.RightScale?.ToString() ?? "absent",
             properties.StatusFlags?.ToString() ?? "absent",
             string.Join(",", properties.Counters));
+    }
+
+    private static void ApplyI6C4Success(
+        PerspectiveStateMirrorV1 mirror,
+        GameplayMessageDecoderV1 decoder,
+        byte[] bytes)
+    {
+        MirrorApplyResult result = mirror.Apply(DecodeMessage(decoder, bytes));
+        True(result.IsSuccess, $"message {bytes[0]} failed: {result.Error}");
+    }
+
+    private static PerspectiveSafeVisibleEventV1 LastI6C4Event(
+        PerspectiveStateMirrorV1 mirror)
+    {
+        True(mirror.VisibleEvents.Count > 0, "expected at least one visible event");
+        return mirror.VisibleEvents[^1];
+    }
+
+    private static string I6C4EventSignature(
+        PerspectiveStateMirrorV1 mirror) =>
+        string.Join(
+            "|",
+            mirror.VisibleEvents.Select(value => string.Join(
+                ":",
+                value.EventIndex,
+                (byte)value.Kind,
+                value.Player?.ToString() ?? "absent",
+                value.EntityLocator ?? "absent",
+                value.PublicPasscode?.ToString() ?? "absent",
+                value.FromZone?.ToString() ?? "absent",
+                value.ToZone?.ToString() ?? "absent",
+                value.Count?.ToString() ?? "absent",
+                value.Amount?.ToString() ?? "absent",
+                value.CounterType?.ToString() ?? "absent",
+                value.Phase?.ToString() ?? "absent",
+                value.Winner?.ToString() ?? "absent",
+                value.WinReason?.ToString() ?? "absent",
+                value.EffectDescription?.ToString() ?? "absent",
+                string.Join(",", value.Targets))));
+
+    private static byte[] U16(ushort value)
+    {
+        byte[] result = new byte[2];
+        BinaryPrimitives.WriteUInt16LittleEndian(result, value);
+        return result;
+    }
+
+    private static byte[] SummoningMessage(
+        byte messageId,
+        uint cardCode,
+        ModernLocInfoV1 location) =>
+        Join(
+            new byte[] { messageId },
+            U32(cardCode),
+            LocInfo(
+                location.Controller,
+                location.Location,
+                location.Sequence,
+                location.Position));
+
+    private static byte[] ConfirmMessage(
+        byte messageId,
+        byte recipient,
+        (uint Code, ModernLocInfoV1 Location) card,
+        bool extended = false)
+    {
+        byte[] location = extended
+            ? LocInfo(
+                card.Location.Controller,
+                card.Location.Location,
+                card.Location.Sequence,
+                card.Location.Position)
+            : Join(
+                new byte[] { card.Location.Controller, card.Location.Location },
+                U32(card.Location.Sequence));
+        return Join(
+            new byte[] { messageId, recipient },
+            U32(1),
+            U32(card.Code),
+            location);
+    }
+
+    private static byte[] ShuffleCodesMessage(
+        byte messageId,
+        byte player,
+        params uint[] cardCodes)
+    {
+        List<byte[]> parts = new()
+        {
+            new byte[] { messageId, player },
+            U32((uint)cardCodes.Length)
+        };
+        parts.AddRange(cardCodes.Select(U32));
+        return Join(parts.ToArray());
+    }
+
+    private static byte[] ShuffleSetCardMessage(
+        byte location,
+        ModernLocInfoV1[] previous,
+        ModernLocInfoV1[] current)
+    {
+        List<byte[]> parts = new()
+        {
+            new byte[] { 36, location, (byte)previous.Length }
+        };
+        parts.AddRange(previous.Select(value => LocInfo(
+            value.Controller,
+            value.Location,
+            value.Sequence,
+            value.Position)));
+        parts.AddRange(current.Select(value => LocInfo(
+            value.Controller,
+            value.Location,
+            value.Sequence,
+            value.Position)));
+        return Join(parts.ToArray());
+    }
+
+    private static byte[] CounterMessage(
+        byte messageId,
+        ushort counterType,
+        byte controller,
+        byte location,
+        byte sequence,
+        ushort count) =>
+        Join(
+            new byte[] { messageId },
+            U16(counterType),
+            new byte[] { controller, location, sequence },
+            U16(count));
+
+    private static string RunI6C4TransportTranscript(byte[][] chunks)
+    {
+        TestTransport transport = new(chunks);
+        GameplayHandoffAcquireResult acquired =
+            GameplayHandoffConsumerV1.TryCreate(
+                CreateHandoff(transport, Array.Empty<byte>()));
+        True(acquired.IsSuccess);
+        GameplayPumpResult start = acquired.Consumer!.PumpAsync(
+            CancellationToken.None).GetAwaiter().GetResult();
+        True(start.IsSuccess, start.Error.ToString());
+        MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
+            start.Message!,
+            start.Perspective!);
+        True(created.IsSuccess, created.Error.ToString());
+
+        GameplayMirrorSessionV1 session = new(start.Session!, created.Mirror!);
+        for (int index = 0; index < 3; index++)
+        {
+            GameplayMirrorPumpResult result = session.PumpAsync(
+                CancellationToken.None).GetAwaiter().GetResult();
+            True(result.IsSuccess, result.Error.ToString());
+        }
+
+        string signature = I6C4EventSignature(session.Mirror) +
+                           "|next=" + session.Mirror.NextEventIndex;
+        session.DisposeAsync().GetAwaiter().GetResult();
+        acquired.Consumer.DisposeAsync().GetAwaiter().GetResult();
+        return signature;
     }
 }

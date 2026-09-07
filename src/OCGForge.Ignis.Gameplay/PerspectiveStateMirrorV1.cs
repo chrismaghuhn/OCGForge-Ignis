@@ -27,6 +27,22 @@ public sealed class PerspectiveStateMirrorV1
 
     public MirrorSnapshotV1 Snapshot => CreateSnapshot(state);
 
+    public IReadOnlyList<PerspectiveSafeVisibleEventV1> VisibleEvents =>
+        state.EventLedger.Events;
+
+    internal ulong NextEventIndex => state.EventLedger.NextEventIndex;
+
+    internal PerspectiveSafeEventSourceCertificationV1 EventSourceCertification =>
+        state.EventLedger.SourceCertification;
+
+    internal IReadOnlyList<PerspectiveSafeEventSourceFactV1> EventSourceFacts =>
+        state.EventLedger.SourceFacts;
+
+    internal void SetNextEventIndexForTesting(ulong nextEventIndex) =>
+        state.EventLedger = PerspectiveSafeEventLedgerV1.ForTesting(
+            nextEventIndex,
+            state.EventLedger.SourceCertification);
+
     public static MirrorCreateResult TryCreate(
         GameplayMessageV1 start,
         GameplayPerspectiveV1 perspective)
@@ -89,6 +105,17 @@ public sealed class PerspectiveStateMirrorV1
             return MirrorApplyResult.Failure(error, before);
         }
 
+        if (!PerspectiveSafeEventLedgerV1.TryAppend(
+                state.EventLedger,
+                message,
+                candidate.Perspective,
+                out PerspectiveSafeEventLedgerV1? stagedLedger,
+                out error))
+        {
+            return MirrorApplyResult.Failure(error, before);
+        }
+
+        candidate.EventLedger = stagedLedger!;
         state = candidate;
         return MirrorApplyResult.Success(CreateSnapshot(state));
     }
@@ -123,6 +150,24 @@ public sealed class PerspectiveStateMirrorV1
             GameplayMessageKindV1.CardTarget => ApplyCardTarget(candidate, message.CardTarget, cancel: false),
             GameplayMessageKindV1.CancelTarget => ApplyCardTarget(candidate, message.CardTarget, cancel: true),
             GameplayMessageKindV1.PayLpCost => ApplyLifePoints(candidate, message.LifePoints, message.Kind),
+            GameplayMessageKindV1.Summoning or
+                GameplayMessageKindV1.Summoned or
+                GameplayMessageKindV1.SpecialSummoning or
+                GameplayMessageKindV1.SpecialSummoned or
+                GameplayMessageKindV1.FlipSummoning or
+                GameplayMessageKindV1.FlipSummoned or
+                GameplayMessageKindV1.ConfirmCards or
+                GameplayMessageKindV1.ConfirmDeckTop or
+                GameplayMessageKindV1.ConfirmExtraTop => GameplayErrorCode.None,
+            GameplayMessageKindV1.ShuffleDeck or
+                GameplayMessageKindV1.ShuffleHand or
+                GameplayMessageKindV1.ShuffleExtra or
+                GameplayMessageKindV1.ShuffleSetCard or
+                GameplayMessageKindV1.ReverseDeck => ApplyShuffle(
+                    candidate,
+                    message.Shuffle!),
+            GameplayMessageKindV1.AddCounter or
+                GameplayMessageKindV1.RemoveCounter => GameplayErrorCode.None,
             _ => GameplayErrorCode.UnsupportedMessage
         };
 
@@ -1204,6 +1249,233 @@ public sealed class PerspectiveStateMirrorV1
         return GameplayErrorCode.None;
     }
 
+    private static GameplayErrorCode ApplyShuffle(
+        MirrorState candidate,
+        GameplayShufflePayloadV1 payload)
+    {
+        switch (payload.Kind)
+        {
+            case GameplayShuffleKindV1.ReverseDeck:
+                return GameplayErrorCode.None;
+            case GameplayShuffleKindV1.Deck:
+                return ClearShuffledZone(
+                    candidate,
+                    payload.Player,
+                    MirrorZoneV1.MainDeck);
+            case GameplayShuffleKindV1.Hand:
+                return ReconcileShuffledPile(
+                    candidate,
+                    payload.Player,
+                    MirrorZoneV1.Hand,
+                    payload.CardCodes);
+            case GameplayShuffleKindV1.Extra:
+                return ReconcileShuffledPile(
+                    candidate,
+                    payload.Player,
+                    MirrorZoneV1.ExtraDeck,
+                    payload.CardCodes);
+            case GameplayShuffleKindV1.SetCard:
+                foreach (ModernLocInfoV1 location in payload.Previous)
+                {
+                    if (!TryNormalizeAddress(
+                            location,
+                            out MirrorAddress address,
+                            out GameplayErrorCode error) ||
+                        address.IsOverlay)
+                    {
+                        return address.IsOverlay
+                            ? GameplayErrorCode.InvalidLocation
+                            : error;
+                    }
+
+                    if (candidate.Entities.TryGetValue(
+                            address,
+                            out EntityState? entity))
+                    {
+                        candidate.Entities.Remove(address);
+                        RemoveEntityRelations(candidate, entity.Id);
+                    }
+                }
+
+                return GameplayErrorCode.None;
+            default:
+                return GameplayErrorCode.UnsupportedMessage;
+        }
+    }
+
+    private static GameplayErrorCode ReconcileShuffledPile(
+        MirrorState candidate,
+        byte? player,
+        MirrorZoneV1 zone,
+        IReadOnlyList<uint> cardCodes)
+    {
+        if (!player.HasValue || player.Value > 1)
+        {
+            return GameplayErrorCode.InvalidParticipant;
+        }
+
+        byte canonicalPlayer = player.Value;
+        uint expectedCount = candidate.ZoneCounts[canonicalPlayer, (int)zone];
+        if ((ulong)cardCodes.Count != expectedCount)
+        {
+            return GameplayErrorCode.StateCapacityExceeded;
+        }
+
+        EntityState[] affected = candidate.Entities.Values
+            .Where(entity => !entity.Address.IsOverlay &&
+                             entity.Address.Controller == canonicalPlayer &&
+                             entity.Address.Zone == zone)
+            .OrderBy(entity => entity.Address.Sequence)
+            .ThenBy(entity => entity.Id.Ordinal)
+            .ToArray();
+        foreach (EntityState entity in affected)
+        {
+            candidate.Entities.Remove(entity.Address);
+            RemoveEntityRelations(candidate, entity.Id);
+        }
+
+        return canonicalPlayer == candidate.Perspective.PlayerType
+            ? RebuildPerspectiveOwnedPile(
+                candidate,
+                canonicalPlayer,
+                zone,
+                cardCodes,
+                affected)
+            : RebuildPublicKnownPile(
+                candidate,
+                canonicalPlayer,
+                zone,
+                affected);
+    }
+
+    private static GameplayErrorCode RebuildPerspectiveOwnedPile(
+        MirrorState candidate,
+        byte player,
+        MirrorZoneV1 zone,
+        IReadOnlyList<uint> cardCodes,
+        IReadOnlyList<EntityState> affected)
+    {
+        bool[] matched = new bool[affected.Count];
+        for (int sequence = 0; sequence < cardCodes.Count; sequence++)
+        {
+            uint cardCode = cardCodes[sequence];
+            if (cardCode == 0)
+            {
+                return GameplayErrorCode.InvalidStateTransition;
+            }
+
+            EntityState? existing = null;
+            for (int index = 0; index < affected.Count; index++)
+            {
+                EntityState candidateEntity = affected[index];
+                if (!matched[index] &&
+                    candidateEntity.CardCode.IsKnown &&
+                    candidateEntity.CardCode.Value == cardCode)
+                {
+                    matched[index] = true;
+                    existing = candidateEntity;
+                    break;
+                }
+            }
+
+            MirrorAddress address = new(
+                player,
+                zone,
+                (uint)sequence,
+                false,
+                0);
+            if (existing is not null)
+            {
+                existing.Address = address;
+                candidate.Entities.Add(address, existing);
+                continue;
+            }
+
+            if (!TryCreateEntity(
+                    candidate,
+                    address,
+                    cardCode,
+                    PositionFaceDown,
+                    hasCardCode: true,
+                    out EntityState? created,
+                    out GameplayErrorCode error))
+            {
+                return error;
+            }
+
+            candidate.Entities.Add(address, created!);
+        }
+
+        return GameplayErrorCode.None;
+    }
+
+    private static GameplayErrorCode RebuildPublicKnownPile(
+        MirrorState candidate,
+        byte player,
+        MirrorZoneV1 zone,
+        IReadOnlyList<EntityState> affected)
+    {
+        EntityState[] known = affected
+            .Where(entity => entity.CardCode.IsKnown && entity.CardCode.Value != 0)
+            .ToArray();
+        for (int sequence = 0; sequence < known.Length; sequence++)
+        {
+            EntityState source = known[sequence];
+            MirrorAddress address = new(
+                player,
+                zone,
+                (uint)sequence,
+                false,
+                0);
+            uint position = source.Position.IsKnown
+                ? source.Position.Value
+                : PositionFaceDown;
+            if (!TryCreateEntity(
+                    candidate,
+                    address,
+                    source.CardCode.Value,
+                    position,
+                    hasCardCode: true,
+                    out EntityState? recreated,
+                    out GameplayErrorCode error))
+            {
+                return error;
+            }
+
+            recreated!.CardCode = source.CardCode;
+            recreated.Position = source.Position;
+            recreated.Owner = source.Owner;
+            recreated.QueryFields.AddRange(source.QueryFields);
+            candidate.Entities.Add(address, recreated);
+        }
+
+        return GameplayErrorCode.None;
+    }
+
+    private static GameplayErrorCode ClearShuffledZone(
+        MirrorState candidate,
+        byte? player,
+        MirrorZoneV1 zone)
+    {
+        if (!player.HasValue || player.Value > 1)
+        {
+            return GameplayErrorCode.InvalidParticipant;
+        }
+
+        EntityState[] affected = candidate.Entities.Values
+            .Where(entity => !entity.Address.IsOverlay &&
+                             entity.Address.Controller == player.Value &&
+                             entity.Address.Zone == zone)
+            .ToArray();
+        foreach (EntityState entity in affected)
+        {
+            candidate.Entities.Remove(entity.Address);
+            RemoveEntityRelations(candidate, entity.Id);
+        }
+
+        return GameplayErrorCode.None;
+    }
+
     private static GameplayErrorCode ApplyLifePoints(
         MirrorState candidate,
         GameplayLifePointPayloadV1 payload,
@@ -2155,6 +2427,9 @@ public sealed class PerspectiveStateMirrorV1
 
         internal ulong NextRelationOrdinal { get; set; } = 1;
 
+        internal PerspectiveSafeEventLedgerV1 EventLedger { get; set; } =
+            PerspectiveSafeEventLedgerV1.Empty;
+
         internal MirrorState Clone()
         {
             MirrorState clone = new(Perspective)
@@ -2165,7 +2440,8 @@ public sealed class PerspectiveStateMirrorV1
                 Terminal = Terminal,
                 PendingChain = PendingChain?.Clone(),
                 NextEntityOrdinal = NextEntityOrdinal,
-                NextRelationOrdinal = NextRelationOrdinal
+                NextRelationOrdinal = NextRelationOrdinal,
+                EventLedger = EventLedger
             };
             LifePoints.CopyTo(clone.LifePoints, 0);
             for (int player = 0; player < ZoneCounts.GetLength(0); player++)
