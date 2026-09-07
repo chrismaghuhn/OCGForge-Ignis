@@ -39,7 +39,7 @@ internal static class I6C6NativeOracleTests
         I6C6PublicSafeStateV1 absent =
             I6C6ScenarioFixtures.StateWithoutPlayerToAct();
         I6C6PublicSafeStateV1 presentZero =
-            I6C6ScenarioFixtures.StateWithKnownPlayerToAct();
+            I6C6ScenarioFixtures.StateWithPresentZeroTurnPlayer();
 
         I6C6ComparisonResultV1 result =
             I6C6ComparisonFixtures.Compare(
@@ -74,19 +74,19 @@ internal static class I6C6NativeOracleTests
         I6C6PublicSafeStateV1 firstConstruction =
             I6C6ScenarioFixtures.StateWithEntities(
                 I6C6PublicEntityV1.Known(
-                    "p0:HAND:public:01020304:1",
-                    0x01020304),
+                    "p0:HAND:public:12345678:1",
+                    12345678),
                 I6C6PublicEntityV1.Known(
-                    "p0:HAND:public:01020304:0",
-                    0x01020304));
+                    "p0:HAND:public:12345678:0",
+                    12345678));
         I6C6PublicSafeStateV1 secondConstruction =
             I6C6ScenarioFixtures.StateWithEntities(
                 I6C6PublicEntityV1.Known(
-                    "p0:HAND:public:01020304:0",
-                    0x01020304),
+                    "p0:HAND:public:12345678:0",
+                    12345678),
                 I6C6PublicEntityV1.Known(
-                    "p0:HAND:public:01020304:1",
-                    0x01020304));
+                    "p0:HAND:public:12345678:1",
+                    12345678));
 
         I6C6ComparisonResultV1 result =
             I6C6ComparisonFixtures.Compare(

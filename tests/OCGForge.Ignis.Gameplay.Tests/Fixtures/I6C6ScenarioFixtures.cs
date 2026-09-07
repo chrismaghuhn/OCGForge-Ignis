@@ -51,6 +51,7 @@ internal sealed record I6C6PublicEntityV1(
 
 internal sealed record I6C6PublicSafeStateV1(
     I6C6OptionalByteV1 PlayerToAct,
+    I6C6OptionalByteV1 TurnPlayer,
     I6C6PublicEnumSampleV1 EnumSample,
     IReadOnlyList<I6C6PublicEntityV1> Entities);
 
@@ -77,19 +78,21 @@ internal static class I6C6NativePublicSafeCodesV1
 
 internal static class I6C6ScenarioFixtures
 {
-    private const uint SyntheticKnownPasscode = 0x01020304;
+    private const uint SyntheticKnownPasscode = 12345678;
 
     internal static I6C6PublicSafeStateV1 PublicState(
         I6C6OptionalByteV1 playerToAct,
+        I6C6OptionalByteV1? turnPlayer = null,
         I6C6PublicEnumSampleV1? enumSample = null,
         IReadOnlyList<I6C6PublicEntityV1>? entities = null) =>
         new(
             playerToAct,
+            turnPlayer ?? I6C6OptionalByteV1.Absent,
             enumSample ?? KnownEnumSample(),
             entities ?? new[]
             {
                 I6C6PublicEntityV1.Known(
-                    "p0:HAND:public:01020304:0",
+                    "p0:HAND:public:12345678:0",
                     SyntheticKnownPasscode)
             });
 
@@ -116,15 +119,24 @@ internal static class I6C6ScenarioFixtures
         SupportedPairing() with { NativeSetupDescriptorId = null };
 
     internal static I6C6PublicSafeStateV1 StateWithKnownPlayerToAct() =>
-        PublicState(I6C6OptionalByteV1.Present(0));
+        PublicState(
+            I6C6OptionalByteV1.Present(0),
+            turnPlayer: I6C6OptionalByteV1.Absent);
 
     internal static I6C6PublicSafeStateV1 StateWithoutPlayerToAct() =>
-        PublicState(I6C6OptionalByteV1.Absent);
+        PublicState(
+            I6C6OptionalByteV1.Absent,
+            turnPlayer: I6C6OptionalByteV1.Absent);
+
+    internal static I6C6PublicSafeStateV1 StateWithPresentZeroTurnPlayer() =>
+        PublicState(
+            I6C6OptionalByteV1.Absent,
+            turnPlayer: I6C6OptionalByteV1.Present(0));
 
     internal static I6C6PublicSafeStateV1 StateWithUnknownEnum() =>
         PublicState(
             I6C6OptionalByteV1.Absent,
-            new I6C6PublicEnumSampleV1(
+            enumSample: new I6C6PublicEnumSampleV1(
                 I6C6NativePublicSafeCodesV1.Unknown,
                 I6C6NativePublicSafeCodesV1.PositionFaceUpAttack,
                 I6C6NativePublicSafeCodesV1.RelationshipEquip,
@@ -135,7 +147,7 @@ internal static class I6C6ScenarioFixtures
             I6C6OptionalByteV1.Absent,
             entities: new[]
             {
-                I6C6PublicEntityV1.Unknown("p1:HAND:hidden:0")
+                I6C6PublicEntityV1.Unknown("p1:SPELL_TRAP_ZONE:0")
             });
 
     internal static I6C6PublicSafeStateV1 StateWithForbiddenHiddenIdentityData() =>
@@ -144,7 +156,7 @@ internal static class I6C6ScenarioFixtures
             entities: new[]
             {
                 I6C6PublicEntityV1.HiddenWithIdentityDerivedData(
-                    "p1:HAND:hidden:0")
+                    "p1:SPELL_TRAP_ZONE:0")
             });
 
     internal static I6C6PublicSafeStateV1 StateWithEntities(

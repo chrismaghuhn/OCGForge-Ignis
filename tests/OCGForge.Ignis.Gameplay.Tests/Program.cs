@@ -319,7 +319,10 @@ var tests = new (string Name, Action Body)[]
         I5CrossFamilyFinalAcceptanceTests.TestPublicPrivateAuthorityDeterminismBarrier),
 
     ("I6C1 source types and fail-closed container",
-        I6CPublicFrameSourceTests.TestI6C1SourceContainer)
+        I6CPublicFrameSourceTests.TestI6C1SourceContainer),
+
+    ("I6C6-1 native oracle RED contract",
+        I6C6NativeOracleTests.TestI6C6_1RedContract)
 };
 
 int passed = 0;
