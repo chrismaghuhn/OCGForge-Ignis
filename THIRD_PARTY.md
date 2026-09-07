@@ -17,6 +17,41 @@ Future source reuse requires a separate explicit decision, a source-level
 license review, and an update to the repository provenance and release
 artifacts. Clean-room protocol facts must be independently implemented.
 
+## I6C5 Option-B code-only governance decision
+
+On 2026-09-07, ADR-0003 explicitly authorizes a narrow code-only boundary for
+the I6C5 Option-B Printed provider. OCGForge-Ignis may implement a generic
+consumer/validator for an explicitly operator-supplied local artifact that
+conforms to the frozen I6C5 Printed Source Provider contract.
+
+This decision does not authorize or imply:
+
+```text
+BabelCDB redistribution
+derived-data redistribution
+BabelCDB acquisition tooling
+derived-artifact generation tooling
+artifact inclusion in the repository or release
+legal permission to acquire, possess, use, or redistribute third-party data
+```
+
+The repository and releases contain no BabelCDB, `cards.cdb`, generated
+Printed-provider artifact, or real third-party card-data rows. The consumer
+must use an explicit operator-supplied artifact, must not discover or fetch
+artifacts automatically, and must fail closed when the artifact is absent or
+invalid. Repository tests use synthetic rows only. Runtime provenance
+validation is an audit/integrity check, not a legal-rights certification.
+
+BabelCDB and derived-data redistribution remain unauthorized pending a separate
+explicit decision.
+
+```text
+BABELCDB_REDISTRIBUTION_AUTHORIZED=NO
+DERIVED_DATA_REDISTRIBUTION_AUTHORIZED=NO
+BABELCDB_ACQUISITION_TOOLING_AUTHORIZED=NO
+DERIVED_ARTIFACT_GENERATION_TOOLING_AUTHORIZED=NO
+```
+
 ## Upstream records
 
 | Upstream | Role | Frozen pin/reference | HEAD observed 2026-09-03 | License signal at pinned source | Intended relationship |

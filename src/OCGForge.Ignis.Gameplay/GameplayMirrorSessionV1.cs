@@ -40,6 +40,8 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
     private readonly GameplaySessionV1 transportSession;
     private readonly PerspectiveStateMirrorV1 mirror;
     private readonly GameplayMessageDecoderV1 decoder;
+    private readonly PerspectiveSafeMatchContextV1? boundMatchContext;
+    private readonly PerspectiveSafePrintedProviderV1? boundPrintedProvider;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly byte[] receiveBuffer = new byte[
         ProtocolContractV1.MaxPacketLength +
@@ -50,6 +52,23 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
     public GameplayMirrorSessionV1(
         GameplaySessionV1 transportSession,
         PerspectiveStateMirrorV1 mirror)
+        : this(transportSession, mirror, null, null)
+    {
+    }
+
+    public GameplayMirrorSessionV1(
+        GameplaySessionV1 transportSession,
+        PerspectiveStateMirrorV1 mirror,
+        PerspectiveSafeMatchContextV1? matchContext)
+        : this(transportSession, mirror, matchContext, null)
+    {
+    }
+
+    public GameplayMirrorSessionV1(
+        GameplaySessionV1 transportSession,
+        PerspectiveStateMirrorV1 mirror,
+        PerspectiveSafeMatchContextV1? matchContext,
+        PerspectiveSafePrintedProviderV1? printedProvider)
     {
         this.transportSession = transportSession ??
             throw new ArgumentNullException(nameof(transportSession));
@@ -61,10 +80,39 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
                 nameof(mirror));
         }
 
+        if (matchContext is not null &&
+            !PerspectiveSafeMatchContextValidationV1.TryValidate(
+                matchContext,
+                mirror.Snapshot.Perspective.PlayerType,
+                out _))
+        {
+            throw new ArgumentException(
+                "The I6C5 match context is invalid.",
+                nameof(matchContext));
+        }
+
+        boundMatchContext = matchContext;
+        boundPrintedProvider = printedProvider;
         decoder = new GameplayMessageDecoderV1(transportSession.Perspective);
     }
 
     public PerspectiveStateMirrorV1 Mirror => mirror;
+
+    public PerspectiveSafeFrameSourceResultV1 TryCreateI6C5Frame()
+    {
+        operationGate.Wait();
+        try
+        {
+            return PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                boundMatchContext,
+                boundPrintedProvider);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
 
     public async ValueTask<GameplayMirrorPumpResult> PumpAsync(
         CancellationToken cancellationToken)

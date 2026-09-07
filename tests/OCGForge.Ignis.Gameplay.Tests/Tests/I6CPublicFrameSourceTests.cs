@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.Collections;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using OCGForge.Ignis.Client;
 using OCGForge.Ignis.Gameplay;
 using OCGForge.Ignis.Protocol;
@@ -30,6 +32,7 @@ internal static class I6CPublicFrameSourceTests
         Run("first invalid invariant is diagnosed", AssertFirstInvalidInvariant);
         Run("public surface has no private escape hatch", AssertPublicSurface);
         Run("I6C2 mirror source closure", TestI6C2MirrorSourceClosure);
+        Run("I6C5 Extra UPDATE_DATA bootstrap", AssertI6C5ExtraUpdateDataBootstrap);
     }
 
     private static void Run(string name, Action test)
@@ -728,6 +731,7 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C3 SZONE chain boundary", AssertI6C3SzoneChainBoundary);
         Run("I6C3 failed chain apply atomicity", AssertI6C3FailedChainApplyAtomicity);
         Run("I6C3 transport chunking", AssertI6C3TransportChunking);
+        Run("I6C5 MSG_SWAP_GRAVE_DECK transition", AssertSwapGraveDeckTransition);
         Run("I6C4 draw event ledger", AssertI6C4DrawEventLedger);
         Run("I6C4 event index lifecycle", AssertI6C4EventIndexLifecycle);
         Run("I6C4 event kind mapping", AssertI6C4EventKindMapping);
@@ -737,6 +741,529 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C4 historical locators do not rebind", AssertI6C4HistoricalLocators);
         Run("I6C4 paired hidden worlds", AssertI6C4PairedPrivacy);
         Run("I6C4 transport chunking", AssertI6C4TransportChunking);
+        Run("I6C5 outer public frame source", AssertI6C5OuterPublicFrameSource);
+        Run("I6C5 run configuration immutability", AssertI6C5RunConfigurationImmutability);
+        Run("I6C5 printed provider API", AssertI6C5PrintedProviderApi);
+        Run("I6C5 printed provider contract", AssertI6C5PrintedProviderContract);
+    }
+
+    private static void AssertI6C5PrintedProviderApi()
+    {
+        Type? providerType = typeof(PerspectiveSafePublicFrameSourceV1)
+            .Assembly
+            .GetType("OCGForge.Ignis.Gameplay.PerspectiveSafePrintedProviderV1");
+        NotNull(providerType);
+    }
+
+    private static void AssertI6C5PrintedProviderContract()
+    {
+        Run("synthetic semantic mappings", AssertPrintedProviderMappings);
+        Run("missing provider fails closed", AssertPrintedProviderRequired);
+        Run("hash and digest validation", AssertPrintedProviderDigests);
+        Run("coverage and malformed rows fail closed", AssertPrintedProviderFailures);
+        Run("environment compatibility fails closed", AssertPrintedProviderEnvironment);
+        Run("unknown identities have no reverse lookup surface", AssertPrintedProviderPrivacySurface);
+        Run("provider supplies Printed frame properties", AssertPrintedProviderFrameIntegration);
+        Run("session missing provider fails closed", AssertPrintedProviderSessionMissing);
+        Run("session provider binding is immutable", AssertPrintedProviderSessionBinding);
+    }
+
+    private static void AssertI6C5RunConfigurationImmutability()
+    {
+        MethodInfo? method = typeof(GameplayMirrorSessionV1)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .SingleOrDefault(candidate =>
+                candidate.Name == "TryCreateI6C5Frame" &&
+                candidate.GetParameters().Length == 0);
+        NotNull(method);
+
+        Run("I6C5 session without context fails closed", AssertI6C5NoContext);
+        Run("I6C5 bound context remains stable", AssertI6C5BoundContextStability);
+        Run("I6C5 sessions keep distinct contexts", AssertI6C5DistinctContexts);
+        Run("I6C5 context perspective mismatch fails closed", AssertI6C5PerspectiveMismatch);
+        Run("I6C5 invalid context fails closed", AssertI6C5InvalidContext);
+        Run("I6C5 bound context owns caller values", AssertI6C5ContextOwnership);
+        Run("I6C5 session surface has no replacement API", AssertI6C5SessionSurface);
+    }
+
+    private static void AssertSwapGraveDeckTransition()
+    {
+        foreach (byte player in new byte[] { 0, 1 })
+        {
+            GameplayMessageDecoderV1 decoder = CreateEstablishedDecoder(player);
+            GameplayMessageDecodeResult decoded = decoder.Decode(
+                new StocGameMessagePayload(
+                    SwapGraveDeckMessage(player, 3, 0x05)));
+            True(decoded.IsSuccess, decoded.Error.ToString());
+            Equal(GameplayMessageKindV1.SwapGraveDeck, decoded.Message!.Kind);
+            Equal(player, decoded.Message.SwapGraveDeck!.Player);
+            Equal((uint)3, decoded.Message.SwapGraveDeck.ReportedExtraCount);
+            True(decoded.Message.SwapGraveDeck.ExtraMask.SequenceEqual(
+                new byte[] { 0x05 }));
+
+            GameplayMessageDecodeResult invalidPlayer = decoder.Decode(
+                new StocGameMessagePayload(
+                    SwapGraveDeckMessage(2, 0, 0x00)));
+            False(invalidPlayer.IsSuccess);
+            Equal(GameplayErrorCode.InvalidParticipant, invalidPlayer.Error);
+
+            GameplayMessageDecodeResult truncated = decoder.Decode(
+                new StocGameMessagePayload(new byte[] { 35, player }));
+            False(truncated.IsSuccess);
+            Equal(GameplayErrorCode.MalformedGameMessage, truncated.Error);
+
+            GameplayMessageDecodeResult mismatchedMask = decoder.Decode(
+                new StocGameMessagePayload(
+                    Join(new byte[] { 35, player }, U32(0), U32(1))));
+            False(mismatchedMask.IsSuccess);
+            Equal(GameplayErrorCode.MalformedGameMessage, mismatchedMask.Error);
+        }
+
+        (PerspectiveStateMirrorV1 emptyMirror,
+            GameplayMessageDecoderV1 emptyDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        ApplyI6C4Success(
+            emptyMirror,
+            emptyDecoder,
+            SwapGraveDeckMessage(0, 0));
+        Equal(
+            (uint)0,
+            emptyMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.MainDeck).Count.Value);
+        Equal(
+            (uint)0,
+            emptyMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.Graveyard).Count.Value);
+
+        (PerspectiveStateMirrorV1 deckGraveMirror,
+            GameplayMessageDecoderV1 deckGraveDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 1,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        ApplyI6C4Success(
+            deckGraveMirror,
+            deckGraveDecoder,
+            MoveMessage(
+                0xD200,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x01, 0, 0x08),
+                0));
+        ApplyI6C4Success(
+            deckGraveMirror,
+            deckGraveDecoder,
+            MoveMessage(
+                0xD201,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x10, 0, 0x05),
+                0));
+        ApplyI6C4Success(
+            deckGraveMirror,
+            deckGraveDecoder,
+            SwapGraveDeckMessage(0, 0, 0x00));
+        Equal(
+            (uint)1,
+            deckGraveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.MainDeck).Count.Value);
+        Equal(
+            (uint)2,
+            deckGraveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.Graveyard).Count.Value);
+        MirrorCardSnapshotV1 movedDeckCard = deckGraveMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.Graveyard).Cards.Single();
+        Equal((uint)0xD200, movedDeckCard.CardCode.Value);
+        True(movedDeckCard.Position.IsKnown);
+        Equal((uint)0x05, movedDeckCard.Position.Value);
+        True(movedDeckCard.CardCode.Provenance ==
+             MirrorProvenanceV1.PublicProtocolFact);
+
+        (PerspectiveStateMirrorV1 bulkInsertMirror,
+            GameplayMessageDecoderV1 bulkInsertDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 2,
+                deckCount1: 0,
+                extraCount1: 0);
+        ApplyI6C4Success(
+            bulkInsertMirror,
+            bulkInsertDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(
+                    ExtraQuery(0xD300, 0, 0x08),
+                    ExtraQuery(0xD301, 1, 0x05))));
+        AddGraveCards(
+            bulkInsertMirror,
+            bulkInsertDecoder,
+            0,
+            0xD302,
+            0xD303);
+        MirrorApplyResult bulkInsertResult;
+        try
+        {
+            bulkInsertResult = bulkInsertMirror.Apply(
+                DecodeMessage(
+                    bulkInsertDecoder,
+                    SwapGraveDeckMessage(0, 1, 0x03)));
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException(
+                "multi-card Extra insertion escaped the structured apply path",
+                exception);
+        }
+
+        True(
+            bulkInsertResult.IsSuccess,
+            $"multi-card Extra insertion failed: {bulkInsertResult.Error}");
+        MirrorCardSnapshotV1[] bulkInsertCards =
+            bulkInsertMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(4, bulkInsertCards.Length);
+        Equal((uint)0xD300, bulkInsertCards[0].CardCode.Value);
+        Equal((uint)0xD302, bulkInsertCards[1].CardCode.Value);
+        Equal((uint)0xD303, bulkInsertCards[2].CardCode.Value);
+        Equal((uint)0xD301, bulkInsertCards[3].CardCode.Value);
+
+        (PerspectiveStateMirrorV1 interleavedMirror,
+            GameplayMessageDecoderV1 interleavedDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 2,
+                deckCount1: 0,
+                extraCount1: 0);
+        ApplyI6C4Success(
+            interleavedMirror,
+            interleavedDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(
+                    ExtraQuery(0xD400, 0, 0x08),
+                    ExtraQuery(0xD401, 1, 0x05))));
+        AddGraveCards(
+            interleavedMirror,
+            interleavedDecoder,
+            0,
+            0xD402,
+            0xD403,
+            0xD404);
+        ApplyI6C4Success(
+            interleavedMirror,
+            interleavedDecoder,
+            SwapGraveDeckMessage(0, 1, 0x05));
+        MirrorCardSnapshotV1[] interleavedCards =
+            interleavedMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(4, interleavedCards.Length);
+        Equal((uint)0xD400, interleavedCards[0].CardCode.Value);
+        Equal((uint)0xD402, interleavedCards[1].CardCode.Value);
+        Equal((uint)0xD404, interleavedCards[2].CardCode.Value);
+        Equal((uint)0xD401, interleavedCards[3].CardCode.Value);
+
+        (PerspectiveStateMirrorV1 orderedMirror,
+            GameplayMessageDecoderV1 orderedDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 2,
+                deckCount1: 0,
+                extraCount1: 0);
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(
+                    ExtraQuery(0xA000, 0, 0x08),
+                    ExtraQuery(0xA001, 1, 0x05))));
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            MoveMessage(
+                0xB000,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x10, 0, 0x05),
+                0));
+        string orderedBefore = orderedMirror.Snapshot.ToDeterministicString();
+        int orderedEventCount = orderedMirror.VisibleEvents.Count;
+        ulong orderedEventIndex = orderedMirror.NextEventIndex;
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            SwapGraveDeckMessage(0, 1, 0x01));
+        Equal(
+            orderedEventCount,
+            orderedMirror.VisibleEvents.Count);
+        Equal(orderedEventIndex, orderedMirror.NextEventIndex);
+        NotEqual(orderedBefore, orderedMirror.Snapshot.ToDeterministicString());
+        Equal(
+            (uint)0,
+            orderedMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.MainDeck).Count.Value);
+        Equal(
+            (uint)0,
+            orderedMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.Graveyard).Count.Value);
+        MirrorCardSnapshotV1[] orderedExtra = orderedMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(3, orderedExtra.Length);
+        Equal((uint)0xA000, orderedExtra[0].CardCode.Value);
+        Equal((uint)0xB000, orderedExtra[1].CardCode.Value);
+        Equal((uint)0xA001, orderedExtra[2].CardCode.Value);
+        Equal((uint)0, orderedExtra[0].Sequence);
+        Equal((uint)1, orderedExtra[1].Sequence);
+        Equal((uint)2, orderedExtra[2].Sequence);
+        NotEqual(orderedExtra[0].EntityId, orderedExtra[1].EntityId);
+        NotEqual(orderedExtra[1].EntityId, orderedExtra[2].EntityId);
+        True(orderedExtra[1].CardCode.Provenance ==
+             MirrorProvenanceV1.PerspectivePrivateFact);
+
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            new byte[] { 32, 0 });
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            MoveMessage(
+                0xA000,
+                new ModernLocInfoV1(0, 0x40, 0, 0x08),
+                new ModernLocInfoV1(0, 0x04, 0, 0x05),
+                0));
+        ApplyI6C4Success(
+            orderedMirror,
+            orderedDecoder,
+            MoveMessage(
+                0xA000,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05),
+                new ModernLocInfoV1(0, 0x40, 2, 0x08),
+                0));
+        Equal(
+            (uint)3,
+            orderedMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.ExtraDeck).Count.Value);
+
+        (PerspectiveStateMirrorV1 duplicateMirror,
+            GameplayMessageDecoderV1 duplicateDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(
+            duplicateMirror,
+            duplicateDecoder,
+            0,
+            0xC100,
+            0xC100,
+            0xC200);
+        ApplyI6C4Success(
+            duplicateMirror,
+            duplicateDecoder,
+            SwapGraveDeckMessage(0, 0, 0x07));
+        MirrorCardSnapshotV1[] duplicateCards = duplicateMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(3, duplicateCards.Length);
+        Equal((uint)0xC100, duplicateCards[0].CardCode.Value);
+        Equal((uint)0xC100, duplicateCards[1].CardCode.Value);
+        Equal((uint)0xC200, duplicateCards[2].CardCode.Value);
+        NotEqual(duplicateCards[0].EntityId, duplicateCards[1].EntityId);
+
+        (PerspectiveStateMirrorV1 playerOneMirror,
+            GameplayMessageDecoderV1 playerOneDecoder) =
+            CreateMirror(
+                1,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(
+            playerOneMirror,
+            playerOneDecoder,
+            1,
+            0xD100,
+            0xD101);
+        ApplyI6C4Success(
+            playerOneMirror,
+            playerOneDecoder,
+            SwapGraveDeckMessage(1, 0, 0x03));
+        MirrorCardSnapshotV1[] playerOneCards = playerOneMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(2, playerOneCards.Length);
+        True(playerOneCards.All(card => card.CardCode.IsKnown));
+        True(playerOneCards.All(card => card.CardCode.Provenance ==
+            MirrorProvenanceV1.PerspectivePrivateFact));
+
+        PerspectiveStateMirrorV1 opponentWorldA =
+            CreateOpponentSwapWorld(0xE100);
+        PerspectiveStateMirrorV1 opponentWorldB =
+            CreateOpponentSwapWorld(0xF100);
+        MirrorCardSnapshotV1[] opponentCards = opponentWorldA.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Opponent,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(2, opponentCards.Length);
+        Equal(
+            0,
+            opponentWorldA.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Opponent,
+                MirrorZoneV1.Graveyard).Cards.Count);
+        True(opponentCards.All(card => !card.CardCode.IsKnown));
+        Equal(
+            opponentWorldA.Snapshot.ToDeterministicString(),
+            opponentWorldB.Snapshot.ToDeterministicString());
+        PerspectiveSafePrintedProviderV1 opponentProvider =
+            CreatePrintedProviderForMirror(opponentWorldA);
+        PerspectiveSafeFrameSourceResultV1 opponentFrameA =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                opponentWorldA,
+                CreateValidI6C5MatchContext(),
+                opponentProvider);
+        PerspectiveSafeFrameSourceResultV1 opponentFrameB =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                opponentWorldB,
+                CreateValidI6C5MatchContext(),
+                opponentProvider);
+        True(opponentFrameA.IsSuccess);
+        True(opponentFrameB.IsSuccess);
+        Equal(0, opponentFrameA.Frame!.Entities.Count);
+        Equal(0, opponentFrameB.Frame!.Entities.Count);
+        True(opponentFrameA.Frame!.Entities.All(
+            entity => entity.Zone == PerspectiveSafeSemanticZoneV1.ExtraDeck));
+        True(opponentFrameB.Frame!.Entities.All(
+            entity => entity.Zone == PerspectiveSafeSemanticZoneV1.ExtraDeck));
+        Equal(
+            FrameSignature(opponentFrameA.Frame!),
+            FrameSignature(opponentFrameB.Frame!));
+
+        (PerspectiveStateMirrorV1 frameMirror,
+            GameplayMessageDecoderV1 frameDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(frameMirror, frameDecoder, 0, 0xF200, 0xF201);
+        ApplyI6C4Success(
+            frameMirror,
+            frameDecoder,
+            SwapGraveDeckMessage(0, 0, 0x03));
+        PerspectiveSafeFrameSourceResultV1 frame =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                frameMirror,
+                CreateValidI6C5MatchContext(),
+                CreatePrintedProviderForMirror(frameMirror));
+        True(frame.IsSuccess, frame.Error?.ToString() ?? "frame rejected");
+        True(frame.Frame!.Entities.Any(entity => entity.Passcode == 0xF200));
+        True(frame.Frame.Entities.Any(entity => entity.Passcode == 0xF201));
+
+        (PerspectiveStateMirrorV1 malformedMirror,
+            GameplayMessageDecoderV1 malformedDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(malformedMirror, malformedDecoder, 0, 0xA300);
+        string malformedBefore = malformedMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult malformed = malformedMirror.Apply(
+            DecodeMessage(
+                malformedDecoder,
+                SwapGraveDeckMessage(0, 0, 0x02)));
+        False(malformed.IsSuccess);
+        Equal(GameplayErrorCode.InvalidStateTransition, malformed.Error);
+        Equal(malformedBefore, malformedMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 countMirror,
+            GameplayMessageDecoderV1 countDecoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(countMirror, countDecoder, 0, 0xA400);
+        string countBefore = countMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult countFailure = countMirror.Apply(
+            DecodeMessage(
+                countDecoder,
+                SwapGraveDeckMessage(0, 1, 0x01)));
+        False(countFailure.IsSuccess);
+        Equal(GameplayErrorCode.StateCapacityExceeded, countFailure.Error);
+        Equal(countBefore, countMirror.Snapshot.ToDeterministicString());
+    }
+
+    private static void AddGraveCards(
+        PerspectiveStateMirrorV1 mirror,
+        GameplayMessageDecoderV1 decoder,
+        byte player,
+        params uint[] cardCodes)
+    {
+        for (uint sequence = 0; sequence < cardCodes.Length; sequence++)
+        {
+            ApplyI6C4Success(
+                mirror,
+                decoder,
+                MoveMessage(
+                    cardCodes[sequence],
+                    new ModernLocInfoV1(0, 0, 0, 0),
+                    new ModernLocInfoV1(player, 0x10, sequence, 0x05),
+                    0));
+        }
+    }
+
+    private static PerspectiveStateMirrorV1 CreateOpponentSwapWorld(
+        uint firstCode)
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(
+                0,
+                deckCount0: 0,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        AddGraveCards(mirror, decoder, 1, 0, 0);
+        ApplyI6C4Success(
+            mirror,
+            decoder,
+            UpdateDataMessage(
+                1,
+                0x10,
+                Join(
+                    ExtraQuery(firstCode, 1, 0x05),
+                    ExtraQuery(firstCode + 1, 1, 0x05))));
+        ApplyI6C4Success(
+            mirror,
+            decoder,
+            SwapGraveDeckMessage(1, 0, 0x03));
+        return mirror;
     }
 
     private static void AssertI6C4DrawEventLedger()
@@ -761,7 +1288,7 @@ internal static class I6CPublicFrameSourceTests
     private static void AssertI6C4EventIndexLifecycle()
     {
         (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
-            CreateMirror(0);
+            CreateMirror(0, extraCount0: 0);
         Equal((ulong)0, mirror.NextEventIndex);
         Equal(0, mirror.VisibleEvents.Count);
 
@@ -1484,6 +2011,338 @@ internal static class I6CPublicFrameSourceTests
         Equal(whole, irregular);
     }
 
+    private static void AssertI6C5OuterPublicFrameSource()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0, extraCount0: 0);
+        PerspectiveSafeMatchContextV1 context = CreateValidI6C5MatchContext();
+        ApplyI6C4Success(mirror, decoder, new byte[] { 40, 1 });
+
+        PerspectiveSafeFrameSourceResultV1 missingConfiguration =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(mirror, null);
+        False(missingConfiguration.IsSuccess);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.MissingMatchContext,
+            missingConfiguration.Error!.Value.Code);
+        Null(missingConfiguration.Frame);
+
+        PerspectiveSafeMatchContextV1 contradictoryFlags = new(
+            0,
+            0x1000,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, new uint[] { 1, 2 }, new uint[] { 3 }),
+            new PerspectiveSafeDeckV1(false));
+        PerspectiveSafeFrameSourceResultV1 contradictoryFlagsResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                contradictoryFlags);
+        False(contradictoryFlagsResult.IsSuccess);
+        Null(contradictoryFlagsResult.Frame);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+            contradictoryFlagsResult.Error!.Value.Code);
+
+        PerspectiveSafeFrameSourceResultV1 result =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                context,
+                CreatePrintedProviderForMirror(mirror));
+        True(result.IsSuccess, result.Error?.ToString() ?? "I6C5 frame rejected");
+        NotNull(result.Frame);
+        Equal((ulong)0x234, result.Frame!.Globals.DuelFlags);
+        Equal((byte)0, result.Frame.MatchContext.PerspectivePlayer);
+        Equal(true, result.Frame.MatchContext.Knowledge.OwnDecklistKnown);
+        Equal(false, result.Frame.MatchContext.Knowledge.OpponentDecklistKnown);
+        True(result.Frame.MatchContext.OwnDeck.MainDeck.SequenceEqual(new uint[] { 1, 2 }));
+        True(result.Frame.MatchContext.OwnDeck.ExtraDeck.SequenceEqual(new uint[] { 3 }));
+        Equal(1, result.Frame.VisibleEvents.Count);
+        Equal(PerspectiveSafeVisibleEventKindV1.TurnStarted, result.Frame.VisibleEvents[0].Kind);
+
+        (PerspectiveStateMirrorV1 populatedMirror, GameplayMessageDecoderV1 populatedDecoder) =
+            CreateMirror(0, extraCount0: 0);
+        PerspectiveSafeMatchContextV1 populatedContext = CreateValidI6C5MatchContext();
+        ModernLocInfoV1 populatedSource = new(0, 0x04, 0, 0x04);
+        ModernLocInfoV1 populatedTarget = new(0, 0x04, 1, 0x04);
+        ApplyI6C4Success(
+            populatedMirror,
+            populatedDecoder,
+            MoveMessage(0xc100, new ModernLocInfoV1(0, 0, 0, 0), populatedSource, 0));
+        ApplyI6C4Success(
+            populatedMirror,
+            populatedDecoder,
+            MoveMessage(0xc101, new ModernLocInfoV1(0, 0, 0, 0), populatedTarget, 0));
+        ApplyI6C4Success(
+            populatedMirror,
+            populatedDecoder,
+            EquipMessage(populatedSource, populatedTarget));
+        ApplyI6C4Success(
+            populatedMirror,
+            populatedDecoder,
+            ChainingMessage(populatedSource, 1, 0xc100));
+        PerspectiveSafeI6C3SourceResultV1 populatedState =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C3(populatedMirror);
+        True(populatedState.IsSuccess, populatedState.Error?.ToString() ?? "I6C3 source rejected");
+        PerspectiveSafeFrameSourceResultV1 populatedResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                populatedMirror,
+                populatedContext,
+                CreatePrintedProviderForMirror(populatedMirror));
+        True(
+            populatedResult.IsSuccess,
+            populatedResult.Error?.ToString() ?? "provider-backed frame rejected");
+        NotNull(populatedResult.Frame);
+        True(populatedResult.Frame!.Entities.All(entity =>
+            !entity.IdentityKnown || entity.Printed is not null));
+
+        uint[] mutableOwnDeck = new[] { 1u, 2u };
+        PerspectiveSafeMatchContextV1 immutableContext = new(
+            0,
+            0x234,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, mutableOwnDeck, new[] { 3u }),
+            new PerspectiveSafeDeckV1(false));
+        mutableOwnDeck[0] = 999;
+        PerspectiveSafeFrameSourceResultV1 immutableResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                immutableContext,
+                CreatePrintedProviderForMirror(mirror));
+        True(immutableResult.IsSuccess, immutableResult.Error?.ToString() ?? "immutable frame rejected");
+        Equal((uint)1, immutableResult.Frame!.MatchContext.OwnDeck.MainDeck[0]);
+
+        PerspectiveSafeMatchContextV1 unsorted = new(
+            0,
+            0x234,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, new[] { 2u, 1u }, new[] { 3u }),
+            new PerspectiveSafeDeckV1(false));
+        PerspectiveSafeFrameSourceResultV1 unsortedResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(mirror, unsorted);
+        False(unsortedResult.IsSuccess);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidOrdering,
+            unsortedResult.Error!.Value.Code);
+
+        PerspectiveSafeMatchContextV1 unknownWithPasscodes = new(
+            0,
+            0x234,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, new[] { 1u, 2u }, new[] { 3u }),
+            new PerspectiveSafeDeckV1(false, new[] { 4u }));
+        PerspectiveSafeFrameSourceResultV1 unknownDeckResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(mirror, unknownWithPasscodes);
+        False(unknownDeckResult.IsSuccess);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.InvalidDeckState,
+            unknownDeckResult.Error!.Value.Code);
+
+        (PerspectiveStateMirrorV1 layoutMirror, GameplayMessageDecoderV1 layoutDecoder) =
+            CreateMirror(0, extraCount0: 0);
+        ApplyI6C4Success(
+            layoutMirror,
+            layoutDecoder,
+            MoveMessage(
+                0xb200,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(1, 0x08, 0, 0x08),
+                0));
+        PerspectiveSafeFrameSourceResultV1 layoutResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                layoutMirror,
+                context,
+                CreatePrintedProviderForMirror(layoutMirror));
+        True(layoutResult.IsSuccess, "layout: " + (layoutResult.Error?.ToString() ?? "frame rejected"));
+        Equal(
+            1u,
+            layoutResult.Frame!.Zones.Single(zone =>
+                zone.Player == 1 &&
+                zone.Kind == PerspectiveSafeSemanticZoneV1.SpellTrapZone).TotalCount);
+        Equal(
+            PerspectiveSafeSemanticZoneV1.SpellTrapZone,
+            layoutResult.Frame.Entities.Single().Zone);
+
+        (PerspectiveStateMirrorV1 pendulumMirror, GameplayMessageDecoderV1 pendulumDecoder) =
+            CreateMirror(0, extraCount0: 0);
+        ApplyI6C4Success(
+            pendulumMirror,
+            pendulumDecoder,
+            MoveMessage(
+                0xb201,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(1, 0x08, 0, 0x08),
+                0));
+        PerspectiveSafeMatchContextV1 pendulumContext = new(
+            0,
+            0x800,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, new[] { 1u, 2u }, new[] { 3u }),
+            new PerspectiveSafeDeckV1(false));
+        PerspectiveSafeFrameSourceResultV1 pendulumResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                pendulumMirror,
+                pendulumContext,
+                CreatePrintedProviderForMirror(pendulumMirror));
+        True(pendulumResult.IsSuccess, "pendulum: " + (pendulumResult.Error?.ToString() ?? "frame rejected"));
+        Equal(
+            PerspectiveSafeSemanticZoneV1.PendulumRelevant,
+            pendulumResult.Frame!.Entities.Single().Zone);
+
+        (PerspectiveStateMirrorV1 combinedPzoneMirror,
+            GameplayMessageDecoderV1 combinedPzoneDecoder) =
+            CreateMirror(0, extraCount0: 0);
+        ApplyI6C4Success(
+            combinedPzoneMirror,
+            combinedPzoneDecoder,
+            MoveMessage(
+                0xb206,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(1, 0x08, 1, 0x08),
+                0));
+        PerspectiveSafeMatchContextV1 combinedPzoneContext = new(
+            0,
+            0x800 | 0x1000 | 0x400000,
+            new PerspectiveSafeKnowledgeV1(true, false),
+            new PerspectiveSafeDeckV1(true, new[] { 1u, 2u }, new[] { 3u }),
+            new PerspectiveSafeDeckV1(false));
+        PerspectiveSafeFrameSourceResultV1 combinedPzoneResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                combinedPzoneMirror,
+                combinedPzoneContext,
+                CreatePrintedProviderForMirror(combinedPzoneMirror));
+        True(
+            combinedPzoneResult.IsSuccess,
+            "combined PZONE: " +
+            (combinedPzoneResult.Error?.ToString() ?? "frame rejected"));
+        Equal(
+            PerspectiveSafeSemanticZoneV1.PendulumRelevant,
+            combinedPzoneResult.Frame!.Entities.Single().Zone);
+
+        (PerspectiveStateMirrorV1 pendingRelationMirror,
+            GameplayMessageDecoderV1 pendingRelationDecoder) =
+            CreateMirror(0, extraCount0: 0);
+        ModernLocInfoV1 pendingSource = new(1, 0x08, 0, 0x08);
+        ModernLocInfoV1 pendingTarget = new(1, 0x04, 0, 0x08);
+        ApplyI6C4Success(
+            pendingRelationMirror,
+            pendingRelationDecoder,
+            MoveMessage(
+                0xb203,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                pendingSource,
+                0));
+        ApplyI6C4Success(
+            pendingRelationMirror,
+            pendingRelationDecoder,
+            MoveMessage(
+                0xb204,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                pendingTarget,
+                0));
+        ApplyI6C4Success(
+            pendingRelationMirror,
+            pendingRelationDecoder,
+            EquipMessage(pendingSource, pendingTarget));
+        PerspectiveSafeFrameSourceResultV1 pendingRelationResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                pendingRelationMirror,
+                context,
+                CreatePrintedProviderForMirror(pendingRelationMirror));
+        True(
+            pendingRelationResult.IsSuccess,
+            "relation: " + (pendingRelationResult.Error?.ToString() ??
+            "frame rejected"));
+        Equal(1, pendingRelationResult.Frame!.Relationships.Count);
+        Equal(
+            PerspectiveSafeRelationshipKindV1.Equip,
+            pendingRelationResult.Frame.Relationships[0].Kind);
+
+        (PerspectiveStateMirrorV1 pendingChainMirror,
+            GameplayMessageDecoderV1 pendingChainDecoder) =
+            CreateMirror(0, extraCount0: 0);
+        ModernLocInfoV1 pendingChainSource = new(1, 0x08, 0, 0x08);
+        ApplyI6C4Success(
+            pendingChainMirror,
+            pendingChainDecoder,
+            MoveMessage(
+                0xb205,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                pendingChainSource,
+                0));
+        ApplyI6C4Success(
+            pendingChainMirror,
+            pendingChainDecoder,
+            ChainingMessage(pendingChainSource, 1, 0));
+        PerspectiveSafeFrameSourceResultV1 pendingChainResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                pendingChainMirror,
+                context,
+                CreatePrintedProviderForMirror(pendingChainMirror));
+        True(
+            pendingChainResult.IsSuccess,
+            "chain: " + (pendingChainResult.Error?.ToString() ??
+            "frame rejected"));
+        Equal(1u, pendingChainResult.Frame!.Chain.Length);
+        Null(pendingChainResult.Frame.Chain.Links[0].Source);
+        Equal(
+            PerspectiveSafeSemanticZoneV1.SpellTrapZone,
+            pendingChainResult.Frame.Chain.Links[0].ActivationZone);
+
+        (PerspectiveStateMirrorV1 rejectedMirror, GameplayMessageDecoderV1 rejectedDecoder) =
+            CreateMirror(0, extraCount0: 0);
+        ModernLocInfoV1 source = new(0, 0x04, 0, 0x01);
+        ModernLocInfoV1 target = new(0, 0x04, 1, 0x01);
+        ApplyI6C4Success(
+            rejectedMirror,
+            rejectedDecoder,
+            MoveMessage(0xb100, new ModernLocInfoV1(0, 0, 0, 0), source, 0));
+        ApplyI6C4Success(
+            rejectedMirror,
+            rejectedDecoder,
+            MoveMessage(0xb101, new ModernLocInfoV1(0, 0, 0, 0), target, 0));
+        ApplyI6C4Success(rejectedMirror, rejectedDecoder, EquipMessage(source, target));
+        ApplyI6C4Success(rejectedMirror, rejectedDecoder, UnequipMessage(source));
+        PerspectiveSafeFrameSourceResultV1 rejectedFrame =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                rejectedMirror,
+                context,
+                CreatePrintedProviderForMirror(rejectedMirror));
+        False(rejectedFrame.IsSuccess);
+        Null(rejectedFrame.Frame);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            rejectedFrame.Error!.Value.Code);
+        ApplyI6C4Success(rejectedMirror, rejectedDecoder, new byte[] { 40, 1 });
+        PerspectiveSafeFrameSourceResultV1 stickyRejectedFrame =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                rejectedMirror,
+                context,
+                CreatePrintedProviderForMirror(rejectedMirror));
+        False(stickyRejectedFrame.IsSuccess);
+        Null(stickyRejectedFrame.Frame);
+
+        PerspectiveStateMirrorV1 hiddenWorldA = CreateHiddenWorld(
+            0x44110000,
+            extraCount0: 0);
+        PerspectiveStateMirrorV1 hiddenWorldB = CreateHiddenWorld(
+            0x99220000,
+            extraCount0: 0);
+        PerspectiveSafePrintedProviderV1 hiddenProvider =
+            CreatePrintedProviderForCodes(new[] { 1u });
+        PerspectiveSafeFrameSourceResultV1 hiddenFrameA =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                hiddenWorldA,
+                context,
+                hiddenProvider);
+        PerspectiveSafeFrameSourceResultV1 hiddenFrameB =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                hiddenWorldB,
+                context,
+                hiddenProvider);
+        True(hiddenFrameA.IsSuccess, hiddenFrameA.Error?.ToString() ?? "hidden frame A rejected");
+        True(hiddenFrameB.IsSuccess, hiddenFrameB.Error?.ToString() ?? "hidden frame B rejected");
+        Equal(FrameSignature(hiddenFrameA.Frame!), FrameSignature(hiddenFrameB.Frame!));
+    }
+
     private static void AssertI6C2MissingMirror()
     {
         PerspectiveSafeI6C2SourceResultV1 result =
@@ -1495,6 +2354,1331 @@ internal static class I6CPublicFrameSourceTests
             PerspectiveSafeFrameSourceErrorCodeV1.MissingMirror,
             result.Error!.Value.Code);
     }
+
+    private static void AssertI6C5ExtraUpdateDataBootstrap()
+    {
+        (PerspectiveStateMirrorV1 coverageMirror,
+            GameplayMessageDecoderV1 coverageDecoder) =
+            CreateMirror(0, extraCount0: 2, extraCount1: 0);
+        PerspectiveSafeMatchContextV1 coverageContext =
+            CreateValidI6C5MatchContext();
+        PerspectiveSafeFrameSourceResultV1 beforeBootstrapFrame =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                coverageMirror,
+                coverageContext,
+                CreatePrintedProviderForMirror(coverageMirror));
+        False(beforeBootstrapFrame.IsSuccess, "pre-bootstrap frame unexpectedly succeeded");
+        Null(beforeBootstrapFrame.Frame);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            beforeBootstrapFrame.Error!.Value.Code);
+        Equal(
+            PerspectiveSafeI6C2SourceStatusV1.Blocked,
+            GetI6C2Source(coverageMirror).GetStatus(
+                PerspectiveSafeI6C2ConstituentV1.EntityIdentity));
+        ApplyI6C4Success(
+            coverageMirror,
+            coverageDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(
+                    ExtraQuery(0x9A00, 0, 0x08),
+                    ExtraQuery(0x9B00, 0, 0x08))));
+        Equal(
+            PerspectiveSafeI6C2SourceStatusV1.Proven,
+            GetI6C2Source(coverageMirror).GetStatus(
+                PerspectiveSafeI6C2ConstituentV1.EntityIdentity));
+        PerspectiveSafeFrameSourceResultV1 afterBootstrapFrame =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                coverageMirror,
+                coverageContext,
+                CreatePrintedProviderForMirror(coverageMirror));
+        True(
+            afterBootstrapFrame.IsSuccess,
+            afterBootstrapFrame.Error?.ToString() ?? "post-bootstrap provider frame rejected");
+        NotNull(afterBootstrapFrame.Frame);
+        True(afterBootstrapFrame.Frame!.Entities.All(entity =>
+            !entity.IdentityKnown || entity.Printed is not null));
+
+        (PerspectiveStateMirrorV1 missingSelfPositionMirror,
+            GameplayMessageDecoderV1 missingSelfPositionDecoder) =
+            CreateMirror(0, extraCount0: 1, extraCount1: 0);
+        string missingSelfPositionBefore =
+            missingSelfPositionMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult missingSelfPosition =
+            missingSelfPositionMirror.Apply(
+                DecodeMessage(
+                    missingSelfPositionDecoder,
+                    UpdateDataMessage(
+                        0,
+                        0x40,
+                        Join(ExtraQueryWithoutPosition(0x9C00, 0)))));
+        False(missingSelfPosition.IsSuccess);
+        Equal(GameplayErrorCode.UnknownMirrorReference, missingSelfPosition.Error);
+        Equal(
+            missingSelfPositionBefore,
+            missingSelfPositionMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 missingOpponentPositionMirror,
+            GameplayMessageDecoderV1 missingOpponentPositionDecoder) =
+            CreateMirror(0, extraCount0: 0, extraCount1: 1);
+        string missingOpponentPositionBefore =
+            missingOpponentPositionMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult missingOpponentPosition =
+            missingOpponentPositionMirror.Apply(
+                DecodeMessage(
+                    missingOpponentPositionDecoder,
+                    UpdateDataMessage(
+                        1,
+                        0x40,
+                        Join(ExtraPublicQueryWithoutPosition(1)))));
+        False(missingOpponentPosition.IsSuccess);
+        Equal(GameplayErrorCode.UnknownMirrorReference, missingOpponentPosition.Error);
+        Equal(
+            missingOpponentPositionBefore,
+            missingOpponentPositionMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 zeroCodeMirror,
+            GameplayMessageDecoderV1 zeroCodeDecoder) =
+            CreateMirror(0, extraCount0: 1, extraCount1: 0);
+        string zeroCodeBefore = zeroCodeMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult zeroCodeResult = zeroCodeMirror.Apply(
+            DecodeMessage(
+                zeroCodeDecoder,
+                UpdateDataMessage(
+                    0,
+                    0x40,
+                    Join(ExtraQuery(0, 0, 0x08)))));
+        False(zeroCodeResult.IsSuccess);
+        Equal(GameplayErrorCode.UnknownMirrorReference, zeroCodeResult.Error);
+        Equal(zeroCodeBefore, zeroCodeMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 selfMirror, GameplayMessageDecoderV1 selfDecoder) =
+            CreateMirror(0, extraCount0: 3, extraCount1: 0);
+        string selfBefore = selfMirror.Snapshot.ToDeterministicString();
+        byte[] selfUpdate = UpdateDataMessage(
+            0,
+            0x40,
+            Join(
+                ExtraQuery(0xA100, 0, 0x08),
+                ExtraQuery(0xA100, 0, 0x08),
+                ExtraQuery(0xA200, 0, 0x08)));
+        MirrorApplyResult selfBootstrap = selfMirror.Apply(
+            DecodeMessage(selfDecoder, selfUpdate));
+        True(
+            selfBootstrap.IsSuccess,
+            $"self Extra bootstrap failed: {selfBootstrap.Error}");
+        MirrorCardSnapshotV1[] selfCards = selfMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(3, selfCards.Length);
+        Equal((uint)0xA100, selfCards[0].CardCode.Value);
+        Equal((uint)0xA100, selfCards[1].CardCode.Value);
+        Equal((uint)0xA200, selfCards[2].CardCode.Value);
+        True(selfCards.All(card =>
+            card.CardCode.Provenance == MirrorProvenanceV1.PerspectivePrivateFact));
+        NotEqual(selfBefore, selfMirror.Snapshot.ToDeterministicString());
+
+        MirrorApplyResult shuffled = selfMirror.Apply(
+            DecodeMessage(
+                selfDecoder,
+                ShuffleCodesMessage(39, 0, 0xA200, 0xA100, 0xA100)));
+        True(shuffled.IsSuccess, $"Extra shuffle failed: {shuffled.Error}");
+        MirrorCardSnapshotV1[] shuffledCards = selfMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(3, shuffledCards.Length);
+        Equal((uint)0xA200, shuffledCards[0].CardCode.Value);
+        Equal((uint)0xA100, shuffledCards[1].CardCode.Value);
+        Equal((uint)0xA100, shuffledCards[2].CardCode.Value);
+
+        (PerspectiveStateMirrorV1 moveMirror, GameplayMessageDecoderV1 moveDecoder) =
+            CreateMirror(0, extraCount0: 2, extraCount1: 0);
+        ApplyI6C4Success(
+            moveMirror,
+            moveDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(
+                    ExtraQuery(0xB100, 0, 0x08),
+                    ExtraQuery(0xB200, 0, 0x08))));
+        ApplyI6C4Success(
+            moveMirror,
+            moveDecoder,
+            MoveMessage(
+                0xB100,
+                new ModernLocInfoV1(0, 0x40, 0, 0x08),
+                new ModernLocInfoV1(0, 0x04, 0, 0x04),
+                0));
+        Equal(
+            (uint)1,
+            moveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.ExtraDeck).Count.Value);
+        Equal(
+            (uint)1,
+            moveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.MonsterZone).Count.Value);
+        ApplyI6C4Success(
+            moveMirror,
+            moveDecoder,
+            MoveMessage(
+                0xB100,
+                new ModernLocInfoV1(0, 0x04, 0, 0x04),
+                new ModernLocInfoV1(0, 0x40, 1, 0x08),
+                0));
+        Equal(
+            (uint)2,
+            moveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.ExtraDeck).Count.Value);
+        Equal(
+            (uint)0,
+            moveMirror.Snapshot.GetZone(
+                MirrorParticipantRoleV1.Self,
+                MirrorZoneV1.MonsterZone).Count.Value);
+
+        (PerspectiveStateMirrorV1 opponentMirror,
+            GameplayMessageDecoderV1 opponentDecoder) =
+            CreateMirror(0, extraCount0: 0, extraCount1: 2);
+        MirrorApplyResult opponentBootstrap = opponentMirror.Apply(
+            DecodeMessage(
+                opponentDecoder,
+                UpdateDataMessage(
+                    1,
+                    0x40,
+                    Join(
+                        ExtraPublicQuery(1, 0x08),
+                        ExtraPublicQuery(1, 0x08)))));
+        True(
+            opponentBootstrap.IsSuccess,
+            $"opponent Extra bootstrap failed: {opponentBootstrap.Error}");
+        MirrorCardSnapshotV1[] opponentCards = opponentMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Opponent,
+            MirrorZoneV1.ExtraDeck).Cards.ToArray();
+        Equal(2, opponentCards.Length);
+        True(opponentCards.All(card => !card.CardCode.IsKnown));
+
+        (PerspectiveStateMirrorV1 opponentWorldB,
+            GameplayMessageDecoderV1 opponentWorldBDecoder) =
+            CreateMirror(0, extraCount0: 0, extraCount1: 2);
+        MirrorApplyResult opponentWorldBResult = opponentWorldB.Apply(
+            DecodeMessage(
+                opponentWorldBDecoder,
+                UpdateDataMessage(
+                    1,
+                    0x40,
+                    Join(
+                        ExtraPublicQuery(1, 0x08),
+                        ExtraPublicQuery(1, 0x08)))));
+        True(opponentWorldBResult.IsSuccess);
+        Equal(
+            opponentMirror.Snapshot.ToDeterministicString(),
+            opponentWorldB.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 skippedMirror,
+            GameplayMessageDecoderV1 skippedDecoder) =
+            CreateMirror(0, extraCount0: 0, extraCount1: 1);
+        string skippedBefore = skippedMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult skippedResult = skippedMirror.Apply(
+            DecodeMessage(
+                skippedDecoder,
+                UpdateDataMessage(
+                    1,
+                    0x40,
+                    new byte[] { 0, 0 })));
+        False(
+            skippedResult.IsSuccess,
+            $"skipped opponent Extra query was accepted: {skippedResult.Error}");
+        Equal(GameplayErrorCode.UnknownMirrorReference, skippedResult.Error);
+        Equal(skippedBefore, skippedMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 playerZeroOrderMirror,
+            GameplayMessageDecoderV1 playerZeroOrderDecoder) =
+            CreateMirror(0, extraCount0: 1, extraCount1: 1);
+        ApplyI6C4Success(
+            playerZeroOrderMirror,
+            playerZeroOrderDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(ExtraQuery(0xD000, 0, 0x08))));
+        ApplyI6C4Success(
+            playerZeroOrderMirror,
+            playerZeroOrderDecoder,
+            UpdateDataMessage(
+                1,
+                0x40,
+                Join(ExtraPublicQuery(1, 0x08))));
+        True(playerZeroOrderMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.Single().CardCode.IsKnown);
+        True(playerZeroOrderMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Opponent,
+            MirrorZoneV1.ExtraDeck).Cards.Single().CardCode.IsKnown == false);
+
+        (PerspectiveStateMirrorV1 playerOneOrderMirror,
+            GameplayMessageDecoderV1 playerOneOrderDecoder) =
+            CreateMirror(1, extraCount0: 1, extraCount1: 1);
+        ApplyI6C4Success(
+            playerOneOrderMirror,
+            playerOneOrderDecoder,
+            UpdateDataMessage(
+                0,
+                0x40,
+                Join(ExtraPublicQuery(0, 0x08))));
+        ApplyI6C4Success(
+            playerOneOrderMirror,
+            playerOneOrderDecoder,
+            UpdateDataMessage(
+                1,
+                0x40,
+                Join(ExtraQuery(0xE000, 1, 0x08))));
+        True(playerOneOrderMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Self,
+            MirrorZoneV1.ExtraDeck).Cards.Single().CardCode.IsKnown);
+        True(playerOneOrderMirror.Snapshot.GetZone(
+            MirrorParticipantRoleV1.Opponent,
+            MirrorZoneV1.ExtraDeck).Cards.Single().CardCode.IsKnown == false);
+
+        (PerspectiveStateMirrorV1 mismatchMirror,
+            GameplayMessageDecoderV1 mismatchDecoder) =
+            CreateMirror(0, extraCount0: 3, extraCount1: 0);
+        string mismatchBefore = mismatchMirror.Snapshot.ToDeterministicString();
+        MirrorApplyResult mismatch = mismatchMirror.Apply(
+            DecodeMessage(
+                mismatchDecoder,
+                UpdateDataMessage(
+                    0,
+                    0x40,
+                    Join(
+                        ExtraQuery(0xC100, 0, 0x08),
+                        ExtraQuery(0xC200, 0, 0x08)))));
+        False(mismatch.IsSuccess);
+        Equal(GameplayErrorCode.StateCapacityExceeded, mismatch.Error);
+        Equal(mismatchBefore, mismatchMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 malformedMirror,
+            GameplayMessageDecoderV1 malformedDecoder) =
+            CreateMirror(0, extraCount0: 1, extraCount1: 0);
+        string malformedBefore = malformedMirror.Snapshot.ToDeterministicString();
+        GameplayMessageDecodeResult malformedDecoded = malformedDecoder.Decode(
+            new StocGameMessagePayload(
+                UpdateDataMessage(0, 0x40, new byte[] { 1, 0, 0 })));
+        False(malformedDecoded.IsSuccess);
+        Equal(malformedBefore, malformedMirror.Snapshot.ToDeterministicString());
+
+        (PerspectiveStateMirrorV1 unsupportedMirror,
+            GameplayMessageDecoderV1 unsupportedDecoder) =
+            CreateMirror(0, extraCount0: 1, extraCount1: 0);
+        string unsupportedBefore = unsupportedMirror.Snapshot.ToDeterministicString();
+        GameplayMessageDecodeResult unsupportedDecoded = unsupportedDecoder.Decode(
+            new StocGameMessagePayload(new byte[] { 35, 0 }));
+        False(unsupportedDecoded.IsSuccess);
+        Equal(unsupportedBefore, unsupportedMirror.Snapshot.ToDeterministicString());
+    }
+
+    private static void AssertI6C5NoContext()
+    {
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer,
+            TestTransport transport) = CreateI6C5Session(0, null);
+        try
+        {
+            string before = session.Mirror.Snapshot.ToDeterministicString();
+            int readsBefore = transport.ReadCallCount;
+            PerspectiveSafeFrameSourceResultV1 result =
+                session.TryCreateI6C5Frame();
+
+            False(result.IsSuccess);
+            Null(result.Frame);
+            Equal(
+                PerspectiveSafeFrameSourceErrorCodeV1.MissingMatchContext,
+                result.Error!.Value.Code);
+            Equal(before, session.Mirror.Snapshot.ToDeterministicString());
+            Equal(readsBefore, transport.ReadCallCount);
+        }
+        finally
+        {
+            DisposeI6C5Session(session, consumer);
+        }
+    }
+
+    private static void AssertI6C5BoundContextStability()
+    {
+        PerspectiveSafeMatchContextV1 context =
+            CreateValidI6C5MatchContext();
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer,
+            _) = CreateI6C5Session(
+                0,
+                context,
+                CreatePrintedProviderForCodes(new[] { 1u }));
+        try
+        {
+            GameplayMessageDecoderV1 firstDecoder = CreateEstablishedDecoder(0);
+            GameplayMessageV1 firstMessage = DecodeMessage(
+                firstDecoder,
+                new byte[] { 40, 0 });
+            Equal((byte)0, firstMessage.NewTurn.Player);
+            MirrorApplyResult firstApply = session.Mirror.Apply(firstMessage);
+            True(firstApply.IsSuccess, firstApply.Error.ToString());
+            PerspectiveSafeFrameSourceResultV1 first =
+                session.TryCreateI6C5Frame();
+            True(first.IsSuccess, first.Error?.ToString() ?? "first frame rejected");
+            NotNull(first.Frame);
+            string firstMirror = session.Mirror.Snapshot.ToDeterministicString();
+            string firstContext = MatchContextSignature(first.Frame!);
+
+            ApplyI6C4Success(
+                session.Mirror,
+                CreateEstablishedDecoder(0),
+                new byte[] { 40, 0 });
+            PerspectiveSafeFrameSourceResultV1 second =
+                session.TryCreateI6C5Frame();
+            True(second.IsSuccess, second.Error?.ToString() ?? "second frame rejected");
+            NotNull(second.Frame);
+            string secondMirror = session.Mirror.Snapshot.ToDeterministicString();
+            string secondContext = MatchContextSignature(second.Frame!);
+
+            NotEqual(firstMirror, secondMirror);
+            Equal(firstContext, secondContext);
+            Equal(
+                MatchContextSignature(context),
+                firstContext);
+            Equal(
+                MatchContextSignature(context),
+                secondContext);
+        }
+        finally
+        {
+            DisposeI6C5Session(session, consumer);
+        }
+    }
+
+    private static void AssertI6C5DistinctContexts()
+    {
+        PerspectiveSafeMatchContextV1 contextA =
+            CreateValidI6C5MatchContext();
+        PerspectiveSafeMatchContextV1 contextB = new(
+            perspectivePlayer: 0,
+            duelFlags: 0x235,
+            knowledge: new(true, false),
+            ownDeck: new(
+                known: true,
+                mainDeck: new uint[] { 4, 5 },
+                extraDeck: new uint[] { 6 }),
+            opponentDeck: new(known: false));
+        (GameplayMirrorSessionV1 sessionA,
+            GameplayHandoffConsumerV1 consumerA,
+            _) = CreateI6C5Session(
+                0,
+                contextA,
+                CreatePrintedProviderForCodes(new[] { 1u }));
+        (GameplayMirrorSessionV1 sessionB,
+            GameplayHandoffConsumerV1 consumerB,
+            _) = CreateI6C5Session(
+                0,
+                contextB,
+                CreatePrintedProviderForCodes(new[] { 1u }));
+        try
+        {
+            ApplyI6C4Success(
+                sessionA.Mirror,
+                CreateEstablishedDecoder(0),
+                new byte[] { 40, 0 });
+            ApplyI6C4Success(
+                sessionB.Mirror,
+                CreateEstablishedDecoder(0),
+                new byte[] { 40, 0 });
+            PerspectiveSafeFrameSourceResultV1 frameA =
+                sessionA.TryCreateI6C5Frame();
+            PerspectiveSafeFrameSourceResultV1 frameB =
+                sessionB.TryCreateI6C5Frame();
+            True(frameA.IsSuccess, frameA.Error?.ToString() ?? "session A rejected");
+            True(frameB.IsSuccess, frameB.Error?.ToString() ?? "session B rejected");
+            NotEqual(
+                MatchContextSignature(frameA.Frame!),
+                MatchContextSignature(frameB.Frame!));
+            Equal(
+                MatchContextSignature(contextA),
+                MatchContextSignature(frameA.Frame!));
+            Equal(
+                MatchContextSignature(contextB),
+                MatchContextSignature(frameB.Frame!));
+        }
+        finally
+        {
+            DisposeI6C5Session(sessionA, consumerA);
+            DisposeI6C5Session(sessionB, consumerB);
+        }
+    }
+
+    private static void AssertI6C5PerspectiveMismatch()
+    {
+        (GameplaySessionV1 transportSession,
+            PerspectiveStateMirrorV1 mirror,
+            GameplayHandoffConsumerV1 consumer,
+            TestTransport transport) = CreateStartedSession(0);
+        try
+        {
+            string before = mirror.Snapshot.ToDeterministicString();
+            int readsBefore = transport.ReadCallCount;
+            PerspectiveSafeMatchContextV1 mismatch = new(
+                perspectivePlayer: 1,
+                duelFlags: 0x234,
+                knowledge: new(true, false),
+                ownDeck: new(
+                    known: true,
+                    mainDeck: new uint[] { 1, 2 },
+                    extraDeck: new uint[] { 3 }),
+                opponentDeck: new(known: false));
+            bool rejected = false;
+            try
+            {
+                _ = new GameplayMirrorSessionV1(
+                    transportSession,
+                    mirror,
+                    mismatch);
+            }
+            catch (ArgumentException exception)
+            {
+                rejected = true;
+                True(exception.Message.StartsWith(
+                    "The I6C5 match context is invalid.",
+                    StringComparison.Ordinal));
+                Equal("matchContext", exception.ParamName);
+            }
+
+            True(rejected, "perspective mismatch was accepted");
+            Equal(before, mirror.Snapshot.ToDeterministicString());
+            Equal(readsBefore, transport.ReadCallCount);
+        }
+        finally
+        {
+            transportSession.CloseOwnedTransportAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    private static void AssertI6C5InvalidContext()
+    {
+        (GameplaySessionV1 transportSession,
+            PerspectiveStateMirrorV1 mirror,
+            GameplayHandoffConsumerV1 consumer,
+            TestTransport transport) = CreateStartedSession(0);
+        try
+        {
+            string before = mirror.Snapshot.ToDeterministicString();
+            int readsBefore = transport.ReadCallCount;
+            PerspectiveSafeMatchContextV1 invalid = new(
+                perspectivePlayer: 0,
+                duelFlags: 0x1000,
+                knowledge: new(true, false),
+                ownDeck: new(
+                    known: true,
+                    mainDeck: new uint[] { 1, 2 },
+                    extraDeck: new uint[] { 3 }),
+                opponentDeck: new(known: false));
+            bool rejected = false;
+            try
+            {
+                _ = new GameplayMirrorSessionV1(
+                    transportSession,
+                    mirror,
+                    invalid);
+            }
+            catch (ArgumentException exception)
+            {
+                rejected = true;
+                True(exception.Message.StartsWith(
+                    "The I6C5 match context is invalid.",
+                    StringComparison.Ordinal));
+                Equal("matchContext", exception.ParamName);
+            }
+
+            True(rejected, "invalid match context was accepted");
+            Equal(before, mirror.Snapshot.ToDeterministicString());
+            Equal(readsBefore, transport.ReadCallCount);
+        }
+        finally
+        {
+            transportSession.CloseOwnedTransportAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    private static void AssertI6C5ContextOwnership()
+    {
+        uint[] mutableMain = { 1, 2 };
+        uint[] mutableExtra = { 3 };
+        PerspectiveSafeMatchContextV1 context = new(
+            perspectivePlayer: 0,
+            duelFlags: 0x234,
+            knowledge: new(true, false),
+            ownDeck: new(true, mutableMain, mutableExtra),
+            opponentDeck: new(false));
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer,
+            _) = CreateI6C5Session(
+                0,
+                context,
+                CreatePrintedProviderForCodes(new[] { 1u }));
+        try
+        {
+            mutableMain[0] = 999;
+            mutableExtra[0] = 998;
+            ApplyI6C4Success(
+                session.Mirror,
+                CreateEstablishedDecoder(0),
+                new byte[] { 40, 0 });
+            PerspectiveSafeFrameSourceResultV1 result =
+                session.TryCreateI6C5Frame();
+            True(result.IsSuccess, result.Error?.ToString() ?? "owned context rejected");
+            Equal((uint)1, result.Frame!.MatchContext.OwnDeck.MainDeck[0]);
+            Equal((uint)3, result.Frame.MatchContext.OwnDeck.ExtraDeck[0]);
+        }
+        finally
+        {
+            DisposeI6C5Session(session, consumer);
+        }
+    }
+
+    private static void AssertI6C5SessionSurface()
+    {
+        MethodInfo[] methods = typeof(GameplayMirrorSessionV1)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance);
+        False(methods.Any(method =>
+            method.Name is "SetMatchContext" or "ReplaceMatchContext"));
+        MethodInfo frameMethod = methods.Single(method =>
+            method.Name == "TryCreateI6C5Frame");
+        Equal(0, frameMethod.GetParameters().Length);
+
+        FieldInfo? contextField = typeof(GameplayMirrorSessionV1)
+            .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+            .SingleOrDefault(field =>
+                field.FieldType == typeof(PerspectiveSafeMatchContextV1));
+        NotNull(contextField);
+        True(contextField!.IsInitOnly);
+    }
+
+    private static (GameplayMirrorSessionV1 Session,
+        GameplayHandoffConsumerV1 Consumer,
+        TestTransport Transport) CreateI6C5Session(
+        byte perspectivePlayer,
+        PerspectiveSafeMatchContextV1? context,
+        PerspectiveSafePrintedProviderV1? printedProvider = null)
+    {
+        (GameplaySessionV1 transportSession,
+            PerspectiveStateMirrorV1 mirror,
+            GameplayHandoffConsumerV1 consumer,
+            TestTransport transport) = CreateStartedSession(
+                perspectivePlayer,
+                extraCount0: 0,
+                extraCount1: 0);
+        try
+        {
+            GameplayMirrorSessionV1 session = context is null &&
+                printedProvider is null
+                ? new GameplayMirrorSessionV1(transportSession, mirror)
+                : printedProvider is null
+                    ? new GameplayMirrorSessionV1(
+                        transportSession,
+                        mirror,
+                        context)
+                    : new GameplayMirrorSessionV1(
+                        transportSession,
+                        mirror,
+                        context,
+                        printedProvider);
+            return (session, consumer, transport);
+        }
+        catch
+        {
+            transportSession.CloseOwnedTransportAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+            throw;
+        }
+    }
+
+    private static (GameplaySessionV1 Session,
+        PerspectiveStateMirrorV1 Mirror,
+        GameplayHandoffConsumerV1 Consumer,
+        TestTransport Transport) CreateStartedSession(
+        byte perspectivePlayer,
+        ushort extraCount0 = 0,
+        ushort extraCount1 = 0)
+    {
+        TestTransport transport = new(new[]
+        {
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.GameMsg,
+                CreateStartBytes(
+                    perspectivePlayer,
+                    deckCount0: 2,
+                    extraCount0: extraCount0,
+                    deckCount1: 2,
+                    extraCount1: extraCount1))
+        });
+        GameplayHandoffAcquireResult acquired =
+            GameplayHandoffConsumerV1.TryCreate(
+                CreateHandoff(transport, Array.Empty<byte>()));
+        True(acquired.IsSuccess);
+        GameplayPumpResult start = acquired.Consumer!.PumpAsync(
+            CancellationToken.None).GetAwaiter().GetResult();
+        True(start.IsSuccess, start.Error.ToString());
+        MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
+            start.Message!,
+            start.Perspective!);
+        True(created.IsSuccess, created.Error.ToString());
+        return (
+            start.Session!,
+            created.Mirror!,
+            acquired.Consumer,
+            transport);
+    }
+
+    private static GameplayMessageDecoderV1 CreateEstablishedDecoder(
+        byte perspectivePlayer)
+    {
+        GameplayMessageDecoderV1 decoder = new();
+        DecodeMessage(
+            decoder,
+            CreateStartBytes(
+                perspectivePlayer,
+                deckCount0: 2,
+                extraCount0: 0,
+                deckCount1: 2,
+                extraCount1: 0));
+        return decoder;
+    }
+
+    private static void DisposeI6C5Session(
+        GameplayMirrorSessionV1 session,
+        GameplayHandoffConsumerV1 consumer)
+    {
+        session.DisposeAsync().GetAwaiter().GetResult();
+        consumer.DisposeAsync().GetAwaiter().GetResult();
+    }
+
+    private static string MatchContextSignature(
+        PerspectiveSafeFrameV1 frame) =>
+        MatchContextSignature(frame.MatchContext);
+
+    private static string MatchContextSignature(
+        PerspectiveSafeMatchContextV1 context) =>
+        string.Join(
+            "|",
+            context.PerspectivePlayer,
+            context.DuelFlags,
+            context.Knowledge.OwnDecklistKnown,
+            context.Knowledge.OpponentDecklistKnown,
+            string.Join(",", context.OwnDeck.MainDeck),
+            string.Join(",", context.OwnDeck.ExtraDeck),
+            context.OpponentDeck.Known,
+            string.Join(",", context.OpponentDeck.MainDeck),
+            string.Join(",", context.OpponentDeck.ExtraDeck));
+
+    private static void AssertPrintedProviderMappings()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1001, 0x00000001, 4, 1, 2, 1600, 1200, 0, 0, 0),
+            new(1002, 0x00800001, 7, 2, 4, 2500, 2000, 0, 0, 0),
+            new(1003, 0x04000001, 3, 4, 8, 1800, 0, 0, 0, 0x021),
+            new(1004, 0x01000001, 4, 8, 16, 1700, 1500, 2, 8, 0),
+            new(1005, 0x05800001, 6, 16, 32, 0, 0, 1, 9, 0x100)
+        };
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderV1 provider =
+            CreatePrintedProvider(rows, artifact);
+
+        PerspectiveSafeCardPropertiesV1 normal =
+            GetPrinted(provider, 1001);
+        Equal((uint)0x00000001, normal.Type!.Value);
+        Equal((uint)4, normal.Level!.Value);
+        Equal((int)1600, normal.Attack!.Value);
+        Equal((int)1200, normal.Defense!.Value);
+        Null(normal.Rank);
+        Equal(0, normal.LinkMarkers.Count);
+
+        PerspectiveSafeCardPropertiesV1 xyz = GetPrinted(provider, 1002);
+        Equal((uint)7, xyz.Rank!.Value);
+        Null(xyz.Level);
+        Equal((int)2000, xyz.Defense!.Value);
+
+        PerspectiveSafeCardPropertiesV1 link = GetPrinted(provider, 1003);
+        Null(link.Defense);
+        Equal((uint)3, link.LinkRating!.Value);
+        Equal(2, link.LinkMarkers.Count);
+        Equal(PerspectiveSafeLinkMarkerV1.BottomLeft, link.LinkMarkers[0]);
+        Equal(PerspectiveSafeLinkMarkerV1.Right, link.LinkMarkers[1]);
+
+        PerspectiveSafeCardPropertiesV1 pendulum = GetPrinted(provider, 1004);
+        Equal((uint)2, pendulum.LeftScale!.Value);
+        Equal((uint)8, pendulum.RightScale!.Value);
+        Equal((uint)4, pendulum.Level!.Value);
+
+        PerspectiveSafeCardPropertiesV1 xyzLink = GetPrinted(provider, 1005);
+        Equal((uint)6, xyzLink.Rank!.Value);
+        Equal((uint)6, xyzLink.LinkRating!.Value);
+        Null(xyzLink.Level);
+        Null(xyzLink.Defense);
+        Equal((uint)1, xyzLink.LeftScale!.Value);
+        Equal((uint)9, xyzLink.RightScale!.Value);
+        Equal(PerspectiveSafeLinkMarkerV1.TopRight, xyzLink.LinkMarkers[0]);
+    }
+
+    private static void AssertPrintedProviderRequired()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0, extraCount0: 0, extraCount1: 0);
+        ApplyI6C4Success(mirror, decoder, new byte[] { 40, 0 });
+        PerspectiveSafeFrameSourceResultV1 result =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                CreateValidI6C5MatchContext());
+        False(result.IsSuccess);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.MissingPrintedProvider,
+            result.Error!.Value.Code);
+        Null(result.Frame);
+    }
+
+    private static void AssertPrintedProviderDigests()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1101, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        Equal(
+            "bd8ffdf7bd8103e410da295f0aac67a357107b8e3aa92a39140a28d4accc17d2",
+            TestCoverageDigest(new uint[] { 1101 }));
+        Equal(
+            "6697290980fe48e7a1abae9cb25112069ade98737c54f511bf1a9bea6f8b208e",
+            TestSemanticDigest(rows));
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderManifestV1 validManifest =
+            CreatePrintedManifest(rows, artifact);
+        PerspectiveSafePrintedProviderResultV1 valid =
+            PerspectiveSafePrintedProviderV1.TryCreate(artifact, validManifest);
+        True(valid.IsSuccess, valid.Error?.ToString() ?? "valid provider rejected");
+
+        byte[] changedArtifact = artifact.ToArray();
+        changedArtifact[^2] = (byte)'1';
+        PerspectiveSafePrintedProviderResultV1 rawMismatch =
+            PerspectiveSafePrintedProviderV1.TryCreate(changedArtifact, validManifest);
+        False(rawMismatch.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.InvalidArtifactHash,
+            rawMismatch.Error!.Value.Code);
+
+        PerspectiveSafePrintedProviderManifestV1 semanticMismatch =
+            CreatePrintedManifest(
+                rows,
+                artifact,
+                semanticRowsDigestSha256: new string('0', 64));
+        PerspectiveSafePrintedProviderResultV1 semanticResult =
+            PerspectiveSafePrintedProviderV1.TryCreate(artifact, semanticMismatch);
+        False(semanticResult.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.SemanticDigestMismatch,
+            semanticResult.Error!.Value.Code);
+
+        PerspectiveSafePrintedProviderManifestV1 coverageMismatch =
+            CreatePrintedManifest(
+                rows,
+                artifact,
+                coverageDigestSha256: new string('1', 64));
+        PerspectiveSafePrintedProviderResultV1 coverageResult =
+            PerspectiveSafePrintedProviderV1.TryCreate(artifact, coverageMismatch);
+        False(coverageResult.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.InvalidCoverage,
+            coverageResult.Error!.Value.Code);
+    }
+
+    private static void AssertPrintedProviderFailures()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1201, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0),
+            new(1202, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        byte[] validArtifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderManifestV1 validManifest =
+            CreatePrintedManifest(rows, validArtifact);
+
+        byte[] unsortedArtifact = CreatePrintedArtifact(rows[1], rows[0]);
+        PerspectiveSafePrintedProviderResultV1 unsorted =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                unsortedArtifact,
+                CreatePrintedManifest(rows, unsortedArtifact));
+        False(unsorted.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.MalformedArtifact,
+            unsorted.Error!.Value.Code);
+
+        SyntheticPrintedRow invalidLink =
+            new(1203, 0x04000001, 3, 1, 2, 100, 1, 0, 0, 1);
+        byte[] invalidLinkArtifact = CreatePrintedArtifact(invalidLink);
+        PerspectiveSafePrintedProviderResultV1 invalidLinkResult =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                invalidLinkArtifact,
+                CreatePrintedManifest(new[] { invalidLink }, invalidLinkArtifact));
+        False(invalidLinkResult.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.MalformedArtifact,
+            invalidLinkResult.Error!.Value.Code);
+
+        PerspectiveSafePrintedProviderResultV1 missingArtifact =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                ReadOnlyMemory<byte>.Empty,
+                validManifest);
+        False(missingArtifact.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.InvalidArtifactHash,
+            missingArtifact.Error!.Value.Code);
+
+        PerspectiveSafePrintedProviderManifestV1 uncoveredManifest =
+            CreatePrintedManifest(
+                rows,
+                validArtifact,
+                coveragePasscodes: new uint[] { 1201 });
+        PerspectiveSafePrintedProviderResultV1 uncovered =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                validArtifact,
+                uncoveredManifest);
+        False(uncovered.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.InvalidCoverage,
+            uncovered.Error!.Value.Code);
+    }
+
+    private static void AssertPrintedProviderEnvironment()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1301, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderManifestV1 manifest =
+            CreatePrintedManifest(
+                rows,
+                artifact,
+                ocgForgeSemanticCommit: new string('a', 40));
+        PerspectiveSafePrintedProviderResultV1 result =
+            PerspectiveSafePrintedProviderV1.TryCreate(artifact, manifest);
+        False(result.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.EnvironmentMismatch,
+            result.Error!.Value.Code);
+    }
+
+    private static void AssertPrintedProviderPrivacySurface()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1401, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderResultV1 result =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                artifact,
+                CreatePrintedManifest(rows, artifact));
+        True(result.IsSuccess, result.Error?.ToString() ?? "provider rejected");
+
+        MethodInfo[] publicMethods = typeof(PerspectiveSafePrintedProviderV1)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+        False(publicMethods.Any(method =>
+            method.Name.Contains("Reverse", StringComparison.OrdinalIgnoreCase) ||
+            method.Name.Contains("Find", StringComparison.OrdinalIgnoreCase) ||
+            method.Name.Contains("Enumerate", StringComparison.OrdinalIgnoreCase) ||
+            method.Name.Contains("Possible", StringComparison.OrdinalIgnoreCase)));
+
+        PerspectiveSafePrintedLookupResultV1 unknown =
+            result.Provider!.TryGetPrinted(999999);
+        False(unknown.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.MissingCoverage,
+            unknown.Error!.Value.Code);
+        PerspectiveSafePrintedLookupResultV1 zero =
+            result.Provider.TryGetPrinted(0);
+        False(zero.IsSuccess);
+        Equal(
+            PerspectiveSafePrintedProviderErrorCodeV1.InvalidPasscode,
+            zero.Error!.Value.Code);
+    }
+
+    private static void AssertPrintedProviderFrameIntegration()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1451, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderV1 provider =
+            CreatePrintedProvider(rows, artifact);
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0, deckCount0: 2, extraCount0: 0, deckCount1: 2, extraCount1: 0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        ApplyI6C4Success(
+            mirror,
+            decoder,
+            MoveMessage(
+                1451,
+                empty,
+                new ModernLocInfoV1(0, 0x04, 0, 0x05),
+                0));
+        ApplyI6C4Success(mirror, decoder, new byte[] { 40, 0 });
+
+        PerspectiveSafeFrameSourceResultV1 result =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                CreateValidI6C5MatchContext(),
+                provider);
+        True(result.IsSuccess, result.Error?.ToString() ?? "provider frame rejected");
+        PerspectiveSafeEntityV1 entity = result.Frame!.Entities.Single(
+            value => value.Passcode == 1451);
+        NotNull(entity.Printed);
+        Equal((int)100, entity.Printed!.Attack!.Value);
+        Equal((int)200, entity.Printed.Defense!.Value);
+        Equal((uint)4, entity.Printed.Level!.Value);
+
+        SyntheticPrintedRow[] uncoveredRows =
+        {
+            new(1452, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        PerspectiveSafePrintedProviderV1 uncoveredProvider =
+            CreatePrintedProvider(
+                uncoveredRows,
+                CreatePrintedArtifact(uncoveredRows));
+        PerspectiveSafeFrameSourceResultV1 uncoveredResult =
+            PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+                mirror,
+                CreateValidI6C5MatchContext(),
+                uncoveredProvider);
+        False(uncoveredResult.IsSuccess);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            uncoveredResult.Error!.Value.Code);
+    }
+
+    private static void AssertPrintedProviderSessionBinding()
+    {
+        SyntheticPrintedRow[] rows =
+        {
+            new(1501, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+        };
+        byte[] artifact = CreatePrintedArtifact(rows);
+        PerspectiveSafePrintedProviderResultV1 providerResult =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                artifact,
+                CreatePrintedManifest(rows, artifact));
+        True(providerResult.IsSuccess, providerResult.Error?.ToString() ?? "provider rejected");
+
+        FieldInfo? providerField = typeof(GameplayMirrorSessionV1)
+            .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+            .SingleOrDefault(field =>
+                field.FieldType == typeof(PerspectiveSafePrintedProviderV1));
+        NotNull(providerField);
+        True(providerField!.IsInitOnly);
+
+        MethodInfo frameMethod = typeof(GameplayMirrorSessionV1)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Single(method => method.Name == "TryCreateI6C5Frame");
+        Equal(0, frameMethod.GetParameters().Length);
+
+        (GameplaySessionV1 transportSession,
+            PerspectiveStateMirrorV1 mirror,
+            GameplayHandoffConsumerV1 consumer,
+            _) = CreateStartedSession(0);
+        GameplayMirrorSessionV1 session = new(
+            transportSession,
+            mirror,
+            CreateValidI6C5MatchContext(),
+            providerResult.Provider);
+        try
+        {
+            ApplyI6C4Success(
+                mirror,
+                CreateEstablishedDecoder(0),
+                MoveMessage(
+                    1501,
+                    new ModernLocInfoV1(0, 0, 0, 0),
+                    new ModernLocInfoV1(0, 0x04, 0, 0x05),
+                    0));
+            ApplyI6C4Success(
+                mirror,
+                CreateEstablishedDecoder(0),
+                new byte[] { 40, 0 });
+            PerspectiveSafeFrameSourceResultV1 frame =
+                session.TryCreateI6C5Frame();
+            True(frame.IsSuccess, frame.Error?.ToString() ?? "bound provider frame rejected");
+            PerspectiveSafeEntityV1 entity = frame.Frame!.Entities.Single(
+                value => value.Passcode == 1501);
+            NotNull(entity.Printed);
+        }
+        finally
+        {
+            DisposeI6C5Session(session, consumer);
+        }
+    }
+
+    private static void AssertPrintedProviderSessionMissing()
+    {
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer,
+            TestTransport transport) = CreateI6C5Session(
+                0,
+                CreateValidI6C5MatchContext());
+        try
+        {
+            ApplyI6C4Success(
+                session.Mirror,
+                CreateEstablishedDecoder(0),
+                new byte[] { 40, 0 });
+            string before = session.Mirror.Snapshot.ToDeterministicString();
+            int readsBefore = transport.ReadCallCount;
+            PerspectiveSafeFrameSourceResultV1 result =
+                session.TryCreateI6C5Frame();
+            False(result.IsSuccess);
+            Null(result.Frame);
+            Equal(
+                PerspectiveSafeFrameSourceErrorCodeV1.MissingPrintedProvider,
+                result.Error!.Value.Code);
+            Equal(before, session.Mirror.Snapshot.ToDeterministicString());
+            Equal(readsBefore, transport.ReadCallCount);
+        }
+        finally
+        {
+            DisposeI6C5Session(session, consumer);
+        }
+    }
+
+    private static PerspectiveSafeCardPropertiesV1 GetPrinted(
+        PerspectiveSafePrintedProviderV1 provider,
+        uint code)
+    {
+        PerspectiveSafePrintedLookupResultV1 result =
+            provider.TryGetPrinted(code);
+        True(result.IsSuccess, result.Error?.ToString() ?? "printed lookup failed");
+        NotNull(result.Properties);
+        return result.Properties!;
+    }
+
+    private static PerspectiveSafePrintedProviderV1 CreatePrintedProvider(
+        IReadOnlyList<SyntheticPrintedRow> rows,
+        byte[] artifact)
+    {
+        PerspectiveSafePrintedProviderResultV1 result =
+            PerspectiveSafePrintedProviderV1.TryCreate(
+                artifact,
+                CreatePrintedManifest(rows, artifact));
+        True(result.IsSuccess, result.Error?.ToString() ?? "provider rejected");
+        return result.Provider!;
+    }
+
+    private static PerspectiveSafePrintedProviderV1 CreatePrintedProviderForCodes(
+        IEnumerable<uint> codes)
+    {
+        SyntheticPrintedRow[] rows = codes
+            .Where(code => code != 0)
+            .Distinct()
+            .OrderBy(code => code)
+            .Select(code => new SyntheticPrintedRow(
+                code,
+                0x00000001,
+                4,
+                1,
+                2,
+                100,
+                200,
+                0,
+                0,
+                0))
+            .ToArray();
+        if (rows.Length == 0)
+        {
+            rows = new[]
+            {
+                new SyntheticPrintedRow(1, 0x00000001, 4, 1, 2, 100, 200, 0, 0, 0)
+            };
+        }
+
+        return CreatePrintedProvider(rows, CreatePrintedArtifact(rows));
+    }
+
+    private static PerspectiveSafePrintedProviderV1 CreatePrintedProviderForMirror(
+        PerspectiveStateMirrorV1 mirror) =>
+        CreatePrintedProviderForCodes(
+            mirror.Snapshot.Cards
+                .Where(card => card.CardCode.IsKnown)
+                .Select(card => card.CardCode.Value));
+
+    private static PerspectiveSafePrintedProviderManifestV1 CreatePrintedManifest(
+        IReadOnlyList<SyntheticPrintedRow> rows,
+        byte[] artifact,
+        IReadOnlyList<uint>? coveragePasscodes = null,
+        string? coverageDigestSha256 = null,
+        string? semanticRowsDigestSha256 = null,
+        string? ocgForgeSemanticCommit = null)
+    {
+        IReadOnlyList<uint> coverage = coveragePasscodes ??
+            rows.Select(row => row.Code).ToArray();
+        return new PerspectiveSafePrintedProviderManifestV1(
+            manifestContractId: "ocgforge-ignis.i6c5.printed-manifest.v1",
+            providerContractId: "ocgforge-ignis.i6c5.printed-provider.v1",
+            semanticRowsContractId: "ocgforge-ignis.i6c5.printed-semantic-rows.v1",
+            fieldMappingContractId: "ocgforge-ignis.i6c5.printed-field-mapping.v1",
+            coverageContractId: "ocgforge-ignis.i6c5.printed-coverage.v1",
+            coverageDigestSha256: coverageDigestSha256 ?? TestCoverageDigest(coverage),
+            semanticRowsDigestSha256: semanticRowsDigestSha256 ?? TestSemanticDigest(rows),
+            ocgForgeSemanticCommit: ocgForgeSemanticCommit ??
+                "f929de0b4d4157327dba003067d2e21e42f7ad75",
+            rulesBundleId: "3adfe6b4cfe2c2805e50b389fc0eb4e70a3b0b6107436614d328fddc865e585f",
+            babelCdbRepository: "https://github.com/ProjectIgnis/BabelCDB.git",
+            babelCdbCommit: new string('a', 40),
+            babelCdbCheckoutSha256: new string('b', 64),
+            cardsCdbSha256: new string('c', 64),
+            transformationSourceRepository: "https://github.com/chrismaghuhn/OCGForge.git",
+            transformationSourceCommit: new string('d', 40),
+            transformationSourcePath: "tools/prepare_card_data.py",
+            transformationFileSha256: new string('e', 64),
+            sourceArtifactFormatId: "ocgforge-ignis.i6c5.printed-source-artifact.pipe12.v1",
+            sourceArtifactSha256: TestHash(artifact),
+            coveragePasscodes: coverage);
+    }
+
+    private static byte[] CreatePrintedArtifact(
+        params SyntheticPrintedRow[] rows)
+    {
+        StringBuilder builder = new();
+        builder.Append(
+                "# code|alias|setcode|type|level|attribute|race|atk|def|lscale|rscale|link_marker")
+            .Append('\n');
+        foreach (SyntheticPrintedRow row in rows)
+        {
+            builder.Append(row.Code).Append('|')
+                .Append(0).Append('|')
+                .Append(0).Append('|')
+                .Append(row.Type).Append('|')
+                .Append(row.Level).Append('|')
+                .Append(row.Attribute).Append('|')
+                .Append(row.Race).Append('|')
+                .Append(row.Attack).Append('|')
+                .Append(row.Defense).Append('|')
+                .Append(row.LeftScale).Append('|')
+                .Append(row.RightScale).Append('|')
+                .Append(row.LinkMarker)
+                .Append('\n');
+        }
+
+        return Encoding.UTF8.GetBytes(builder.ToString());
+    }
+
+    private static string TestHash(ReadOnlySpan<byte> bytes) =>
+        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+    private static string TestCoverageDigest(IReadOnlyList<uint> coverage)
+    {
+        using MemoryStream stream = new();
+        stream.Write(Encoding.ASCII.GetBytes(
+            "OCGFORGE-IGNIS-I6C5-PRINTED-COVERAGE-V1\0"));
+        WriteTestUInt32(stream, checked((uint)coverage.Count));
+        foreach (uint code in coverage)
+        {
+            WriteTestUInt32(stream, code);
+        }
+
+        return TestHash(stream.ToArray());
+    }
+
+    private static string TestSemanticDigest(
+        IReadOnlyList<SyntheticPrintedRow> rows)
+    {
+        using MemoryStream stream = new();
+        stream.Write(Encoding.ASCII.GetBytes(
+            "OCGFORGE-IGNIS-I6C5-PRINTED-ROWS-V1\0"));
+        WriteTestUInt32(stream, checked((uint)rows.Count));
+        foreach (SyntheticPrintedRow row in rows)
+        {
+            WriteTestUInt32(stream, row.Code);
+            WriteTestUInt32(stream, row.Type);
+            WriteTestUInt32(stream, row.Level);
+            WriteTestUInt32(stream, row.Attribute);
+            WriteTestUInt64(stream, row.Race);
+            WriteTestInt32(stream, row.Attack);
+            WriteTestInt32(stream, row.Defense);
+            WriteTestUInt32(stream, row.LeftScale);
+            WriteTestUInt32(stream, row.RightScale);
+            WriteTestUInt32(stream, row.LinkMarker);
+        }
+
+        return TestHash(stream.ToArray());
+    }
+
+    private static void WriteTestUInt32(Stream stream, uint value)
+    {
+        Span<byte> bytes = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(bytes, value);
+        stream.Write(bytes);
+    }
+
+    private static void WriteTestUInt64(Stream stream, ulong value)
+    {
+        Span<byte> bytes = stackalloc byte[8];
+        BinaryPrimitives.WriteUInt64BigEndian(bytes, value);
+        stream.Write(bytes);
+    }
+
+    private static void WriteTestInt32(Stream stream, int value)
+    {
+        Span<byte> bytes = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32BigEndian(bytes, value);
+        stream.Write(bytes);
+    }
+
+    private readonly record struct SyntheticPrintedRow(
+        uint Code,
+        uint Type,
+        uint Level,
+        uint Attribute,
+        ulong Race,
+        int Attack,
+        int Defense,
+        uint LeftScale,
+        uint RightScale,
+        uint LinkMarker);
+
+    private static byte[] ExtraQuery(uint code, byte owner, uint position) =>
+        Join(
+            QueryRecord(QueryFlagV1.Code, U32(code)),
+            QueryRecord(QueryFlagV1.Position, U32(position)),
+            QueryRecord(QueryFlagV1.Owner, new[] { owner }),
+            QueryEnd());
+
+    private static byte[] ExtraQueryWithoutPosition(uint code, byte owner) =>
+        Join(
+            QueryRecord(QueryFlagV1.Code, U32(code)),
+            QueryRecord(QueryFlagV1.Owner, new[] { owner }),
+            QueryEnd());
+
+    private static byte[] ExtraPublicQuery(byte owner, uint position) =>
+        Join(
+            QueryRecord(QueryFlagV1.Position, U32(position)),
+            QueryRecord(QueryFlagV1.Owner, new[] { owner }),
+            QueryRecord(QueryFlagV1.IsHidden, new byte[] { 1 }),
+            QueryEnd());
+
+    private static byte[] ExtraPublicQueryWithoutPosition(byte owner) =>
+        Join(
+            QueryRecord(QueryFlagV1.Owner, new[] { owner }),
+            QueryRecord(QueryFlagV1.IsHidden, new byte[] { 1 }),
+            QueryEnd());
 
     private static void AssertI6C2AbsoluteGlobals()
     {
@@ -2587,10 +4771,16 @@ internal static class I6CPublicFrameSourceTests
         return signature;
     }
 
-    private static PerspectiveStateMirrorV1 CreateHiddenWorld(uint hiddenCode)
+    private static PerspectiveStateMirrorV1 CreateHiddenWorld(
+        uint hiddenCode,
+        ushort extraCount0 = 1)
     {
         (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
-            CreateMirror(0, deckCount1: 2, extraCount1: 1);
+            CreateMirror(
+                0,
+                extraCount0: extraCount0,
+                deckCount1: 2,
+                extraCount1: 1);
         ApplyMirrorMessage(
             mirror,
             decoder,
@@ -3040,6 +5230,17 @@ internal static class I6CPublicFrameSourceTests
         new(
             perspectivePlayer: 0,
             duelFlags: 0x1234,
+            knowledge: new(true, false),
+            ownDeck: new(
+                known: true,
+                mainDeck: new uint[] { 1, 2 },
+                extraDeck: new uint[] { 3 }),
+            opponentDeck: new(known: false));
+
+    private static PerspectiveSafeMatchContextV1 CreateValidI6C5MatchContext() =>
+        new(
+            perspectivePlayer: 0,
+            duelFlags: 0x234,
             knowledge: new(true, false),
             ownDeck: new(
                 known: true,

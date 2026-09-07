@@ -133,6 +133,9 @@ public sealed class PerspectiveStateMirrorV1
             GameplayMessageKindV1.PosChange => ApplyPositionChange(candidate, message.PositionChange),
             GameplayMessageKindV1.Set => ApplySet(candidate, message.Set),
             GameplayMessageKindV1.Swap => ApplySwap(candidate, message.Swap),
+            GameplayMessageKindV1.SwapGraveDeck => ApplySwapGraveDeck(
+                candidate,
+                message.SwapGraveDeck!),
             GameplayMessageKindV1.Chaining => ApplyChaining(candidate, message.Chaining),
             GameplayMessageKindV1.Chained => ApplyChainSize(candidate, message.ChainSize, message.Kind),
             GameplayMessageKindV1.ChainSolving => ApplyChainSize(candidate, message.ChainSize, message.Kind),
@@ -431,6 +434,7 @@ public sealed class PerspectiveStateMirrorV1
             if (!ReindexPileForInsertion(
                     candidate,
                     current,
+                    1,
                     out GameplayErrorCode insertionError))
             {
                 return insertionError;
@@ -526,6 +530,248 @@ public sealed class PerspectiveStateMirrorV1
         return GameplayErrorCode.None;
     }
 
+    private static GameplayErrorCode ApplySwapGraveDeck(
+        MirrorState candidate,
+        GameplaySwapGraveDeckPayloadV1 payload)
+    {
+        if (payload.Player > 1)
+        {
+            return GameplayErrorCode.InvalidParticipant;
+        }
+
+        byte player = payload.Player;
+        uint mainCount = candidate.ZoneCounts[player, (int)MirrorZoneV1.MainDeck];
+        uint graveCount = candidate.ZoneCounts[player, (int)MirrorZoneV1.Graveyard];
+        uint extraCount = candidate.ZoneCounts[player, (int)MirrorZoneV1.ExtraDeck];
+        if (payload.ReportedExtraCount > extraCount ||
+            graveCount > int.MaxValue)
+        {
+            return GameplayErrorCode.StateCapacityExceeded;
+        }
+
+        ulong expectedMaskLength = ((ulong)graveCount + 7UL) / 8UL;
+        if ((ulong)payload.ExtraMask.Count != expectedMaskLength)
+        {
+            return GameplayErrorCode.MalformedGameMessage;
+        }
+
+        int graveLength = (int)graveCount;
+        if (graveLength > 0 && (graveLength & 7) != 0)
+        {
+            int usedBits = graveLength & 7;
+            byte unusedBits = (byte)(0xff << usedBits);
+            if ((payload.ExtraMask[^1] & unusedBits) != 0)
+            {
+                return GameplayErrorCode.InvalidStateTransition;
+            }
+        }
+
+        int extraMoved = 0;
+        for (int index = 0; index < graveLength; index++)
+        {
+            if (IsExtraMaskBitSet(payload.ExtraMask, index))
+            {
+                if (extraMoved == int.MaxValue)
+                {
+                    return GameplayErrorCode.ArithmeticFailure;
+                }
+
+                extraMoved++;
+            }
+        }
+
+        uint newDeckCount = graveCount - (uint)extraMoved;
+        uint newExtraCount;
+        try
+        {
+            newExtraCount = checked(extraCount + (uint)extraMoved);
+        }
+        catch (OverflowException)
+        {
+            return GameplayErrorCode.ArithmeticFailure;
+        }
+
+        EntityState[] oldMainEntities = candidate.Entities.Values
+            .Where(entity => !entity.Address.IsOverlay &&
+                             entity.Address.Controller == player &&
+                             entity.Address.Zone == MirrorZoneV1.MainDeck)
+            .OrderBy(entity => entity.Address.Sequence)
+            .ThenBy(entity => entity.Id.Ordinal)
+            .ToArray();
+        EntityState[] oldGraveEntities = candidate.Entities.Values
+            .Where(entity => !entity.Address.IsOverlay &&
+                             entity.Address.Controller == player &&
+                             entity.Address.Zone == MirrorZoneV1.Graveyard)
+            .OrderBy(entity => entity.Address.Sequence)
+            .ThenBy(entity => entity.Id.Ordinal)
+            .ToArray();
+        Dictionary<uint, EntityState> oldGraveBySequence =
+            oldGraveEntities.ToDictionary(entity => entity.Address.Sequence);
+        EntityState[] existingExtraEntities = candidate.Entities.Values
+            .Where(entity => !entity.Address.IsOverlay &&
+                             entity.Address.Controller == player &&
+                             entity.Address.Zone == MirrorZoneV1.ExtraDeck)
+            .ToArray();
+
+        if (oldMainEntities.Any(entity => entity.Address.Sequence >= mainCount) ||
+            oldGraveEntities.Any(entity => entity.Address.Sequence >= graveCount) ||
+            existingExtraEntities.Any(entity => entity.Address.Sequence >= extraCount))
+        {
+            return GameplayErrorCode.InvalidState;
+        }
+
+        if ((ulong)existingExtraEntities.Length == extraCount)
+        {
+            uint faceUpCount = (uint)existingExtraEntities.Count(
+                entity => entity.Position.IsKnown &&
+                          (entity.Position.Value & PositionFaceUp) != 0);
+            uint expectedInsertionIndex = extraCount - faceUpCount;
+            if (payload.ReportedExtraCount != expectedInsertionIndex)
+            {
+                return GameplayErrorCode.InvalidStateTransition;
+            }
+        }
+
+        if (candidate.Entities.Values.Any(
+                entity => !entity.Address.IsOverlay &&
+                          entity.Address.Controller == player &&
+                          entity.Address.Zone == MirrorZoneV1.ExtraDeck &&
+                          entity.Position.IsKnown &&
+                          (entity.Position.Value & PositionFaceUp) != 0 &&
+                          entity.Address.Sequence < payload.ReportedExtraCount))
+        {
+            return GameplayErrorCode.InvalidStateTransition;
+        }
+
+        if (!ReindexPileForInsertion(
+                candidate,
+                new MirrorAddress(
+                    player,
+                    MirrorZoneV1.ExtraDeck,
+                    payload.ReportedExtraCount,
+                    false,
+                    0),
+                (uint)extraMoved,
+                out GameplayErrorCode insertionError))
+        {
+            return insertionError;
+        }
+
+        foreach (EntityState entity in oldMainEntities)
+        {
+            candidate.Entities.Remove(entity.Address);
+            RemoveEntityRelations(candidate, entity.Id);
+        }
+
+        foreach (EntityState entity in oldGraveEntities)
+        {
+            candidate.Entities.Remove(entity.Address);
+            RemoveEntityRelations(candidate, entity.Id);
+        }
+
+        foreach (EntityState entity in oldMainEntities)
+        {
+            MirrorAddress address = new(
+                player,
+                MirrorZoneV1.Graveyard,
+                entity.Address.Sequence,
+                false,
+                0);
+            entity.Address = address;
+            entity.Position = MirrorValueV1.Known(
+                (uint)0x05,
+                MirrorProvenanceV1.PublicProtocolFact);
+            entity.QueryFields.Clear();
+            entity.CardCode = entity.CardCode.IsKnown && entity.CardCode.Value != 0
+                ? MirrorValueV1.Known(
+                    entity.CardCode.Value,
+                    MirrorProvenanceV1.PublicProtocolFact)
+                : MirrorValueV1.Unknown<uint>();
+            candidate.Entities.Add(address, entity);
+        }
+
+        int selectedOrdinal = 0;
+        for (int index = 0; index < graveLength; index++)
+        {
+            if (!IsExtraMaskBitSet(payload.ExtraMask, index))
+            {
+                continue;
+            }
+
+            uint sequence;
+            try
+            {
+                sequence = checked(
+                    payload.ReportedExtraCount + (uint)selectedOrdinal);
+            }
+            catch (OverflowException)
+            {
+                return GameplayErrorCode.ArithmeticFailure;
+            }
+
+            if (!oldGraveBySequence.TryGetValue(
+                    (uint)index,
+                    out EntityState? entity))
+            {
+                if (!TryCreateEntity(
+                        candidate,
+                        new MirrorAddress(
+                            player,
+                            MirrorZoneV1.ExtraDeck,
+                            sequence,
+                            false,
+                            0),
+                        cardCode: 0,
+                        position: PositionFaceDown,
+                        hasCardCode: false,
+                        out entity,
+                        out GameplayErrorCode createError))
+                {
+                    return createError;
+                }
+            }
+            else
+            {
+                entity.Address = new MirrorAddress(
+                    player,
+                    MirrorZoneV1.ExtraDeck,
+                    sequence,
+                    false,
+                    0);
+                entity.Position = MirrorValueV1.Known(
+                    (uint)PositionFaceDown,
+                    MirrorProvenanceV1.PublicProtocolFact);
+                entity.QueryFields.Clear();
+                entity.CardCode = MapPlayer(candidate.Perspective, player) ==
+                                  MirrorParticipantRoleV1.Self &&
+                                  entity.CardCode.IsKnown &&
+                                  entity.CardCode.Value != 0
+                    ? MirrorValueV1.Known(
+                        entity.CardCode.Value,
+                        MirrorProvenanceV1.PerspectivePrivateFact)
+                    : MirrorValueV1.Unknown<uint>();
+            }
+
+            candidate.Entities.Add(entity!.Address, entity);
+            if (selectedOrdinal == int.MaxValue)
+            {
+                return GameplayErrorCode.ArithmeticFailure;
+            }
+
+            selectedOrdinal++;
+        }
+
+        candidate.ZoneCounts[player, (int)MirrorZoneV1.MainDeck] = newDeckCount;
+        candidate.ZoneCounts[player, (int)MirrorZoneV1.Graveyard] = mainCount;
+        candidate.ZoneCounts[player, (int)MirrorZoneV1.ExtraDeck] = newExtraCount;
+        return GameplayErrorCode.None;
+    }
+
+    private static bool IsExtraMaskBitSet(
+        IReadOnlyList<byte> mask,
+        int index) =>
+        (mask[index / 8] & (1 << (index % 8))) != 0;
+
     private static bool RemoveEntityAtAddress(
         MirrorState candidate,
         MirrorAddress address,
@@ -582,9 +828,15 @@ public sealed class PerspectiveStateMirrorV1
     private static bool ReindexPileForInsertion(
         MirrorState candidate,
         MirrorAddress inserted,
+        uint insertionCount,
         out GameplayErrorCode error)
     {
         error = GameplayErrorCode.None;
+        if (insertionCount == 0)
+        {
+            return true;
+        }
+
         EntityState[] shifted = candidate.Entities.Values
             .Where(entity => !entity.Address.IsOverlay &&
                              entity.Address.Controller == inserted.Controller &&
@@ -593,7 +845,8 @@ public sealed class PerspectiveStateMirrorV1
             .OrderByDescending(entity => entity.Address.Sequence)
             .ToArray();
 
-        if (shifted.Any(entity => entity.Address.Sequence == uint.MaxValue))
+        if (shifted.Any(entity =>
+                entity.Address.Sequence > uint.MaxValue - insertionCount))
         {
             error = GameplayErrorCode.ArithmeticFailure;
             return false;
@@ -609,7 +862,7 @@ public sealed class PerspectiveStateMirrorV1
             entity.Address = new MirrorAddress(
                 entity.Address.Controller,
                 entity.Address.Zone,
-                entity.Address.Sequence + 1,
+                entity.Address.Sequence + insertionCount,
                 false,
                 0);
             candidate.Entities.Add(entity.Address, entity);
@@ -820,6 +1073,14 @@ public sealed class PerspectiveStateMirrorV1
             return GameplayErrorCode.InvalidLocation;
         }
 
+        bool bootstrapExtra = zone == MirrorZoneV1.ExtraDeck;
+        if (bootstrapExtra &&
+            (ulong)payload.Queries.Count !=
+                candidate.ZoneCounts[payload.Player, (int)zone])
+        {
+            return GameplayErrorCode.StateCapacityExceeded;
+        }
+
         for (int index = 0; index < payload.Queries.Count; index++)
         {
             if (!IsValidFieldSequence(zone, (uint)index))
@@ -834,9 +1095,44 @@ public sealed class PerspectiveStateMirrorV1
                 false,
                 0);
             ModernQueryV1 query = payload.Queries[index];
+            if (bootstrapExtra && query.IsOnFieldSkipped)
+            {
+                return GameplayErrorCode.UnknownMirrorReference;
+            }
+
+            if (bootstrapExtra &&
+                !query.Fields.Any(field => field.Flag == QueryFlagV1.Position))
+            {
+                return GameplayErrorCode.UnknownMirrorReference;
+            }
+
+            bool bootstrapped = false;
+            if (!candidate.Entities.TryGetValue(address, out EntityState? entity))
+            {
+                if (!bootstrapExtra)
+                {
+                    return GameplayErrorCode.UnknownMirrorReference;
+                }
+
+                if (!TryCreateEntity(
+                        candidate,
+                        address,
+                        cardCode: 0,
+                        position: PositionFaceDown,
+                        hasCardCode: false,
+                        out entity,
+                        out GameplayErrorCode createError))
+                {
+                    return createError;
+                }
+
+                candidate.Entities.Add(address, entity!);
+                bootstrapped = true;
+            }
+
             if (query.IsOnFieldSkipped)
             {
-                if (candidate.Entities.ContainsKey(address))
+                if (!bootstrapped)
                 {
                     return GameplayErrorCode.ConflictingSlotOccupancy;
                 }
@@ -844,15 +1140,19 @@ public sealed class PerspectiveStateMirrorV1
                 continue;
             }
 
-            if (!candidate.Entities.TryGetValue(address, out EntityState? entity))
-            {
-                return GameplayErrorCode.UnknownMirrorReference;
-            }
-
-            GameplayErrorCode error = ApplyQuery(candidate, entity, query);
+            GameplayErrorCode error = ApplyQuery(candidate, entity!, query);
             if (error != GameplayErrorCode.None)
             {
                 return error;
+            }
+
+            if (bootstrapExtra &&
+                payload.Player == candidate.Perspective.PlayerType &&
+                (!entity!.CardCode.IsKnown ||
+                 entity.CardCode.Value == 0 ||
+                 !entity.Position.IsKnown))
+            {
+                return GameplayErrorCode.UnknownMirrorReference;
             }
         }
 

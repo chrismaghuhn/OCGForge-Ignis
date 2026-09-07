@@ -126,6 +126,16 @@ internal static class GameplayMessageFixtures
             U32(0),
             LocInfo(second.Controller, second.Location, second.Sequence, second.Position));
 
+    internal static byte[] SwapGraveDeckMessage(
+        byte player,
+        uint reportedExtraCount,
+        params byte[] extraMask) =>
+        Join(
+            new byte[] { 35, player },
+            U32(reportedExtraCount),
+            U32((uint)extraMask.Length),
+            extraMask);
+
     internal static byte[] CardTargetMessage(
         ModernLocInfoV1 source,
         ModernLocInfoV1 target,

@@ -38,7 +38,8 @@ public enum PerspectiveSafeFrameSourceErrorCodeV1 : byte
     CrossSectionMismatch = 20,
     MissingMirror = 21,
     UnprovenMirrorValue = 22,
-    InvalidMirrorSnapshot = 23
+    InvalidMirrorSnapshot = 23,
+    MissingPrintedProvider = 24
 }
 
 public readonly record struct PerspectiveSafeFrameSourceErrorV1(
