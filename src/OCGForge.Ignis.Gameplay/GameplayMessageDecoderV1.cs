@@ -57,6 +57,22 @@ public sealed class GameplayMessageDecoderV1
     private const byte MsgCardTarget = 96;
     private const byte MsgCancelTarget = 97;
     private const byte MsgPayLpCost = 100;
+    private const byte MsgAddCounter = 101;
+    private const byte MsgRemoveCounter = 102;
+    private const byte MsgConfirmDeckTop = 30;
+    private const byte MsgConfirmCards = 31;
+    private const byte MsgShuffleDeck = 32;
+    private const byte MsgShuffleHand = 33;
+    private const byte MsgShuffleSetCard = 36;
+    private const byte MsgReverseDeck = 37;
+    private const byte MsgShuffleExtra = 39;
+    private const byte MsgConfirmExtraTop = 42;
+    private const byte MsgSummoning = 60;
+    private const byte MsgSummoned = 61;
+    private const byte MsgSpecialSummoning = 62;
+    private const byte MsgSpecialSummoned = 63;
+    private const byte MsgFlipSummoning = 64;
+    private const byte MsgFlipSummoned = 65;
 
     private GameplayPerspectiveV1? perspective;
     private bool perspectiveDependentProcessingStarted;
@@ -188,6 +204,43 @@ public sealed class GameplayMessageDecoderV1
             MsgCardTarget => DecodeCardTarget(bytes, MsgCardTarget, GameplayMessageKindV1.CardTarget),
             MsgCancelTarget => DecodeCardTarget(bytes, MsgCancelTarget, GameplayMessageKindV1.CancelTarget),
             MsgPayLpCost => DecodeLifePoints(bytes, MsgPayLpCost, GameplayMessageKindV1.PayLpCost),
+            MsgSummoning => DecodeSummoning(bytes, MsgSummoning, GameplayMessageKindV1.Summoning),
+            MsgSummoned => DecodeSummoned(bytes, MsgSummoned, GameplayMessageKindV1.Summoned),
+            MsgSpecialSummoning => DecodeSummoning(
+                bytes,
+                MsgSpecialSummoning,
+                GameplayMessageKindV1.SpecialSummoning),
+            MsgSpecialSummoned => DecodeSummoned(
+                bytes,
+                MsgSpecialSummoned,
+                GameplayMessageKindV1.SpecialSummoned),
+            MsgFlipSummoning => DecodeSummoning(
+                bytes,
+                MsgFlipSummoning,
+                GameplayMessageKindV1.FlipSummoning),
+            MsgFlipSummoned => DecodeSummoned(bytes, MsgFlipSummoned, GameplayMessageKindV1.FlipSummoned),
+            MsgConfirmCards => DecodeConfirm(
+                bytes,
+                MsgConfirmCards,
+                GameplayMessageKindV1.ConfirmCards),
+            MsgConfirmDeckTop => DecodeConfirm(
+                bytes,
+                MsgConfirmDeckTop,
+                GameplayMessageKindV1.ConfirmDeckTop),
+            MsgConfirmExtraTop => DecodeConfirm(
+                bytes,
+                MsgConfirmExtraTop,
+                GameplayMessageKindV1.ConfirmExtraTop),
+            MsgShuffleDeck or MsgShuffleHand or MsgShuffleExtra or
+                MsgShuffleSetCard or MsgReverseDeck => DecodeShuffle(bytes, messageId),
+            MsgAddCounter => DecodeCounter(
+                bytes,
+                MsgAddCounter,
+                GameplayMessageKindV1.AddCounter),
+            MsgRemoveCounter => DecodeCounter(
+                bytes,
+                MsgRemoveCounter,
+                GameplayMessageKindV1.RemoveCounter),
             _ => Failure(GameplayErrorCode.UnknownMessageId)
         };
 
@@ -547,6 +600,340 @@ public sealed class GameplayMessageDecoderV1
             new GameplayCardTargetPayloadV1(source, target)));
     }
 
+    private GameplayMessageDecodeResult DecodeSummoning(
+        ReadOnlySpan<byte> bytes,
+        byte messageId,
+        GameplayMessageKindV1 kind)
+    {
+        if (bytes.Length != 15)
+        {
+            return Failure(GameplayErrorCode.MalformedGameMessage);
+        }
+
+        if (!TryReadLoc(bytes, 5, out ModernLocInfoV1 location, out GameplayErrorCode error))
+        {
+            return Failure(error);
+        }
+
+        if (location.Location == 0)
+        {
+            return Failure(GameplayErrorCode.InvalidLocation);
+        }
+
+        return Success(GameplayMessageV1.FromSummoning(
+            messageId,
+            kind,
+            new GameplaySummoningPayloadV1(
+                BinaryPrimitives.ReadUInt32LittleEndian(bytes[1..5]),
+                location)));
+    }
+
+    private GameplayMessageDecodeResult DecodeSummoned(
+        ReadOnlySpan<byte> bytes,
+        byte messageId,
+        GameplayMessageKindV1 kind) =>
+        bytes.Length == 1
+            ? Success(GameplayMessageV1.FromSummoned(messageId, kind))
+            : Failure(GameplayErrorCode.MalformedGameMessage);
+
+    private GameplayMessageDecodeResult DecodeConfirm(
+        ReadOnlySpan<byte> bytes,
+        byte messageId,
+        GameplayMessageKindV1 kind)
+    {
+        const int headerLength = 6;
+        const int compactEntryLength = 10;
+        const int extendedEntryLength = 14;
+        if (bytes.Length < headerLength)
+        {
+            return Failure(GameplayErrorCode.MalformedGameMessage);
+        }
+
+        GameplayErrorCode playerError = ValidatePlayer(bytes[1]);
+        if (playerError != GameplayErrorCode.None)
+        {
+            return Failure(playerError);
+        }
+
+        uint count = BinaryPrimitives.ReadUInt32LittleEndian(bytes[2..6]);
+        ulong bodyLength = (ulong)bytes.Length - headerLength;
+        int entryLength;
+        if (bodyLength == (ulong)count * compactEntryLength)
+        {
+            entryLength = compactEntryLength;
+        }
+        else if (bodyLength == (ulong)count * extendedEntryLength)
+        {
+            entryLength = extendedEntryLength;
+        }
+        else
+        {
+            return Failure(GameplayErrorCode.QueryLengthMismatch);
+        }
+
+        if (count > int.MaxValue)
+        {
+            return Failure(GameplayErrorCode.QueryCountOverflow);
+        }
+
+        List<GameplayConfirmCardRecordV1> cards = new((int)count);
+        int offset = headerLength;
+        for (uint index = 0; index < count; index++)
+        {
+            uint cardCode = BinaryPrimitives.ReadUInt32LittleEndian(
+                bytes.Slice(offset, sizeof(uint)));
+            offset += sizeof(uint);
+
+            ModernLocInfoV1 location;
+            if (entryLength == compactEntryLength)
+            {
+                if (!TryReadCompactLoc(
+                        bytes,
+                        offset,
+                        out location,
+                        out GameplayErrorCode error))
+                {
+                    return Failure(error);
+                }
+
+                offset += 6;
+            }
+            else
+            {
+                if (!TryReadLoc(
+                        bytes,
+                        offset,
+                        out location,
+                        out GameplayErrorCode error))
+                {
+                    return Failure(error);
+                }
+
+                offset += GameplayWirePrimitivesV1.ModernLocInfoByteLength;
+            }
+
+            if (location.Location == 0)
+            {
+                return Failure(GameplayErrorCode.InvalidLocation);
+            }
+
+            cards.Add(new GameplayConfirmCardRecordV1(cardCode, location));
+        }
+
+        return Success(GameplayMessageV1.FromConfirm(
+            messageId,
+            kind,
+            new GameplayConfirmPayloadV1(bytes[1], cards)));
+    }
+
+    private GameplayMessageDecodeResult DecodeShuffle(
+        ReadOnlySpan<byte> bytes,
+        byte messageId)
+    {
+        if (messageId == MsgReverseDeck)
+        {
+            return bytes.Length == 1
+                ? Success(GameplayMessageV1.FromShuffle(
+                    messageId,
+                    new GameplayShufflePayloadV1(
+                        GameplayShuffleKindV1.ReverseDeck,
+                        null,
+                        0)))
+                : Failure(GameplayErrorCode.MalformedGameMessage);
+        }
+
+        if (messageId == MsgShuffleDeck)
+        {
+            return DecodePlayerShuffle(
+                bytes,
+                messageId,
+                GameplayShuffleKindV1.Deck,
+                location: 0x01);
+        }
+
+        if (messageId == MsgShuffleHand || messageId == MsgShuffleExtra)
+        {
+            if (bytes.Length < 6)
+            {
+                return Failure(GameplayErrorCode.MalformedGameMessage);
+            }
+
+            GameplayErrorCode playerError = ValidatePlayer(bytes[1]);
+            if (playerError != GameplayErrorCode.None)
+            {
+                return Failure(playerError);
+            }
+
+            uint count = BinaryPrimitives.ReadUInt32LittleEndian(bytes[2..6]);
+            ulong required = 6ul + ((ulong)count * sizeof(uint));
+            if (required > int.MaxValue || required != (ulong)bytes.Length)
+            {
+                return Failure(GameplayErrorCode.QueryLengthMismatch);
+            }
+
+            List<uint> cardCodes = new((int)count);
+            int offset = 6;
+            for (uint index = 0; index < count; index++)
+            {
+                cardCodes.Add(BinaryPrimitives.ReadUInt32LittleEndian(
+                    bytes.Slice(offset, sizeof(uint))));
+                offset += sizeof(uint);
+            }
+
+            return Success(GameplayMessageV1.FromShuffle(
+                messageId,
+                new GameplayShufflePayloadV1(
+                    messageId == MsgShuffleHand
+                        ? GameplayShuffleKindV1.Hand
+                        : GameplayShuffleKindV1.Extra,
+                    bytes[1],
+                    messageId == MsgShuffleHand ? (byte)0x02 : (byte)0x40,
+                    cardCodes)));
+        }
+
+        if (messageId != MsgShuffleSetCard || bytes.Length < 3)
+        {
+            return Failure(GameplayErrorCode.MalformedGameMessage);
+        }
+
+        byte location = bytes[1];
+        byte countByte = bytes[2];
+        if (location is not 0x04 and not 0x08 || countByte == 0)
+        {
+            return Failure(GameplayErrorCode.InvalidLocation);
+        }
+
+        ulong requiredLength = 3ul +
+                               ((ulong)countByte *
+                                GameplayWirePrimitivesV1.ModernLocInfoByteLength *
+                                2ul);
+        if (requiredLength != (ulong)bytes.Length)
+        {
+            return Failure(GameplayErrorCode.QueryLengthMismatch);
+        }
+
+        List<ModernLocInfoV1> previous = new(countByte);
+        int offsetForPrevious = 3;
+        byte? player = null;
+        for (int index = 0; index < countByte; index++)
+        {
+            if (!TryReadLoc(
+                    bytes,
+                    offsetForPrevious,
+                    out ModernLocInfoV1 value,
+                    out GameplayErrorCode error))
+            {
+                return Failure(error);
+            }
+
+            if (value.Location != location)
+            {
+                return Failure(GameplayErrorCode.InvalidLocation);
+            }
+
+            if (!player.HasValue)
+            {
+                player = value.Controller;
+            }
+            else if (player.Value != value.Controller)
+            {
+                return Failure(GameplayErrorCode.InvalidParticipant);
+            }
+
+            previous.Add(value);
+            offsetForPrevious += GameplayWirePrimitivesV1.ModernLocInfoByteLength;
+        }
+
+        if (!player.HasValue)
+        {
+            return Failure(GameplayErrorCode.InvalidParticipant);
+        }
+
+        byte shufflePlayer = player.Value;
+        List<ModernLocInfoV1> current = new(countByte);
+        for (int index = 0; index < countByte; index++)
+        {
+            if (!TryReadLoc(
+                    bytes,
+                    offsetForPrevious,
+                    out ModernLocInfoV1 value,
+                    out GameplayErrorCode error))
+            {
+                return Failure(error);
+            }
+
+            bool isZero = value.Controller == 0 &&
+                          value.Location == 0 &&
+                          value.Sequence == 0 &&
+                          value.Position == 0;
+            if (!isZero &&
+                (value.Controller != shufflePlayer || value.Location != location))
+            {
+                return Failure(GameplayErrorCode.InvalidStateTransition);
+            }
+
+            current.Add(value);
+            offsetForPrevious += GameplayWirePrimitivesV1.ModernLocInfoByteLength;
+        }
+
+        return Success(GameplayMessageV1.FromShuffle(
+            messageId,
+            new GameplayShufflePayloadV1(
+                GameplayShuffleKindV1.SetCard,
+                player,
+                location,
+                previous: previous,
+                current: current)));
+    }
+
+    private GameplayMessageDecodeResult DecodePlayerShuffle(
+        ReadOnlySpan<byte> bytes,
+        byte messageId,
+        GameplayShuffleKindV1 kind,
+        byte location)
+    {
+        if (bytes.Length != 2)
+        {
+            return Failure(GameplayErrorCode.MalformedGameMessage);
+        }
+
+        GameplayErrorCode playerError = ValidatePlayer(bytes[1]);
+        return playerError == GameplayErrorCode.None
+            ? Success(GameplayMessageV1.FromShuffle(
+                messageId,
+                new GameplayShufflePayloadV1(kind, bytes[1], location)))
+            : Failure(playerError);
+    }
+
+    private GameplayMessageDecodeResult DecodeCounter(
+        ReadOnlySpan<byte> bytes,
+        byte messageId,
+        GameplayMessageKindV1 kind)
+    {
+        if (bytes.Length != 8)
+        {
+            return Failure(GameplayErrorCode.MalformedGameMessage);
+        }
+
+        if (bytes[4] == 0)
+        {
+            return Failure(GameplayErrorCode.InvalidLocation);
+        }
+
+        GameplayErrorCode playerError = ValidatePlayer(bytes[3]);
+        return playerError == GameplayErrorCode.None
+            ? Success(GameplayMessageV1.FromCounter(
+                messageId,
+                kind,
+                new GameplayCounterPayloadV1(
+                    BinaryPrimitives.ReadUInt16LittleEndian(bytes[1..3]),
+                    bytes[3],
+                    bytes[4],
+                    bytes[5],
+                    BinaryPrimitives.ReadUInt16LittleEndian(bytes[6..8]))))
+            : Failure(playerError);
+    }
+
     private static bool IsI3BMessage(byte messageId) =>
         messageId is MsgWin or
             MsgUpdateData or
@@ -573,7 +960,23 @@ public sealed class GameplayMessageDecoderV1
             MsgUnequip or
             MsgCardTarget or
             MsgCancelTarget or
-            MsgPayLpCost;
+            MsgPayLpCost or
+            MsgSummoning or
+            MsgSummoned or
+            MsgSpecialSummoning or
+            MsgSpecialSummoned or
+            MsgFlipSummoning or
+            MsgFlipSummoned or
+            MsgConfirmCards or
+            MsgConfirmDeckTop or
+            MsgConfirmExtraTop or
+            MsgShuffleDeck or
+            MsgShuffleHand or
+            MsgShuffleExtra or
+            MsgShuffleSetCard or
+            MsgReverseDeck or
+            MsgAddCounter or
+            MsgRemoveCounter;
 
     private static GameplayErrorCode ValidatePlayer(byte player) =>
         player <= 1
@@ -602,6 +1005,29 @@ public sealed class GameplayMessageDecoderV1
             return false;
         }
 
+        error = ValidatePlayer(value.Controller);
+        return error == GameplayErrorCode.None;
+    }
+
+    private static bool TryReadCompactLoc(
+        ReadOnlySpan<byte> bytes,
+        int offset,
+        out ModernLocInfoV1 value,
+        out GameplayErrorCode error)
+    {
+        value = default;
+        error = GameplayErrorCode.None;
+        if (offset < 0 || bytes.Length - offset < 6)
+        {
+            error = GameplayErrorCode.MalformedGameMessage;
+            return false;
+        }
+
+        value = new ModernLocInfoV1(
+            bytes[offset],
+            bytes[offset + 1],
+            BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset + 2, 4)),
+            0x05);
         error = ValidatePlayer(value.Controller);
         return error == GameplayErrorCode.None;
     }

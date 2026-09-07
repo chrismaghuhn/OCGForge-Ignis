@@ -124,7 +124,23 @@ public enum GameplayMessageKindV1 : byte
     Unequip = 23,
     CardTarget = 24,
     CancelTarget = 25,
-    PayLpCost = 26
+    PayLpCost = 26,
+    Summoning = 27,
+    Summoned = 28,
+    SpecialSummoning = 29,
+    SpecialSummoned = 30,
+    FlipSummoning = 31,
+    FlipSummoned = 32,
+    ConfirmCards = 33,
+    ConfirmDeckTop = 34,
+    ConfirmExtraTop = 35,
+    ShuffleDeck = 36,
+    ShuffleHand = 37,
+    ShuffleExtra = 38,
+    ShuffleSetCard = 39,
+    ReverseDeck = 40,
+    AddCounter = 41,
+    RemoveCounter = 42
 }
 
 public readonly record struct GameplayWinPayloadV1(byte Player, byte WinType);
@@ -244,6 +260,90 @@ public readonly record struct GameplayEquipPayloadV1(
 
 public readonly record struct GameplayUnequipPayloadV1(ModernLocInfoV1 Card);
 
+public readonly record struct GameplaySummoningPayloadV1(
+    uint CardCode,
+    ModernLocInfoV1 Location);
+
+public readonly record struct GameplayConfirmCardRecordV1(
+    uint CardCode,
+    ModernLocInfoV1 Location);
+
+public sealed class GameplayConfirmPayloadV1
+{
+    private readonly GameplayConfirmCardRecordV1[] cards;
+    private readonly ReadOnlyCollection<GameplayConfirmCardRecordV1> cardsView;
+
+    internal GameplayConfirmPayloadV1(
+        byte recipient,
+        IEnumerable<GameplayConfirmCardRecordV1> cards)
+    {
+        Recipient = recipient;
+        this.cards = cards.ToArray();
+        cardsView = Array.AsReadOnly(this.cards);
+    }
+
+    public byte Recipient { get; }
+
+    public IReadOnlyList<GameplayConfirmCardRecordV1> Cards => cardsView;
+}
+
+public enum GameplayShuffleKindV1 : byte
+{
+    Deck = 0,
+    Hand = 1,
+    Extra = 2,
+    SetCard = 3,
+    ReverseDeck = 4
+}
+
+public sealed class GameplayShufflePayloadV1
+{
+    private readonly uint[] cardCodes;
+    private readonly ModernLocInfoV1[] previous;
+    private readonly ModernLocInfoV1[] current;
+    private readonly ReadOnlyCollection<uint> cardCodesView;
+    private readonly ReadOnlyCollection<ModernLocInfoV1> previousView;
+    private readonly ReadOnlyCollection<ModernLocInfoV1> currentView;
+
+    internal GameplayShufflePayloadV1(
+        GameplayShuffleKindV1 kind,
+        byte? player,
+        byte location,
+        IEnumerable<uint>? cardCodes = null,
+        IEnumerable<ModernLocInfoV1>? previous = null,
+        IEnumerable<ModernLocInfoV1>? current = null)
+    {
+        Kind = kind;
+        Player = player;
+        Location = location;
+        this.cardCodes = cardCodes?.ToArray() ?? Array.Empty<uint>();
+        this.previous = previous?.ToArray() ?? Array.Empty<ModernLocInfoV1>();
+        this.current = current?.ToArray() ?? Array.Empty<ModernLocInfoV1>();
+        cardCodesView = Array.AsReadOnly(this.cardCodes);
+        previousView = Array.AsReadOnly(this.previous);
+        currentView = Array.AsReadOnly(this.current);
+    }
+
+    public GameplayShuffleKindV1 Kind { get; }
+
+    public byte? Player { get; }
+
+    public byte Location { get; }
+
+    public IReadOnlyList<uint> CardCodes => cardCodesView;
+
+    public IReadOnlyList<ModernLocInfoV1> Previous => previousView;
+
+    public IReadOnlyList<ModernLocInfoV1> Current => currentView;
+}
+
+public readonly record struct GameplayCounterPayloadV1(
+    ushort CounterType,
+    byte Controller,
+    byte Location,
+    byte Sequence,
+    ushort Count);
+
 public readonly record struct GameplayCardTargetPayloadV1(
     ModernLocInfoV1 Source,
     ModernLocInfoV1 Target);
@@ -267,7 +367,11 @@ public sealed class GameplayMessageV1
         GameplayLifePointPayloadV1 lifePoints = default,
         GameplayEquipPayloadV1 equip = default,
         GameplayUnequipPayloadV1 unequip = default,
-        GameplayCardTargetPayloadV1 cardTarget = default)
+        GameplayCardTargetPayloadV1 cardTarget = default,
+        GameplaySummoningPayloadV1 summoning = default,
+        GameplayConfirmPayloadV1? confirm = null,
+        GameplayShufflePayloadV1? shuffle = null,
+        GameplayCounterPayloadV1 counter = default)
     {
         Id = id;
         Kind = kind;
@@ -286,6 +390,10 @@ public sealed class GameplayMessageV1
         Equip = equip;
         Unequip = unequip;
         CardTarget = cardTarget;
+        Summoning = summoning;
+        Confirm = confirm;
+        Shuffle = shuffle;
+        Counter = counter;
     }
 
     public const byte MessageId = 4;
@@ -329,6 +437,14 @@ public sealed class GameplayMessageV1
     public GameplayUnequipPayloadV1 Unequip { get; }
 
     public GameplayCardTargetPayloadV1 CardTarget { get; }
+
+    public GameplaySummoningPayloadV1 Summoning { get; }
+
+    public GameplayConfirmPayloadV1? Confirm { get; }
+
+    public GameplayShufflePayloadV1? Shuffle { get; }
+
+    public GameplayCounterPayloadV1 Counter { get; }
 
     internal static GameplayMessageV1 FromStart(
         GameplayStartPayloadV1 start) =>
@@ -422,6 +538,42 @@ public sealed class GameplayMessageV1
         GameplayMessageKindV1 kind,
         GameplayCardTargetPayloadV1 cardTarget) =>
         new(id, kind, cardTarget: cardTarget);
+
+    internal static GameplayMessageV1 FromSummoning(
+        byte id,
+        GameplayMessageKindV1 kind,
+        GameplaySummoningPayloadV1 summoning) =>
+        new(id, kind, summoning: summoning);
+
+    internal static GameplayMessageV1 FromSummoned(
+        byte id,
+        GameplayMessageKindV1 kind) =>
+        new(id, kind);
+
+    internal static GameplayMessageV1 FromConfirm(
+        byte id,
+        GameplayMessageKindV1 kind,
+        GameplayConfirmPayloadV1 confirm) =>
+        new(id, kind, confirm: confirm);
+
+    internal static GameplayMessageV1 FromShuffle(
+        byte id,
+        GameplayShufflePayloadV1 shuffle) =>
+        new(id, shuffle.Kind switch
+        {
+            GameplayShuffleKindV1.Deck => GameplayMessageKindV1.ShuffleDeck,
+            GameplayShuffleKindV1.Hand => GameplayMessageKindV1.ShuffleHand,
+            GameplayShuffleKindV1.Extra => GameplayMessageKindV1.ShuffleExtra,
+            GameplayShuffleKindV1.SetCard => GameplayMessageKindV1.ShuffleSetCard,
+            GameplayShuffleKindV1.ReverseDeck => GameplayMessageKindV1.ReverseDeck,
+            _ => throw new ArgumentOutOfRangeException(nameof(shuffle))
+        }, shuffle: shuffle);
+
+    internal static GameplayMessageV1 FromCounter(
+        byte id,
+        GameplayMessageKindV1 kind,
+        GameplayCounterPayloadV1 counter) =>
+        new(id, kind, counter: counter);
 }
 
 public readonly record struct GameplayMessageDecodeResult(
