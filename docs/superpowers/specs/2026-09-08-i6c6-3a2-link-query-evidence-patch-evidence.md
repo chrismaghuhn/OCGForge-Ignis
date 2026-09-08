@@ -24,14 +24,21 @@ The repository-side authority is the merged ADR-0004 at
 ce9274d23f95dd3f0f14eba2ecf9697384c899ce:
 
 ~~~text
+ADR_0004_ARCHITECTURE_DECISION=ACCEPTED
 ADR_0001_LINK_QUERY_REVISION=APPROVED_LOCAL_PRIVATE_ORACLE_ONLY
+ADR_0004_IMPLEMENTATION_AUTHORIZATION_LITERAL=NO
+POST_ADR_INTEGRATION_TASK_AUTHORIZATION=
+I6C6_3A2_LOCAL_PRIVATE_LINK_QUERY_EVIDENCE_PATCH
+POST_ADR_TASK_IMPLEMENTATION_AUTHORIZED=YES
 PUBLIC_EDOPRO_SERVER_MODIFICATION_AUTHORIZED=NO
-LINK_QUERY_EXPANSION_IMPLEMENTATION_AUTHORIZED=YES
 ~~~
 
-The approval is limited to a separately provisioned local/private oracle
-runtime. It does not make the patch an Ignis release dependency and does not
-authorize a public EDOPro server change.
+ADR-0004 accepted the local/private architecture exception while explicitly
+leaving implementation unauthorized. After that ADR was integrated, the
+dedicated I6C6-3A2 task authorized this implementation slice. The approval is
+limited to a separately provisioned local/private oracle runtime. It does not
+make the patch an Ignis release dependency and does not authorize a public
+EDOPro server change.
 
 ## 3. Runtime provenance
 
