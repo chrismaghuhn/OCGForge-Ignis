@@ -16,6 +16,46 @@ internal static class I6DPublicCandidateKeyTests
     private const string HiddenCardDomainDigest =
         "b35640b35822c76ed165a65f86c6d7ac5520abdf4359482b7608bf125274e1e6";
 
+    private const string NativeRaceDirectKey =
+        "public_action.v1.000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "0000000c616e6e6f756e63656d656e74000000000001000000000000000000";
+
+    private const string NativeRaceContinuationKey =
+        "public_action.v1.000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "000000047069636b0000000000010000000100000000047069636b";
+
+    private const string NativeIdleKey =
+        "public_action.v1.000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "0000000c69646c655f636f6d6d616e64010300000000000000030001000000001170303a4d4f4e535445525f5a4f4e453a3000010000000000000000000000";
+
+    private const string NativeBattleKey =
+        "public_action.v1.000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "0000000e626174746c655f636f6d6d616e64010300000000000000020001000000001170303a4d4f4e535445525f5a4f4e453a3000010000000000000000000000";
+
+    private const string NativeUnselectKey =
+        "public_action.v1.000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "0000000e636172645f73656c656374696f6e0001010000001470313a5350454c4c5f545241505f5a4f4e453a3000000001000000010000000000";
+
+    private const string NativeCounterKey =
+        "public_action.v1.000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "0000000d61737369676e5f616d6f756e740001000000001170303a4d4f4e535445525f5a4f4e453a300000000100000000010000000200000006616d6f756e74";
+
+    private const string NativePlaceKey =
+        "public_action.v1.000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "00000005706c616365000000000001000000000000000000";
+
+    private const string NativePlacePickKey =
+        "public_action.v1.000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "000000226f6367666f7267652e7075626c69635f616374696f6e5f6964656e746974792e7631" +
+        "000000047069636b0000000000010000001a00000000047069636b";
+
     public static void TestPublicCandidateActionKeyBridge()
     {
         OcgForgePublicActionIdentityResultV1 identity =
@@ -51,10 +91,9 @@ internal static class I6DPublicCandidateKeyTests
 
         PerspectiveSafeFrameV1 frame = CreateEmptyFrame();
         OcgForgePublicDecisionContextResultV1 mapped =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 frame,
-                projection.Context,
-                projection.Candidates,
+                projection,
                 decisionIndex: 17);
 
         Require(mapped.IsSuccess, mapped.Error?.ToString() ?? "mapping failed");
@@ -64,6 +103,12 @@ internal static class I6DPublicCandidateKeyTests
             projection.Candidates!;
         Require(context.PlayerToAct == 0,
             "player_to_act must come from the accepted decision actor");
+        Require(context.DecisionIndex == 17 &&
+                context.GlobalsPlayerToAct == 0 &&
+                context.PublicDecisionContext.Kind == "yes_no" &&
+                context.PublicDecisionContext.Player == 0 &&
+                context.ReferencedEntities.Count == 0,
+            "decision-boundary fields must be composed from the accepted decision");
         Require(context.Candidates.Count == projectedCandidates.Count,
             "candidate count must be preserved");
         Require(context.Candidates[0].Descriptor.ActionKind == "yes_no",
@@ -73,9 +118,11 @@ internal static class I6DPublicCandidateKeyTests
             "YESNO choice must be typed as an OCGForge public choice");
 
         TestPublicGameplayProjectionIsAccepted();
+        TestDecisionBoundaryComposition();
         TestPairedPublicFramesProduceSameBridgeOutput();
         TestActionIdentityMatrix();
         TestCandidateFamilyMatrix();
+        TestNativeCandidateMappingVectors();
         TestNToNAndFailClosedMapping();
     }
 
@@ -105,10 +152,9 @@ internal static class I6DPublicCandidateKeyTests
                 projection.Candidates is not null,
             "public Gameplay card-selection projection must be accepted");
         OcgForgePublicDecisionContextResultV1 mapped =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 CreateEmptyFrame(),
-                projection.Context,
-                projection.Candidates,
+                projection,
                 decisionIndex: 3);
         Require(mapped.IsSuccess, mapped.Error?.ToString() ?? "card-selection mapping failed");
         Require(mapped.Context!.Candidates.Count == 1,
@@ -135,13 +181,13 @@ internal static class I6DPublicCandidateKeyTests
                 FlatPromptChoiceKindV1.Yes);
 
         OcgForgePublicDecisionContextResultV1 resultA =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 frameA,
                 decision,
                 new FlatPublicCandidateDescriptorV1[] { candidate },
                 decisionIndex: 17);
         OcgForgePublicDecisionContextResultV1 resultB =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 frameB,
                 decision,
                 new FlatPublicCandidateDescriptorV1[] { candidate },
@@ -158,6 +204,40 @@ internal static class I6DPublicCandidateKeyTests
                 resultA.Context.PublicCandidateDomainDigest ==
                     resultB.Context.PublicCandidateDomainDigest,
             "paired worlds with equal public frames must have equal I6D identity");
+    }
+
+    private static void TestDecisionBoundaryComposition()
+    {
+        PerspectiveSafeFrameV1 frame = CreatePublicFrame();
+        PublicSemanticLocatorV1 visible = Locator("p0:MONSTER_ZONE:0");
+        FlatPromptPublicContextV1 decision =
+            New<FlatPromptChainPublicContextV1>((byte)0, (byte)0, true, 0U, 0U);
+        FlatPublicCandidateDescriptorV1 candidate =
+            New<FlatChainPublicCandidateDescriptorV1>(
+                "local.context-reference",
+                0,
+                visible,
+                42UL,
+                (byte)0);
+
+        OcgForgePublicDecisionContextResultV1 result = TryMap(
+            frame,
+            decision,
+            new[] { candidate },
+            decisionIndex: 22);
+        Require(result.IsSuccess && result.Context is not null,
+            result.Error?.ToString() ?? "decision-boundary composition failed");
+
+        OcgForgePublicDecisionContextV1 context = result.Context!;
+        Require(context.DecisionIndex == 22 &&
+                context.PlayerToAct == 0 &&
+                context.GlobalsPlayerToAct == 0 &&
+                context.PublicDecisionContext.Kind == "chain" &&
+                context.PublicDecisionContext.Player == 0 &&
+                context.ReferencedEntities.SequenceEqual(
+                    new[] { "p0:MONSTER_ZONE:0" },
+                    StringComparer.Ordinal),
+            "public decision context must include the ordered safe references");
     }
 
     private static void TestActionIdentityMatrix()
@@ -706,23 +786,36 @@ internal static class I6DPublicCandidateKeyTests
             frame,
             New<FlatPromptRaceSelectionPublicContextV1>((byte)0, (byte)1, 1UL),
             New<FlatPromptMaskBitPublicCandidateV1>("race.local", 0, 1UL),
-            "pick",
-            null,
-            null,
-            0U,
-            null,
-            null,
-            null,
-            null,
-            "pick");
+            "announcement",
+            sourceLocator: null,
+            phase: null,
+            sourceIndex: 0U,
+            amount: null,
+            choiceKind: null,
+            choiceValue: null,
+            responseIndex: null,
+            continuationOperation: "");
         AssertMapped(
             frame,
             New<FlatPromptAttributeSelectionPublicContextV1>((byte)0, (byte)1, 1U),
             New<FlatPromptMaskBitPublicCandidateV1>("attribute.local", 0, 1UL),
+            "announcement",
+            sourceLocator: null,
+            phase: null,
+            sourceIndex: 0U,
+            amount: null,
+            choiceKind: null,
+            choiceValue: null,
+            responseIndex: null,
+            continuationOperation: "");
+        AssertMapped(
+            frame,
+            New<FlatPromptRaceSelectionPublicContextV1>((byte)0, (byte)2, 3UL),
+            New<FlatPromptMaskBitPublicCandidateV1>("race.continuation.local", 1, 2UL),
             "pick",
             null,
             null,
-            0U,
+            1U,
             null,
             null,
             null,
@@ -789,6 +882,132 @@ internal static class I6DPublicCandidateKeyTests
             "bypass");
     }
 
+    private static void TestNativeCandidateMappingVectors()
+    {
+        PerspectiveSafeFrameV1 frame = CreatePublicFrame();
+        PublicSemanticLocatorV1 visible = Locator("p0:MONSTER_ZONE:0");
+        PublicSemanticLocatorV1 hidden = Locator("p1:SPELL_TRAP_ZONE:0");
+
+        Require(
+            MapSingle(
+                frame,
+                New<FlatPromptRaceSelectionPublicContextV1>((byte)0, (byte)1, 1UL),
+                New<FlatPromptMaskBitPublicCandidateV1>("native.race.direct", 0, 1UL))
+            .PublicActionKey == NativeRaceDirectKey,
+            "native RACE direct mapping vector differs");
+        Require(
+            MapSingle(
+                frame,
+                New<FlatPromptRaceSelectionPublicContextV1>((byte)0, (byte)2, 3UL),
+                New<FlatPromptMaskBitPublicCandidateV1>("native.race.pick", 1, 2UL))
+            .PublicActionKey == NativeRaceContinuationKey,
+            "native RACE continuation mapping vector differs");
+
+        Require(
+            MapSingle(
+                frame,
+                New<FlatPromptIdlePublicContextV1>((byte)0),
+                New<FlatIdleSummonPublicCandidateV1>(
+                    "native.idle",
+                    3,
+                    visible))
+            .PublicActionKey == NativeIdleKey,
+            "native IDLE mapping vector differs");
+        Require(
+            MapSingle(
+                frame,
+                New<FlatPromptBattlePublicContextV1>((byte)0),
+                New<FlatBattleActivatablePublicCandidateV1>(
+                    "native.battle",
+                    2,
+                    visible,
+                    42UL,
+                    (byte)0))
+            .PublicActionKey == NativeBattleKey,
+            "native BATTLE mapping vector differs");
+
+        Require(
+            MapSingle(
+                frame,
+                New<FlatPromptSelectUnselectCardPublicContextV1>(
+                    (byte)0,
+                    true,
+                    true,
+                    1U,
+                    2U,
+                    1,
+                    1),
+                New<FlatPromptSelectUnselectLocatorCandidateV1>(
+                    "native.unselect",
+                    FlatPromptChoiceKindV1.Unselect,
+                    FlatPromptSourceSectionV1.Unselectable,
+                    0,
+                    hidden))
+            .PublicActionKey == NativeUnselectKey,
+            "native SELECT_UNSELECT mapping vector differs");
+
+        FlatPromptCounterSourcePublicDescriptorV1 counterSource =
+            New<FlatPromptCounterSourcePublicDescriptorV1>(0, (ushort)3, visible);
+        Require(
+            MapSingle(
+                frame,
+                New<FlatPromptCounterSelectionPublicContextV1>(
+                    (byte)0,
+                    (ushort)5,
+                    (ushort)3,
+                    new[] { counterSource }),
+                New<FlatPromptCounterAmountPublicCandidateV1>(
+                    "native.counter",
+                    0,
+                    2))
+            .PublicActionKey == NativeCounterKey,
+            "native COUNTER mapping vector differs");
+
+        FlatPromptFieldPlaceV1[] directPlaces =
+        {
+            New<FlatPromptFieldPlaceV1>(
+                (byte)0,
+                FlatPromptFieldZoneV1.MonsterZone,
+                (byte)0)
+        };
+        Require(
+            MapSingle(
+                frame,
+                New<FlatPromptPlaceSelectionPublicContextV1>(
+                    (byte)0,
+                    (byte)1,
+                    directPlaces),
+                New<FlatPromptFieldPlacePublicCandidateV1>(
+                    "native.place",
+                    (byte)0,
+                    FlatPromptFieldZoneV1.MonsterZone,
+                    (byte)0))
+            .PublicActionKey == NativePlaceKey,
+            "native PLACE mapping vector differs");
+
+        FlatPromptFieldPlaceV1[] continuationPlaces =
+        {
+            New<FlatPromptFieldPlaceV1>(
+                (byte)1,
+                FlatPromptFieldZoneV1.SpellTrapZone,
+                (byte)2)
+        };
+        Require(
+            MapSingle(
+                frame,
+                New<FlatPromptPlaceSelectionPublicContextV1>(
+                    (byte)0,
+                    (byte)2,
+                    continuationPlaces),
+                New<FlatPromptFieldPlacePublicCandidateV1>(
+                    "native.place.pick",
+                    (byte)1,
+                    FlatPromptFieldZoneV1.SpellTrapZone,
+                    (byte)2))
+            .PublicActionKey == NativePlacePickKey,
+            "native PLACE continuation mapping vector differs");
+    }
+
     private static void TestNToNAndFailClosedMapping()
     {
         PerspectiveSafeFrameV1 frame = CreatePublicFrame();
@@ -800,7 +1019,7 @@ internal static class I6DPublicCandidateKeyTests
         FlatOptionPublicCandidateDescriptorV1 second =
             New<FlatOptionPublicCandidateDescriptorV1>("local.second", 1, 77UL);
         OcgForgePublicDecisionContextResultV1 mapped =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 frame,
                 context,
                 new FlatPublicCandidateDescriptorV1[] { first, second },
@@ -827,7 +1046,7 @@ internal static class I6DPublicCandidateKeyTests
                 "local.no.b",
                 FlatPromptChoiceKindV1.No);
         OcgForgePublicDecisionContextResultV1 collision =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 frame,
             New<FlatPromptYesNoPublicContextV1>((byte)0, 42UL),
                 new FlatPublicCandidateDescriptorV1[] { sameNoA, sameNoB },
@@ -839,7 +1058,7 @@ internal static class I6DPublicCandidateKeyTests
             "lost semantic distinction must reject the whole domain");
 
         OcgForgePublicDecisionContextResultV1 promptCode =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 frame,
                 New<FlatPromptCardSelectionPublicContextV1>((byte)0, 1U, 1U, false),
                 new FlatPublicCandidateDescriptorV1[]
@@ -856,7 +1075,7 @@ internal static class I6DPublicCandidateKeyTests
             "prompt-local CardCode must reject the complete frame");
 
         OcgForgePublicDecisionContextResultV1 noPersistentLocator =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 frame,
                 New<FlatPromptCardSelectionPublicContextV1>((byte)0, 1U, 1U, false),
                 new FlatPublicCandidateDescriptorV1[]
@@ -869,7 +1088,7 @@ internal static class I6DPublicCandidateKeyTests
             "anonymous public card occurrences must not receive guessed references");
 
         OcgForgePublicDecisionContextResultV1 invalidLocator =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 CreatePublicFrame(Array.Empty<(string Locator, bool IdentityKnown)>()),
                 New<FlatPromptChainPublicContextV1>((byte)0, (byte)0, true, 0U, 0U),
                 new FlatPublicCandidateDescriptorV1[]
@@ -888,7 +1107,7 @@ internal static class I6DPublicCandidateKeyTests
             "detached public locators must fail closed");
 
         OcgForgePublicDecisionContextResultV1 actorMismatch =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 CreatePublicFrame(
                     new[] { ("p0:MONSTER_ZONE:0", true) },
                     playerToAct: 1),
@@ -906,7 +1125,7 @@ internal static class I6DPublicCandidateKeyTests
             "a conflicting frame actor must reject rather than infer turn state");
 
         OcgForgePublicDecisionContextResultV1 invalidMask =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 frame,
                 New<FlatPromptRaceSelectionPublicContextV1>((byte)0, (byte)1, 1UL),
                 new FlatPublicCandidateDescriptorV1[]
@@ -922,7 +1141,7 @@ internal static class I6DPublicCandidateKeyTests
         FlatPromptCounterSourcePublicDescriptorV1 lowCapacitySource =
             New<FlatPromptCounterSourcePublicDescriptorV1>(0, (ushort)1, visible);
         OcgForgePublicDecisionContextResultV1 invalidAmount =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 frame,
                 New<FlatPromptCounterSelectionPublicContextV1>(
                     (byte)0,
@@ -945,7 +1164,7 @@ internal static class I6DPublicCandidateKeyTests
         FlatPromptSortSourcePublicDescriptorBaseV1 sortChainSource =
             New<FlatPromptSortSourceLocatorPublicDescriptorV1>(0, visible);
         OcgForgePublicDecisionContextResultV1 wrongSortFamily =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 frame,
                 New<FlatPromptSortSelectionPublicContextV1>(
                     (byte)0,
@@ -966,7 +1185,7 @@ internal static class I6DPublicCandidateKeyTests
             "a sort candidate from another family must fail closed");
 
         OcgForgePublicDecisionContextResultV1 effectPromptCode =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
+            TryMap(
                 frame,
                 New<FlatPromptEffectYnCardCodePublicContextV1>(
                     (byte)0,
@@ -1056,17 +1275,44 @@ internal static class I6DPublicCandidateKeyTests
         return result;
     }
 
+    private static OcgForgePublicDecisionContextResultV1 TryMap(
+        PerspectiveSafeFrameV1 frame,
+        FlatPromptProjectionResultV1 projection,
+        ulong decisionIndex)
+    {
+        OcgForgeAcceptedDecisionBoundaryV1 accepted =
+            New<OcgForgeAcceptedDecisionBoundaryV1>(
+                frame,
+                projection,
+                New<OcgForgeAcceptedDecisionIndexV1>(decisionIndex));
+        return OcgForgePublicCandidateBridgeV1.TryCreate(accepted);
+    }
+
+    private static OcgForgePublicDecisionContextResultV1 TryMap(
+        PerspectiveSafeFrameV1 frame,
+        FlatPromptPublicContextV1 context,
+        IReadOnlyList<FlatPublicCandidateDescriptorV1> candidates,
+        ulong decisionIndex)
+    {
+        FlatPromptProjectionResultV1 projection =
+            New<FlatPromptProjectionResultV1>(
+                true,
+                FlatPromptErrorCodeV1.None,
+                context,
+                candidates);
+        return TryMap(frame, projection, decisionIndex);
+    }
+
     private static OcgForgePublicCandidateV1 MapSingle(
         PerspectiveSafeFrameV1 frame,
         FlatPromptPublicContextV1 context,
         FlatPublicCandidateDescriptorV1 candidate)
     {
-        OcgForgePublicDecisionContextResultV1 result =
-            OcgForgePublicCandidateBridgeV1.TryCreate(
-                frame,
-                context,
-                new[] { candidate },
-                0);
+        OcgForgePublicDecisionContextResultV1 result = TryMap(
+            frame,
+            context,
+            new[] { candidate },
+            0);
         Require(result.IsSuccess && result.Context is not null,
             result.Error?.ToString() ?? "candidate mapping failed");
         OcgForgePublicDecisionContextV1 mappedContext = result.Context!;

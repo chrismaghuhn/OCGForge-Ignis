@@ -47,6 +47,81 @@ public sealed class OcgForgePublicCandidateV1
     public string PublicActionKey { get; }
 }
 
+public sealed class OcgForgeAcceptedDecisionIndexV1
+{
+    internal OcgForgeAcceptedDecisionIndexV1(ulong value)
+    {
+        Value = value;
+    }
+
+    public ulong Value { get; }
+}
+
+public sealed class OcgForgeAcceptedDecisionBoundaryV1
+{
+    private readonly FlatPromptProjectionResultV1 projection;
+    private readonly FlatPublicCandidateDescriptorV1[] candidates;
+    private readonly IReadOnlyList<FlatPublicCandidateDescriptorV1> candidatesView;
+
+    internal OcgForgeAcceptedDecisionBoundaryV1(
+        PerspectiveSafeFrameV1 frame,
+        FlatPromptProjectionResultV1 projection,
+        OcgForgeAcceptedDecisionIndexV1 decisionIndex)
+    {
+        Frame = frame ?? throw new ArgumentNullException(nameof(frame));
+        this.projection = projection ??
+            throw new ArgumentNullException(nameof(projection));
+        ArgumentNullException.ThrowIfNull(decisionIndex);
+        if (!projection.IsSuccess ||
+            projection.Context is null ||
+            projection.Candidates is null ||
+            projection.Candidates.Count == 0 ||
+            projection.Candidates.Any(candidate => candidate is null))
+        {
+            throw new ArgumentException(
+                "The decision boundary must contain an accepted complete projection.",
+                nameof(projection));
+        }
+
+        candidates = projection.Candidates.ToArray();
+        candidatesView = Array.AsReadOnly(candidates);
+        DecisionIndex = decisionIndex.Value;
+    }
+
+    public PerspectiveSafeFrameV1 Frame { get; }
+
+    public ulong DecisionIndex { get; }
+
+    public FlatPromptPublicContextV1 Decision => projection.Context!;
+
+    public IReadOnlyList<FlatPublicCandidateDescriptorV1> Candidates => candidatesView;
+}
+
+public sealed class OcgForgePublicDecisionBoundaryContextV1
+{
+    private readonly string[] referencedEntities;
+    private readonly IReadOnlyList<string> referencedEntitiesView;
+
+    internal OcgForgePublicDecisionBoundaryContextV1(
+        string kind,
+        byte player,
+        IEnumerable<string> referencedEntities)
+    {
+        Kind = kind ?? throw new ArgumentNullException(nameof(kind));
+        this.referencedEntities =
+            (referencedEntities ?? throw new ArgumentNullException(nameof(referencedEntities)))
+            .ToArray();
+        referencedEntitiesView = Array.AsReadOnly(this.referencedEntities);
+        Player = player;
+    }
+
+    public string Kind { get; }
+
+    public byte Player { get; }
+
+    public IReadOnlyList<string> ReferencedEntities => referencedEntitiesView;
+}
+
 public sealed class OcgForgePublicDecisionContextV1
 {
     private readonly OcgForgePublicCandidateV1[] candidates;
@@ -58,7 +133,8 @@ public sealed class OcgForgePublicDecisionContextV1
         byte playerToAct,
         string requestKind,
         IEnumerable<OcgForgePublicCandidateV1> candidates,
-        string publicCandidateDomainDigest)
+        string publicCandidateDomainDigest,
+        IEnumerable<string> referencedEntities)
     {
         Frame = frame ?? throw new ArgumentNullException(nameof(frame));
         DecisionIndex = decisionIndex;
@@ -69,6 +145,10 @@ public sealed class OcgForgePublicDecisionContextV1
         candidatesView = Array.AsReadOnly(this.candidates);
         PublicCandidateDomainDigest = publicCandidateDomainDigest ??
             throw new ArgumentNullException(nameof(publicCandidateDomainDigest));
+        PublicDecisionContext = new OcgForgePublicDecisionBoundaryContextV1(
+            RequestKind,
+            PlayerToAct,
+            referencedEntities);
     }
 
     public PerspectiveSafeFrameV1 Frame { get; }
@@ -78,6 +158,13 @@ public sealed class OcgForgePublicDecisionContextV1
     public byte PlayerToAct { get; }
 
     public string RequestKind { get; }
+
+    public OcgForgePublicDecisionBoundaryContextV1 PublicDecisionContext { get; }
+
+    public byte GlobalsPlayerToAct => PlayerToAct;
+
+    public IReadOnlyList<string> ReferencedEntities =>
+        PublicDecisionContext.ReferencedEntities;
 
     public IReadOnlyList<OcgForgePublicCandidateV1> Candidates => candidatesView;
 
@@ -115,24 +202,19 @@ public sealed class OcgForgePublicDecisionContextResultV1
 public static class OcgForgePublicCandidateBridgeV1
 {
     public static OcgForgePublicDecisionContextResultV1 TryCreate(
-        PerspectiveSafeFrameV1? frame,
-        FlatPromptPublicContextV1? decision,
-        IReadOnlyList<FlatPublicCandidateDescriptorV1>? candidates,
-        ulong decisionIndex)
+        OcgForgeAcceptedDecisionBoundaryV1? acceptedDecision)
     {
-        if (frame is null)
+        if (acceptedDecision is null)
         {
             return Failure(
                 OcgForgePublicCandidateBridgeErrorCodeV1.InvalidInput,
-                "frame");
+                "accepted_decision");
         }
 
-        if (decision is null)
-        {
-            return Failure(
-                OcgForgePublicCandidateBridgeErrorCodeV1.InvalidInput,
-                "decision");
-        }
+        PerspectiveSafeFrameV1 frame = acceptedDecision.Frame;
+        FlatPromptPublicContextV1 decision = acceptedDecision.Decision;
+        IReadOnlyList<FlatPublicCandidateDescriptorV1> candidates =
+            acceptedDecision.Candidates;
 
         if (decision.ActingPlayer > 1)
         {
@@ -149,7 +231,7 @@ public static class OcgForgePublicCandidateBridgeV1
                 "globals.player_to_act");
         }
 
-        if (candidates is null || candidates.Count == 0)
+        if (candidates.Count == 0)
         {
             return Failure(
                 OcgForgePublicCandidateBridgeErrorCodeV1.CandidateCountMismatch,
@@ -241,14 +323,27 @@ public static class OcgForgePublicCandidateBridgeV1
                 domain.Error?.FieldPath ?? "candidates");
         }
 
+        List<string> referencedEntities = mapped
+            .SelectMany(candidate => new OcgForgePublicCardReferenceV1?[]
+            {
+                candidate.Descriptor.SourceReference,
+                candidate.Descriptor.TargetReference
+            })
+            .Where(reference => reference.HasValue)
+            .Select(reference => reference!.Value.ObservationLocator)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(reference => reference, StringComparer.Ordinal)
+            .ToList();
+
         return OcgForgePublicDecisionContextResultV1.Success(
             new OcgForgePublicDecisionContextV1(
                 frame,
-                decisionIndex,
+                acceptedDecision.DecisionIndex,
                 decision.ActingPlayer,
                 requestKind,
                 mapped,
-                domain.Digest));
+                domain.Digest,
+                referencedEntities));
     }
 
     private static bool TryMapCandidate(
@@ -710,10 +805,22 @@ public static class OcgForgePublicCandidateBridgeV1
                     return false;
                 }
 
-                descriptor = CreateDescriptor(
-                    "pick",
-                    sourceIndex: maskIndex,
-                    continuationOperation: "pick");
+                bool directMask = decision switch
+                {
+                    FlatPromptRaceSelectionPublicContextV1 race =>
+                        race.RequiredBitCount == 1,
+                    FlatPromptAttributeSelectionPublicContextV1 attribute =>
+                        attribute.RequiredBitCount == 1,
+                    _ => false
+                };
+                descriptor = directMask
+                    ? CreateDescriptor(
+                        "announcement",
+                        sourceIndex: maskIndex)
+                    : CreateDescriptor(
+                        "pick",
+                        sourceIndex: maskIndex,
+                        continuationOperation: "pick");
                 return true;
 
             case FlatPromptCounterAmountPublicCandidateV1 counter:
