@@ -169,8 +169,14 @@ public sealed class PerspectiveStateMirrorV1
                 GameplayMessageKindV1.ReverseDeck => ApplyShuffle(
                     candidate,
                     message.Shuffle!),
-            GameplayMessageKindV1.AddCounter or
-                GameplayMessageKindV1.RemoveCounter => GameplayErrorCode.None,
+            GameplayMessageKindV1.AddCounter => ApplyCounter(
+                candidate,
+                message.Counter,
+                add: true),
+            GameplayMessageKindV1.RemoveCounter => ApplyCounter(
+                candidate,
+                message.Counter,
+                add: false),
             _ => GameplayErrorCode.UnsupportedMessage
         };
 
@@ -228,10 +234,213 @@ public sealed class PerspectiveStateMirrorV1
         MirrorState candidate,
         GameplaySetPayloadV1 payload)
     {
-        return TryNormalizeAddress(payload.Location, out _, out GameplayErrorCode error)
-            ? GameplayErrorCode.None
-            : error;
+        if (!TryNormalizeAddress(
+                payload.Location,
+                out MirrorAddress address,
+                out GameplayErrorCode error))
+        {
+            return error;
+        }
+
+        if (candidate.Entities.TryGetValue(address, out EntityState? entity))
+        {
+            ClearCounterState(entity);
+        }
+
+        return GameplayErrorCode.None;
     }
+
+    private static GameplayErrorCode ApplyCounter(
+        MirrorState candidate,
+        GameplayCounterPayloadV1 payload,
+        bool add)
+    {
+        if (payload.Controller > 1)
+        {
+            return GameplayErrorCode.InvalidParticipant;
+        }
+
+        ModernLocInfoV1 location = new(
+            payload.Controller,
+            payload.Location,
+            payload.Sequence,
+            0);
+        if (!TryNormalizeAddress(
+                location,
+                out MirrorAddress address,
+                out GameplayErrorCode addressError))
+        {
+            return addressError;
+        }
+
+        if (address.IsOverlay || !IsFieldZone(address.Zone))
+        {
+            return GameplayErrorCode.InvalidLocation;
+        }
+
+        if (!candidate.Entities.TryGetValue(address, out EntityState? entity))
+        {
+            return GameplayErrorCode.UnknownMirrorReference;
+        }
+
+        if (!entity.Position.IsKnown ||
+            (entity.Position.Value & PositionFaceUp) == 0)
+        {
+            return GameplayErrorCode.InvalidStateTransition;
+        }
+
+        if (!TryReadCounterValues(
+                entity,
+                out List<uint> values,
+                out GameplayErrorCode readError))
+        {
+            return readError;
+        }
+
+        int existingIndex = -1;
+        for (int index = 0; index < values.Count; index++)
+        {
+            if ((ushort)(values[index] & ushort.MaxValue) == payload.CounterType)
+            {
+                if (existingIndex >= 0)
+                {
+                    return GameplayErrorCode.InvalidState;
+                }
+
+                existingIndex = index;
+            }
+        }
+
+        if (add)
+        {
+            uint currentCount = existingIndex >= 0
+                ? values[existingIndex] >> 16
+                : 0;
+            uint nextCount;
+            try
+            {
+                nextCount = checked(currentCount + payload.Count);
+            }
+            catch (OverflowException)
+            {
+                return GameplayErrorCode.ArithmeticFailure;
+            }
+
+            if (nextCount > ushort.MaxValue)
+            {
+                return GameplayErrorCode.ArithmeticFailure;
+            }
+
+            uint packed = (uint)payload.CounterType | (nextCount << 16);
+            if (existingIndex >= 0)
+            {
+                values[existingIndex] = packed;
+            }
+            else
+            {
+                values.Add(packed);
+            }
+        }
+        else
+        {
+            if (existingIndex < 0)
+            {
+                return GameplayErrorCode.UnknownMirrorReference;
+            }
+
+            uint currentCount = values[existingIndex] >> 16;
+            if (payload.Count >= currentCount)
+            {
+                values.RemoveAt(existingIndex);
+            }
+            else
+            {
+                values[existingIndex] =
+                    (uint)payload.CounterType |
+                    ((currentCount - payload.Count) << 16);
+            }
+        }
+
+        values.Sort(static (left, right) =>
+        {
+            int result = (left & ushort.MaxValue).CompareTo(
+                right & ushort.MaxValue);
+            return result != 0
+                ? result
+                : (left >> 16).CompareTo(right >> 16);
+        });
+        SetCounterValues(entity, values);
+        return GameplayErrorCode.None;
+    }
+
+    private static bool TryReadCounterValues(
+        EntityState entity,
+        out List<uint> values,
+        out GameplayErrorCode error)
+    {
+        values = new();
+        MirrorQueryFieldSnapshotV1? field = entity.QueryFields.SingleOrDefault(
+            candidate => candidate.Flag == QueryFlagV1.Counters);
+        if (field is null)
+        {
+            error = GameplayErrorCode.None;
+            return true;
+        }
+
+        if (!field.Value.IsKnown ||
+            field.Value.Kind != MirrorQueryValueKindV1.PackedUInt32Vector)
+        {
+            error = GameplayErrorCode.InvalidState;
+            return false;
+        }
+
+        HashSet<ushort> counterTypes = new();
+        foreach (uint packed in field.Value.UInt32Values)
+        {
+            ushort counterType = (ushort)(packed & ushort.MaxValue);
+            if (!counterTypes.Add(counterType))
+            {
+                error = GameplayErrorCode.InvalidState;
+                return false;
+            }
+
+            values.Add(packed);
+        }
+
+        error = GameplayErrorCode.None;
+        return true;
+    }
+
+    private static void SetCounterValues(
+        EntityState entity,
+        IReadOnlyList<uint> values)
+    {
+        entity.QueryFields.RemoveAll(
+            field => field.Flag == QueryFlagV1.Counters);
+        entity.QueryFields.Add(
+            new MirrorQueryFieldSnapshotV1(
+                QueryFlagV1.Counters,
+                MirrorQueryValueV1.UInt32Vector(
+                    values,
+                    MirrorProvenanceV1.PublicProtocolFact,
+                    packed: true)));
+    }
+
+    private static void ClearCounterState(EntityState entity) =>
+        entity.QueryFields.RemoveAll(
+            field => field.Flag == QueryFlagV1.Counters);
+
+    private static bool IsFieldZone(MirrorZoneV1 zone) =>
+        zone is MirrorZoneV1.MonsterZone or MirrorZoneV1.SpellTrapZone;
+
+    private static bool ClearsCountersOnMove(
+        MirrorAddress previous,
+        MirrorAddress current) =>
+        previous.IsOverlay ||
+        current.IsOverlay ||
+        !IsFieldZone(previous.Zone) ||
+        !IsFieldZone(current.Zone) ||
+        previous.Zone != current.Zone;
 
     private static GameplayErrorCode ApplyPositionChange(
         MirrorState candidate,
@@ -439,6 +648,11 @@ public sealed class PerspectiveStateMirrorV1
             {
                 return insertionError;
             }
+        }
+
+        if (ClearsCountersOnMove(previous, current))
+        {
+            ClearCounterState(entity);
         }
 
         if (candidate.Entities.ContainsKey(current))
@@ -1630,6 +1844,7 @@ public sealed class PerspectiveStateMirrorV1
             .ToArray();
         foreach (EntityState entity in affected)
         {
+            ClearCounterState(entity);
             candidate.Entities.Remove(entity.Address);
             RemoveEntityRelations(candidate, entity.Id);
         }
