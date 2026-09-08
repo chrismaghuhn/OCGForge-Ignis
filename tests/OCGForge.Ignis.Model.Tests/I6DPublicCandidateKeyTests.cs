@@ -93,8 +93,7 @@ internal static class I6DPublicCandidateKeyTests
         OcgForgePublicDecisionContextResultV1 mapped =
             TryMap(
                 frame,
-                projection,
-                decisionIndex: 17);
+                projection);
 
         Require(mapped.IsSuccess, mapped.Error?.ToString() ?? "mapping failed");
         Require(mapped.Context is not null, "accepted mapping must contain context");
@@ -103,7 +102,7 @@ internal static class I6DPublicCandidateKeyTests
             projection.Candidates!;
         Require(context.PlayerToAct == 0,
             "player_to_act must come from the accepted decision actor");
-        Require(context.DecisionIndex == 17 &&
+        Require(context.DecisionIndex == 0 &&
                 context.GlobalsPlayerToAct == 0 &&
                 context.PublicDecisionContext.Kind == "yes_no" &&
                 context.PublicDecisionContext.Player == 0 &&
@@ -119,6 +118,7 @@ internal static class I6DPublicCandidateKeyTests
 
         TestPublicGameplayProjectionIsAccepted();
         TestDecisionBoundaryComposition();
+        TestAcceptedDecisionSequence();
         TestPairedPublicFramesProduceSameBridgeOutput();
         TestActionIdentityMatrix();
         TestCandidateFamilyMatrix();
@@ -154,8 +154,7 @@ internal static class I6DPublicCandidateKeyTests
         OcgForgePublicDecisionContextResultV1 mapped =
             TryMap(
                 CreateEmptyFrame(),
-                projection,
-                decisionIndex: 3);
+                projection);
         Require(mapped.IsSuccess, mapped.Error?.ToString() ?? "card-selection mapping failed");
         Require(mapped.Context!.Candidates.Count == 1,
             "one accepted Gameplay occurrence must map to one OCGForge occurrence");
@@ -184,14 +183,12 @@ internal static class I6DPublicCandidateKeyTests
             TryMap(
                 frameA,
                 decision,
-                new FlatPublicCandidateDescriptorV1[] { candidate },
-                decisionIndex: 17);
+                new FlatPublicCandidateDescriptorV1[] { candidate });
         OcgForgePublicDecisionContextResultV1 resultB =
             TryMap(
                 frameB,
                 decision,
-                new FlatPublicCandidateDescriptorV1[] { candidate },
-                decisionIndex: 17);
+                new FlatPublicCandidateDescriptorV1[] { candidate });
 
         Require(resultA.IsSuccess && resultB.IsSuccess &&
                 resultA.Context is not null && resultB.Context is not null,
@@ -223,13 +220,12 @@ internal static class I6DPublicCandidateKeyTests
         OcgForgePublicDecisionContextResultV1 result = TryMap(
             frame,
             decision,
-            new[] { candidate },
-            decisionIndex: 22);
+            new[] { candidate });
         Require(result.IsSuccess && result.Context is not null,
             result.Error?.ToString() ?? "decision-boundary composition failed");
 
         OcgForgePublicDecisionContextV1 context = result.Context!;
-        Require(context.DecisionIndex == 22 &&
+        Require(context.DecisionIndex == 0 &&
                 context.PlayerToAct == 0 &&
                 context.GlobalsPlayerToAct == 0 &&
                 context.PublicDecisionContext.Kind == "chain" &&
@@ -238,6 +234,57 @@ internal static class I6DPublicCandidateKeyTests
                     new[] { "p0:MONSTER_ZONE:0" },
                     StringComparer.Ordinal),
             "public decision context must include the ordered safe references");
+    }
+
+    private static void TestAcceptedDecisionSequence()
+    {
+        PerspectiveSafeFrameV1 frame = CreatePublicFrame();
+        FlatPromptPublicContextV1 decision =
+            New<FlatPromptYesNoPublicContextV1>((byte)0, 42UL);
+        FlatPublicCandidateDescriptorV1 candidate =
+            New<FlatYesNoPublicCandidateDescriptorV1>(
+                "local.sequence",
+                FlatPromptChoiceKindV1.No);
+        FlatPromptProjectionResultV1 projection =
+            New<FlatPromptProjectionResultV1>(
+                true,
+                FlatPromptErrorCodeV1.None,
+                decision,
+                new[] { candidate });
+        OcgForgeAcceptedDecisionBoundaryProducerV1 producer =
+            New<OcgForgeAcceptedDecisionBoundaryProducerV1>();
+
+        Require(
+            producer.TryAccept(
+                frame,
+                projection,
+                out OcgForgeAcceptedDecisionBoundaryV1? first,
+                out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? firstError) &&
+            first is not null,
+            firstError?.ToString() ?? "first accepted decision was rejected");
+        Require(
+            producer.TryAccept(
+                frame,
+                projection,
+                out OcgForgeAcceptedDecisionBoundaryV1? second,
+                out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? secondError) &&
+            second is not null,
+            secondError?.ToString() ?? "second accepted decision was rejected");
+        Require(first!.DecisionIndex == 0 && second!.DecisionIndex == 1,
+            "one per-duel producer must own the monotonic decision sequence");
+
+        OcgForgeAcceptedDecisionBoundaryProducerV1 freshProducer =
+            New<OcgForgeAcceptedDecisionBoundaryProducerV1>();
+        Require(
+            freshProducer.TryAccept(
+                frame,
+                projection,
+                out OcgForgeAcceptedDecisionBoundaryV1? fresh,
+                out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? freshError) &&
+            fresh is not null,
+            freshError?.ToString() ?? "fresh decision producer was rejected");
+        Require(fresh!.DecisionIndex == 0,
+            "a fresh per-duel producer must restart at the accepted initial index");
     }
 
     private static void TestActionIdentityMatrix()
@@ -1022,8 +1069,7 @@ internal static class I6DPublicCandidateKeyTests
             TryMap(
                 frame,
                 context,
-                new FlatPublicCandidateDescriptorV1[] { first, second },
-                4);
+                new FlatPublicCandidateDescriptorV1[] { first, second });
         Require(mapped.IsSuccess && mapped.Context is not null,
             mapped.Error?.ToString() ?? "N-to-N mapping failed");
         OcgForgePublicDecisionContextV1 mappedContext = mapped.Context!;
@@ -1049,8 +1095,7 @@ internal static class I6DPublicCandidateKeyTests
             TryMap(
                 frame,
             New<FlatPromptYesNoPublicContextV1>((byte)0, 42UL),
-                new FlatPublicCandidateDescriptorV1[] { sameNoA, sameNoB },
-                5);
+                new FlatPublicCandidateDescriptorV1[] { sameNoA, sameNoB });
         Require(!collision.IsSuccess &&
                 collision.Error!.Value.Code ==
                     OcgForgePublicCandidateBridgeErrorCodeV1.DuplicatePublicActionKey &&
@@ -1067,8 +1112,7 @@ internal static class I6DPublicCandidateKeyTests
                         "local.prompt-code",
                         0,
                         12345678U)
-                },
-                6);
+                });
         Require(!promptCode.IsSuccess &&
                 promptCode.Error!.Value.Code ==
                     OcgForgePublicCandidateBridgeErrorCodeV1.PromptLocalCardCode,
@@ -1081,8 +1125,7 @@ internal static class I6DPublicCandidateKeyTests
                 new FlatPublicCandidateDescriptorV1[]
                 {
                     New<FlatPromptCardSelectionAnonymousCandidateV1>("local.anonymous", 0)
-                },
-                7);
+                });
         Require(noPersistentLocator.IsSuccess &&
                 noPersistentLocator.Context!.Candidates[0].Descriptor.SourceReference is null,
             "anonymous public card occurrences must not receive guessed references");
@@ -1099,8 +1142,7 @@ internal static class I6DPublicCandidateKeyTests
                         Locator("p0:MONSTER_ZONE:0"),
                         42UL,
                         (byte)0)
-                },
-                8);
+                });
         Require(!invalidLocator.IsSuccess &&
                 invalidLocator.Error!.Value.Code ==
                     OcgForgePublicCandidateBridgeErrorCodeV1.InvalidPublicReference,
@@ -1117,12 +1159,28 @@ internal static class I6DPublicCandidateKeyTests
                     New<FlatYesNoPublicCandidateDescriptorV1>(
                         "local.yes",
                         FlatPromptChoiceKindV1.Yes)
-                },
-                9);
+                });
         Require(!actorMismatch.IsSuccess &&
                 actorMismatch.Error!.Value.Code ==
                     OcgForgePublicCandidateBridgeErrorCodeV1.DecisionActorMismatch,
             "a conflicting frame actor must reject rather than infer turn state");
+
+        OcgForgePublicDecisionContextResultV1 perspectiveMismatch =
+            TryMap(
+                CreatePublicFrame(perspectivePlayer: 1),
+                New<FlatPromptYesNoPublicContextV1>((byte)0, 42UL),
+                new FlatPublicCandidateDescriptorV1[]
+                {
+                    New<FlatYesNoPublicCandidateDescriptorV1>(
+                        "local.wrong-perspective",
+                        FlatPromptChoiceKindV1.Yes)
+                });
+        Require(!perspectiveMismatch.IsSuccess &&
+                perspectiveMismatch.Error!.Value.Code ==
+                    OcgForgePublicCandidateBridgeErrorCodeV1.DecisionActorMismatch &&
+                perspectiveMismatch.Error.Value.FieldPath ==
+                    "match_context.perspective_player",
+            "a frame from another perspective must reject the complete boundary");
 
         OcgForgePublicDecisionContextResultV1 invalidMask =
             TryMap(
@@ -1131,8 +1189,7 @@ internal static class I6DPublicCandidateKeyTests
                 new FlatPublicCandidateDescriptorV1[]
                 {
                     New<FlatPromptMaskBitPublicCandidateV1>("local.invalid-mask", 1, 2UL)
-                },
-                10);
+                });
         Require(!invalidMask.IsSuccess &&
                 invalidMask.Error!.Value.Code ==
                     OcgForgePublicCandidateBridgeErrorCodeV1.InvalidPublicValue,
@@ -1154,8 +1211,7 @@ internal static class I6DPublicCandidateKeyTests
                         "local.invalid-amount",
                         0,
                         2)
-                },
-                11);
+                });
         Require(!invalidAmount.IsSuccess &&
                 invalidAmount.Error!.Value.Code ==
                     OcgForgePublicCandidateBridgeErrorCodeV1.InvalidPublicValue,
@@ -1177,8 +1233,7 @@ internal static class I6DPublicCandidateKeyTests
                         (FlatPromptFamilyV1)21,
                         0,
                         visible)
-                },
-                12);
+                });
         Require(!wrongSortFamily.IsSuccess &&
                 wrongSortFamily.Error!.Value.Code ==
                     OcgForgePublicCandidateBridgeErrorCodeV1.UnsupportedCandidate,
@@ -1197,8 +1252,7 @@ internal static class I6DPublicCandidateKeyTests
                     New<FlatEffectYnPublicCandidateDescriptorV1>(
                         "local.effect-code",
                         FlatPromptChoiceKindV1.No)
-                },
-                13);
+                });
         Require(!effectPromptCode.IsSuccess &&
                 effectPromptCode.Error!.Value.Code ==
                     OcgForgePublicCandidateBridgeErrorCodeV1.PromptLocalCardCode,
@@ -1278,21 +1332,24 @@ internal static class I6DPublicCandidateKeyTests
     private static OcgForgePublicDecisionContextResultV1 TryMap(
         PerspectiveSafeFrameV1 frame,
         FlatPromptProjectionResultV1 projection,
-        ulong decisionIndex)
+        OcgForgeAcceptedDecisionBoundaryProducerV1? producer = null)
     {
-        OcgForgeAcceptedDecisionBoundaryV1 accepted =
-            New<OcgForgeAcceptedDecisionBoundaryV1>(
+        producer ??= New<OcgForgeAcceptedDecisionBoundaryProducerV1>();
+        Require(
+            producer.TryAccept(
                 frame,
                 projection,
-                New<OcgForgeAcceptedDecisionIndexV1>(decisionIndex));
+                out OcgForgeAcceptedDecisionBoundaryV1? accepted,
+                out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? producerError) &&
+            accepted is not null,
+            producerError?.ToString() ?? "decision boundary production failed");
         return OcgForgePublicCandidateBridgeV1.TryCreate(accepted);
     }
 
     private static OcgForgePublicDecisionContextResultV1 TryMap(
         PerspectiveSafeFrameV1 frame,
         FlatPromptPublicContextV1 context,
-        IReadOnlyList<FlatPublicCandidateDescriptorV1> candidates,
-        ulong decisionIndex)
+        IReadOnlyList<FlatPublicCandidateDescriptorV1> candidates)
     {
         FlatPromptProjectionResultV1 projection =
             New<FlatPromptProjectionResultV1>(
@@ -1300,7 +1357,7 @@ internal static class I6DPublicCandidateKeyTests
                 FlatPromptErrorCodeV1.None,
                 context,
                 candidates);
-        return TryMap(frame, projection, decisionIndex);
+        return TryMap(frame, projection);
     }
 
     private static OcgForgePublicCandidateV1 MapSingle(
@@ -1311,8 +1368,7 @@ internal static class I6DPublicCandidateKeyTests
         OcgForgePublicDecisionContextResultV1 result = TryMap(
             frame,
             context,
-            new[] { candidate },
-            0);
+            new[] { candidate });
         Require(result.IsSuccess && result.Context is not null,
             result.Error?.ToString() ?? "candidate mapping failed");
         OcgForgePublicDecisionContextV1 mappedContext = result.Context!;
@@ -1371,7 +1427,8 @@ internal static class I6DPublicCandidateKeyTests
 
     private static PerspectiveSafeFrameV1 CreatePublicFrame(
         IEnumerable<(string Locator, bool IdentityKnown)>? entities = null,
-        byte? playerToAct = null)
+        byte? playerToAct = null,
+        byte perspectivePlayer = 0)
     {
         (string Locator, bool IdentityKnown)[] source =
             entities?.ToArray() ??
@@ -1418,7 +1475,7 @@ internal static class I6DPublicCandidateKeyTests
                         Array.Empty<PerspectiveSafeChainLinkV1>()),
                     Array.Empty<PerspectiveSafeVisibleEventV1>(),
                     new PerspectiveSafeMatchContextV1(
-                        0,
+                        perspectivePlayer,
                         0,
                         new PerspectiveSafeKnowledgeV1(false, false),
                         new PerspectiveSafeDeckV1(false),

@@ -57,6 +57,18 @@ public sealed class OcgForgeAcceptedDecisionIndexV1
     public ulong Value { get; }
 }
 
+public enum OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1 : byte
+{
+    None = 0,
+    InvalidInput = 1,
+    InvalidProjection = 2,
+    DecisionIndexExhausted = 3
+}
+
+public readonly record struct OcgForgeAcceptedDecisionBoundaryProducerErrorV1(
+    OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1 Code,
+    string FieldPath);
+
 public sealed class OcgForgeAcceptedDecisionBoundaryV1
 {
     private readonly FlatPromptProjectionResultV1 projection;
@@ -95,6 +107,67 @@ public sealed class OcgForgeAcceptedDecisionBoundaryV1
     public FlatPromptPublicContextV1 Decision => projection.Context!;
 
     public IReadOnlyList<FlatPublicCandidateDescriptorV1> Candidates => candidatesView;
+}
+
+public sealed class OcgForgeAcceptedDecisionBoundaryProducerV1
+{
+    private ulong nextDecisionIndex;
+
+    public OcgForgeAcceptedDecisionBoundaryProducerV1()
+    {
+    }
+
+    public bool TryAccept(
+        PerspectiveSafeFrameV1? frame,
+        FlatPromptProjectionResultV1? projection,
+        out OcgForgeAcceptedDecisionBoundaryV1? boundary,
+        out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? error)
+    {
+        boundary = null;
+        error = null;
+        if (frame is null)
+        {
+            error = new(
+                OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1.InvalidInput,
+                "frame");
+            return false;
+        }
+
+        if (projection is null)
+        {
+            error = new(
+                OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1.InvalidInput,
+                "projection");
+            return false;
+        }
+
+        if (!projection.IsSuccess ||
+            projection.Context is null ||
+            projection.Candidates is null ||
+            projection.Candidates.Count == 0 ||
+            projection.Candidates.Any(candidate => candidate is null))
+        {
+            error = new(
+                OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1.InvalidProjection,
+                "projection");
+            return false;
+        }
+
+        if (nextDecisionIndex == ulong.MaxValue)
+        {
+            error = new(
+                OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1.DecisionIndexExhausted,
+                "decision_index");
+            return false;
+        }
+
+        boundary = new OcgForgeAcceptedDecisionBoundaryV1(
+            frame,
+            projection,
+            new OcgForgeAcceptedDecisionIndexV1(nextDecisionIndex));
+        nextDecisionIndex++;
+        return true;
+    }
 }
 
 public sealed class OcgForgePublicDecisionBoundaryContextV1
@@ -215,6 +288,13 @@ public static class OcgForgePublicCandidateBridgeV1
         FlatPromptPublicContextV1 decision = acceptedDecision.Decision;
         IReadOnlyList<FlatPublicCandidateDescriptorV1> candidates =
             acceptedDecision.Candidates;
+
+        if (frame.MatchContext.PerspectivePlayer != decision.ActingPlayer)
+        {
+            return Failure(
+                OcgForgePublicCandidateBridgeErrorCodeV1.DecisionActorMismatch,
+                "match_context.perspective_player");
+        }
 
         if (decision.ActingPlayer > 1)
         {
