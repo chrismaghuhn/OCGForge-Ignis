@@ -73,6 +73,7 @@ internal static class I6DPublicCandidateKeyTests
             "YESNO choice must be typed as an OCGForge public choice");
 
         TestPublicGameplayProjectionIsAccepted();
+        TestPairedPublicFramesProduceSameBridgeOutput();
         TestActionIdentityMatrix();
         TestCandidateFamilyMatrix();
         TestNToNAndFailClosedMapping();
@@ -114,6 +115,49 @@ internal static class I6DPublicCandidateKeyTests
             "one accepted Gameplay occurrence must map to one OCGForge occurrence");
         Require(mapped.Context.Candidates[0].Descriptor.ActionKind == "card_selection",
             "single card-selection occurrence must use direct OCGForge action kind");
+    }
+
+    private static void TestPairedPublicFramesProduceSameBridgeOutput()
+    {
+        PerspectiveSafeFrameV1 frameA = CreatePublicFrame();
+        PerspectiveSafeFrameV1 frameB = CreatePublicFrame(
+            new[]
+            {
+                ("p0:HAND:public:12345678:0", true),
+                ("p1:SPELL_TRAP_ZONE:0", false),
+                ("p0:MONSTER_ZONE:0", true)
+            });
+        FlatPromptYesNoPublicContextV1 decision =
+            New<FlatPromptYesNoPublicContextV1>((byte)0, 42UL);
+        FlatYesNoPublicCandidateDescriptorV1 candidate =
+            New<FlatYesNoPublicCandidateDescriptorV1>(
+                "local.paired-world",
+                FlatPromptChoiceKindV1.Yes);
+
+        OcgForgePublicDecisionContextResultV1 resultA =
+            OcgForgePublicCandidateBridgeV1.TryCreate(
+                frameA,
+                decision,
+                new FlatPublicCandidateDescriptorV1[] { candidate },
+                decisionIndex: 17);
+        OcgForgePublicDecisionContextResultV1 resultB =
+            OcgForgePublicCandidateBridgeV1.TryCreate(
+                frameB,
+                decision,
+                new FlatPublicCandidateDescriptorV1[] { candidate },
+                decisionIndex: 17);
+
+        Require(resultA.IsSuccess && resultB.IsSuccess &&
+                resultA.Context is not null && resultB.Context is not null,
+            "paired public frames must both cross the I6D boundary");
+        OcgForgePublicCandidateV1 candidateA = resultA.Context!.Candidates[0];
+        OcgForgePublicCandidateV1 candidateB = resultB.Context!.Candidates[0];
+        Require(candidateA.PublicActionKey == candidateB.PublicActionKey &&
+                candidateA.CanonicalDescriptorBytes.SequenceEqual(
+                    candidateB.CanonicalDescriptorBytes) &&
+                resultA.Context.PublicCandidateDomainDigest ==
+                    resultB.Context.PublicCandidateDomainDigest,
+            "paired worlds with equal public frames must have equal I6D identity");
     }
 
     private static void TestActionIdentityMatrix()
