@@ -1,3 +1,4 @@
+using OCGForge.Ignis.Client;
 using OCGForge.Ignis.Gameplay;
 using OCGForge.Ignis.Gameplay.Tests.Fixtures;
 using static OCGForge.Ignis.Gameplay.Tests.TestAssert;
@@ -12,22 +13,36 @@ internal static class I6C6NativeOracleTests
             new(
                 RuntimeExecutablePath:
                     @"C:\Users\chris\.config\superpowers\worktrees\edopro\i6c6-edopro-startup-compat-v1\bin\release\ygoprodll.exe",
+                RuntimeExecutableSha256:
+                    "3101a7fd5b49309b9fa19c9d826964e4291547fd6852df96415101d50f132dd0",
                 AssetRoot: @"C:\ProjectIgnis",
+                DatabaseSha256:
+                    "c49a077285e1d999f32056cb65303b75e311e859b4486c48f41772a193069225",
+                CardscriptsCommit:
+                    "00a828b79303d047d6905f528857cc287ad3a84e",
                 EdoproRuntimeHead:
                     "d72872347c34e7a7f37ba12b7e8fb20cdac78e0d",
                 A2PatchCommit:
                     "edfb77d7baf68b986209d327a871021296c2954b",
+                A2PatchsetSha256:
+                    "fd97edae44cb07a0b43f477f14863c40177eb4ac9a804d7c425450f07d5894d7",
                 StartupCompatPatchCommit:
                     "d72872347c34e7a7f37ba12b7e8fb20cdac78e0d",
+                StartupCompatPatchsetSha256:
+                    "83bf958fd115b6f85e4dee744dfc4685d5612d1c9d795480adc01831e7e33b49",
                 LinkScenario: new(
                     "projectignis.tactical-try.cyber-dragon.v1",
                     @"C:\ProjectIgnis\deck\[Tactical-Try Deck] Decisive Strike Cyber Dragon.ydk",
+                    "5807306a04e08b452938aa06e6692738ffc8c3346cde3045202c6d380ddd4b10",
                     @"C:\ProjectIgnis\WindBot\Decks\AI_Blackwing.ydk",
+                    "0051f350303eed589fed1bba0cf58e345644c91cb5825415357a5ac297ee09b2",
                     "EXTRA"),
                 CounterScenario: new(
                     "projectignis.windbot.ai-blackwing.v1",
                     @"C:\ProjectIgnis\WindBot\Decks\AI_Blackwing.ydk",
+                    "0051f350303eed589fed1bba0cf58e345644c91cb5825415357a5ac297ee09b2",
                     @"C:\ProjectIgnis\WindBot\Decks\AI_CyberDragon.ydk",
+                    "ed30c491ad4323ed4729c2de68d7298714e01d71ac5321aaabcb7401a91fbda1",
                     "NONE"));
 
         I6C6ClosureHarnessValidationResultV1 valid =
@@ -41,6 +56,24 @@ internal static class I6C6NativeOracleTests
         False(valid.AllowsSyntheticEvidenceInRealMode);
         False(valid.AllowsSyntheticLinkEvidenceInRealMode);
         False(valid.AllowsSyntheticCounterEvidenceInRealMode);
+
+        I6C6ClosureHarnessValidationResultV1 local =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration,
+                requireLocalArtifacts: true);
+        True(local.IsSuccess, local.ErrorCode.ToString());
+
+        I6C6ClosureBindingResultV1 linkBinding =
+            I6C6ClosureHarnessV1.TryBind(
+                configuration,
+                I6C6ClosureScenarioKindV1.Link,
+                requireLocalArtifacts: true);
+        True(linkBinding.IsSuccess, linkBinding.ErrorCode.ToString());
+        NotNull(linkBinding.Binding);
+        PrevalidatedProtocolDeck linkDeck =
+            I6C6ClosureHarnessV1.LoadDeck(
+                configuration.LinkScenario.PrimaryDeckPath);
+        True(linkDeck.MainAndExtraCards.Count > 0);
 
         I6C6ClosureHarnessValidationResultV1 wrongRuntime =
             I6C6ClosureHarnessV1.ValidateConfiguration(
@@ -57,8 +90,14 @@ internal static class I6C6NativeOracleTests
         Equal(I6C6ClosureHarnessErrorCodeV1.ForbiddenRuntimeExecutable,
             forbiddenExecutable.ErrorCode);
 
+        var startInfo = I6C6ExternalRuntimeProcessOwnerV1.CreateStartInfo(
+            configuration);
+        True(startInfo.ArgumentList.SequenceEqual(
+            new[] { "-C", @"C:\ProjectIgnis", "-r", "-m" },
+            StringComparer.Ordinal));
+
         I6C6ClosureHarnessExecutionResultV1 blocked =
-            I6C6ClosureHarnessV1.TryExecute(
+            I6C6ClosureHarnessV1.TryBeginRealExecution(
                 configuration,
                 realRunAuthorized: false);
         Equal(I6C6ClosureHarnessErrorCodeV1.RealRunNotAuthorized,
@@ -66,29 +105,17 @@ internal static class I6C6NativeOracleTests
         False(blocked.ProcessStarted);
         False(blocked.DuelExecuted);
 
-        I6C6ClosureEvidenceValidationResultV1 synthetic =
-            I6C6ClosureHarnessV1.ValidateEvidence(
-                new I6C6ClosureEvidenceCaptureV1(
-                    I6C6ClosureEvidenceOriginV1.Synthetic,
-                    HasReceivedTcpBytes: true,
-                    HasDecodedGameplayMessage: true,
-                    MirrorTransitionApplied: true,
-                    CurrentFrameProduced: true,
-                    LinkEvidenceFromLiveTcp: false,
-                    CounterEvidenceFromLiveTcp: false));
-        Equal(I6C6ClosureHarnessErrorCodeV1.SyntheticEvidenceRejected,
-            synthetic.ErrorCode);
+        I6C6ClosureHarnessExecutionResultV1 guarded =
+            I6C6ClosureHarnessV1.TryBeginRealExecution(
+                configuration,
+                realRunAuthorized: true);
+        Equal(I6C6ClosureHarnessErrorCodeV1.RealExecutionRequiresInputs,
+            guarded.ErrorCode);
+        False(guarded.ProcessStarted);
+        False(guarded.DuelExecuted);
 
         I6C6ClosureEvidenceValidationResultV1 incomplete =
-            I6C6ClosureHarnessV1.ValidateEvidence(
-                new I6C6ClosureEvidenceCaptureV1(
-                    I6C6ClosureEvidenceOriginV1.LiveTcp,
-                    HasReceivedTcpBytes: true,
-                    HasDecodedGameplayMessage: false,
-                    MirrorTransitionApplied: false,
-                    CurrentFrameProduced: false,
-                    LinkEvidenceFromLiveTcp: false,
-                    CounterEvidenceFromLiveTcp: false));
+            I6C6ClosureHarnessV1.ValidateEvidence(null);
         Equal(I6C6ClosureHarnessErrorCodeV1.IncompleteLiveEvidence,
             incomplete.ErrorCode);
     }
