@@ -9,4 +9,7 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisMode>Recommended</AnalysisMode>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OCGForge.Ignis.Gameplay\OCGForge.Ignis.Gameplay.csproj" />
+  </ItemGroup>
 </Project>
