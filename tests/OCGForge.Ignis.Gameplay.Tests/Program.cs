@@ -319,7 +319,31 @@ var tests = new (string Name, Action Body)[]
         I5CrossFamilyFinalAcceptanceTests.TestPublicPrivateAuthorityDeterminismBarrier),
 
     ("I6C1 source types and fail-closed container",
-        I6CPublicFrameSourceTests.TestI6C1SourceContainer)
+        I6CPublicFrameSourceTests.TestI6C1SourceContainer),
+
+    ("I6C6-1 native oracle RED contract",
+        I6C6NativeOracleTests.TestI6C6_1RedContract),
+
+    ("I6C6-3 test-only closure harness contract",
+        I6C6NativeOracleTests.TestI6C6_3ClosureHarnessContract),
+
+    ("I6C6-3A counter add/remove state",
+        I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
+
+    ("I6C6-3A counter reset and control semantics",
+        I6C6CurrentCounterTests.TestCounterResetAndControlSemantics),
+
+    ("I6C6-3A counter turn-set and overlay resets",
+        I6C6CurrentCounterTests.TestCounterTurnSetAndOverlayResets),
+
+    ("I6C6-3A unknown counter entity fails atomically",
+        I6C6CurrentCounterTests.TestCounterUnknownEntityFailsAtomically),
+
+    ("I6C6-3A hidden counter entity fails closed",
+        I6C6CurrentCounterTests.TestCounterHiddenEntityFailsClosed),
+
+    ("I6C6-3A player-one counter address",
+        I6C6CurrentCounterTests.TestCounterPerspectiveOneUsesAbsoluteAddress)
 };
 
 int passed = 0;
