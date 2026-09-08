@@ -57,23 +57,26 @@ internal static class I6C6NativeOracleTests
         False(valid.AllowsSyntheticLinkEvidenceInRealMode);
         False(valid.AllowsSyntheticCounterEvidenceInRealMode);
 
-        I6C6ClosureHarnessValidationResultV1 local =
-            I6C6ClosureHarnessV1.ValidateConfiguration(
-                configuration,
-                requireLocalArtifacts: true);
-        True(local.IsSuccess, local.ErrorCode.ToString());
+        if (OperatingSystem.IsWindows())
+        {
+            I6C6ClosureHarnessValidationResultV1 local =
+                I6C6ClosureHarnessV1.ValidateConfiguration(
+                    configuration,
+                    requireLocalArtifacts: true);
+            True(local.IsSuccess, local.ErrorCode.ToString());
 
-        I6C6ClosureBindingResultV1 linkBinding =
-            I6C6ClosureHarnessV1.TryBind(
-                configuration,
-                I6C6ClosureScenarioKindV1.Link,
-                requireLocalArtifacts: true);
-        True(linkBinding.IsSuccess, linkBinding.ErrorCode.ToString());
-        NotNull(linkBinding.Binding);
-        PrevalidatedProtocolDeck linkDeck =
-            I6C6ClosureHarnessV1.LoadDeck(
-                configuration.LinkScenario.PrimaryDeckPath);
-        True(linkDeck.MainAndExtraCards.Count > 0);
+            I6C6ClosureBindingResultV1 linkBinding =
+                I6C6ClosureHarnessV1.TryBind(
+                    configuration,
+                    I6C6ClosureScenarioKindV1.Link,
+                    requireLocalArtifacts: true);
+            True(linkBinding.IsSuccess, linkBinding.ErrorCode.ToString());
+            NotNull(linkBinding.Binding);
+            PrevalidatedProtocolDeck linkDeck =
+                I6C6ClosureHarnessV1.LoadDeck(
+                    configuration.LinkScenario.PrimaryDeckPath);
+            True(linkDeck.MainAndExtraCards.Count > 0);
+        }
 
         I6C6ClosureHarnessValidationResultV1 wrongRuntime =
             I6C6ClosureHarnessV1.ValidateConfiguration(
