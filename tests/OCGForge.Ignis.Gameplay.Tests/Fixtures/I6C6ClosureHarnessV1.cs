@@ -899,7 +899,7 @@ internal static class I6C6ClosureHarnessV1
             return Failure(I6C6ClosureHarnessErrorCodeV1.AssetRootInvalid);
         }
 
-        string executableName = Path.GetFileName(
+        string executableName = GetPathFileName(
             configuration.RuntimeExecutablePath);
         if (!string.Equals(
                 executableName,
@@ -1463,7 +1463,17 @@ internal static class I6C6ClosureHarnessV1
         IsAbsoluteNonEmptyPath(scenario.OpponentDeckPath);
 
     private static bool IsAbsoluteNonEmptyPath(string? value) =>
-        !string.IsNullOrWhiteSpace(value) && Path.IsPathFullyQualified(value);
+        !string.IsNullOrWhiteSpace(value) &&
+        (Path.IsPathFullyQualified(value) || IsWindowsAbsolutePath(value));
+
+    private static bool IsWindowsAbsolutePath(string value) =>
+        value.Length >= 3 &&
+        char.IsLetter(value[0]) &&
+        value[1] == ':' &&
+        (value[2] == '\\' || value[2] == '/');
+
+    private static string GetPathFileName(string value) =>
+        Path.GetFileName(value.Replace('\\', '/'));
 
     private static bool HasPipelineType(Type value) =>
         Array.IndexOf(ExistingIgnisPipelineTypes, value) >= 0;
