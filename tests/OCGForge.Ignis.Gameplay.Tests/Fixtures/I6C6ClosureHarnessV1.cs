@@ -22,7 +22,10 @@ internal enum I6C6ClosureHarnessErrorCodeV1 : byte
     ScenarioInputProvenanceMismatch = 9,
     UnsupportedPreDuelState = 10,
     ExecutionFailed = 11,
-    RealExecutionRequiresInputs = 12
+    RealExecutionRequiresInputs = 12,
+    PropertyEvidenceMissing = 13,
+    PropertyValueMismatch = 14,
+    InvalidPropertyEvidenceInput = 15
 }
 
 internal enum I6C6ClosureScenarioKindV1 : byte
@@ -68,12 +71,14 @@ internal readonly record struct I6C6ClosureHarnessValidationResultV1(
 internal readonly record struct I6C6ClosureHarnessExecutionResultV1(
     I6C6ClosureHarnessErrorCodeV1 ErrorCode,
     bool ProcessStarted,
-    bool DuelExecuted,
+    bool GameplayCaptureSucceeded,
     I6C6LiveGameplayCaptureResultV1? Capture = null);
 
 internal readonly record struct I6C6ClosureEvidenceValidationResultV1(
     bool IsSuccess,
-    I6C6ClosureHarnessErrorCodeV1 ErrorCode);
+    I6C6ClosureHarnessErrorCodeV1 ErrorCode,
+    I6C6LinkPropertyEvidenceResultV1? LinkEvidence = null,
+    I6C6CounterPropertyEvidenceResultV1? CounterEvidence = null);
 
 internal readonly record struct I6C6ClosureBindingResultV1(
     bool IsSuccess,
@@ -119,8 +124,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         GameplayErrorCode errorCode,
         I6C6ClosureHarnessBindingV1 binding,
         IReadOnlyList<byte[]> receivedTcpChunks,
-        IReadOnlyList<GameplayMessageV1> messages,
-        PerspectiveSafeFrameV1? frame)
+        IReadOnlyList<I6C6LiveGameplayObservationV1> observations)
     {
         IsSuccess = isSuccess;
         ErrorCode = errorCode;
@@ -128,8 +132,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         ReceivedTcpChunks = receivedTcpChunks
             .Select(chunk => chunk.ToArray())
             .ToArray();
-        Messages = messages.ToArray();
-        Frame = frame;
+        Observations = observations.ToArray();
     }
 
     internal bool IsSuccess { get; }
@@ -140,35 +143,546 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
 
     internal IReadOnlyList<byte[]> ReceivedTcpChunks { get; }
 
-    internal IReadOnlyList<GameplayMessageV1> Messages { get; }
+    internal IReadOnlyList<I6C6LiveGameplayObservationV1> Observations { get; }
 
-    internal PerspectiveSafeFrameV1? Frame { get; }
+    internal IReadOnlyList<GameplayMessageV1> Messages => Observations
+        .Select(observation => observation.Message)
+        .ToArray();
 
-    internal static I6C6LiveGameplayCaptureResultV1 Success(
-        I6C6ClosureHarnessBindingV1 binding,
-        IReadOnlyList<byte[]> receivedTcpChunks,
-        IReadOnlyList<GameplayMessageV1> messages,
-        PerspectiveSafeFrameV1 frame) =>
-        new(
-            true,
-            GameplayErrorCode.None,
-            binding,
-            receivedTcpChunks,
-            messages,
-            frame);
+    internal PerspectiveSafeFrameV1? Frame => Observations.Count == 0
+        ? null
+        : Observations[^1].Frame;
 
-    internal static I6C6LiveGameplayCaptureResultV1 Failure(
-        I6C6ClosureHarnessBindingV1 binding,
+    private static I6C6LiveGameplayCaptureResultV1 FromCapture(
+        bool isSuccess,
         GameplayErrorCode errorCode,
+        I6C6ClosureHarnessBindingV1 binding,
         IReadOnlyList<byte[]> receivedTcpChunks,
-        IReadOnlyList<GameplayMessageV1> messages) =>
+        IReadOnlyList<I6C6LiveGameplayObservationV1> observations) =>
         new(
-            false,
+            isSuccess,
             errorCode,
             binding,
             receivedTcpChunks,
-            messages,
-            null);
+            observations);
+
+    internal static async ValueTask<I6C6LiveGameplayCaptureResultV1> CaptureAsync(
+        I6C6ClosureHarnessBindingV1 binding,
+        GameplayHandoffOfferV1 handoff,
+        I6C6TcpCaptureTransportV1 captureTransport,
+        PerspectiveSafeMatchContextV1 matchContext,
+        PerspectiveSafePrintedProviderV1 printedProvider,
+        int maximumAdditionalMessages,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        ArgumentNullException.ThrowIfNull(handoff);
+        ArgumentNullException.ThrowIfNull(captureTransport);
+        ArgumentNullException.ThrowIfNull(matchContext);
+        ArgumentNullException.ThrowIfNull(printedProvider);
+        if (maximumAdditionalMessages < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumAdditionalMessages));
+        }
+
+        GameplayHandoffAcquireResult acquired =
+            GameplayHandoffConsumerV1.TryCreate(handoff);
+        if (!acquired.IsSuccess || acquired.Consumer is null)
+        {
+            return Failure(
+                binding,
+                acquired.Error,
+                captureTransport,
+                Array.Empty<I6C6LiveGameplayObservationV1>());
+        }
+
+        await using GameplayHandoffConsumerV1 consumer = acquired.Consumer;
+        GameplayPumpResult first = await consumer.PumpAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!first.IsSuccess ||
+            first.Message is null ||
+            first.Perspective is null ||
+            first.Session is null)
+        {
+            return Failure(
+                binding,
+                first.Error,
+                captureTransport,
+                Array.Empty<I6C6LiveGameplayObservationV1>());
+        }
+
+        MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
+            first.Message,
+            first.Perspective);
+        if (!created.IsSuccess || created.Mirror is null)
+        {
+            return Failure(
+                binding,
+                created.Error,
+                captureTransport,
+                Array.Empty<I6C6LiveGameplayObservationV1>());
+        }
+
+        await using GameplayMirrorSessionV1 session =
+            new(
+                first.Session,
+                created.Mirror,
+                matchContext,
+                printedProvider);
+        PerspectiveSafeFrameSourceResultV1 initialFrame =
+            session.TryCreateI6C5Frame();
+        if (!initialFrame.IsSuccess || initialFrame.Frame is null)
+        {
+            return Failure(
+                binding,
+                GameplayErrorCode.InvalidState,
+                captureTransport,
+                Array.Empty<I6C6LiveGameplayObservationV1>());
+        }
+
+        List<I6C6LiveGameplayObservationV1> observations = new()
+        {
+            new(0, first.Message, initialFrame.Frame)
+        };
+        for (int index = 0; index < maximumAdditionalMessages; index++)
+        {
+            GameplayMirrorPumpResult next = await session.PumpAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!next.IsSuccess || next.Message is null)
+            {
+                return Failure(
+                    binding,
+                    next.Error,
+                    captureTransport,
+                    observations);
+            }
+
+            PerspectiveSafeFrameSourceResultV1 frame =
+                session.TryCreateI6C5Frame();
+            if (!frame.IsSuccess || frame.Frame is null)
+            {
+                return Failure(
+                    binding,
+                    GameplayErrorCode.InvalidState,
+                    captureTransport,
+                    observations);
+            }
+
+            observations.Add(
+                new((ulong)index + 1, next.Message, frame.Frame));
+        }
+
+        return FromCapture(
+            true,
+            GameplayErrorCode.None,
+            binding,
+            captureTransport.ReceivedChunks,
+            observations);
+    }
+
+    private static I6C6LiveGameplayCaptureResultV1 Failure(
+        I6C6ClosureHarnessBindingV1 binding,
+        GameplayErrorCode error,
+        I6C6TcpCaptureTransportV1 captureTransport,
+        IReadOnlyList<I6C6LiveGameplayObservationV1> observations) =>
+        FromCapture(
+            false,
+            error,
+            binding,
+            captureTransport.ReceivedChunks,
+            observations);
+}
+
+internal readonly record struct I6C6LiveGameplayObservationV1(
+    ulong Ordinal,
+    GameplayMessageV1 Message,
+    PerspectiveSafeFrameV1 Frame);
+
+internal sealed record I6C6NativeLinkPropertyReferenceV1(
+    string EntityLocator,
+    ulong BoundaryOrdinal,
+    uint LinkRating,
+    IReadOnlyList<PerspectiveSafeLinkMarkerV1> LinkMarkers);
+
+internal readonly record struct I6C6LinkPropertyEvidenceResultV1(
+    bool IsSuccess,
+    I6C6ClosureHarnessErrorCodeV1 ErrorCode,
+    bool OwnerPrivatePresent,
+    bool OpponentHiddenAbsent,
+    bool FaceUpPublicPresent,
+    bool LinkRatingExactMatch,
+    bool LinkMarkersExactMatch,
+    uint? ObservedLinkRating,
+    IReadOnlyList<PerspectiveSafeLinkMarkerV1> ObservedLinkMarkers);
+
+internal readonly record struct I6C6CounterTransitionEvidenceV1(
+    GameplayMessageKindV1 MessageKind,
+    string EntityLocator,
+    ushort CounterType,
+    uint Before,
+    uint Delta,
+    uint ExpectedAfter,
+    uint ActualAfter);
+
+internal readonly record struct I6C6CounterPropertyEvidenceResultV1(
+    bool IsSuccess,
+    I6C6ClosureHarnessErrorCodeV1 ErrorCode,
+    bool AddObserved,
+    bool AddCurrentMatch,
+    bool RemoveObserved,
+    bool RemoveCurrentMatch,
+    bool ResetLifecycleObserved,
+    IReadOnlyList<I6C6CounterTransitionEvidenceV1> Transitions);
+
+internal sealed record I6C6ClosureEvidenceRequirementsV1(
+    I6C6NativeLinkPropertyReferenceV1? LinkReference,
+    bool RequireCounterAdd,
+    bool RequireCounterRemove,
+    bool RequireCounterReset);
+
+internal static class I6C6LinkPropertyEvidenceExtractorV1
+{
+    internal static I6C6LinkPropertyEvidenceResultV1 Extract(
+        IReadOnlyList<I6C6LiveGameplayObservationV1> observations,
+        I6C6NativeLinkPropertyReferenceV1 reference)
+    {
+        if (observations is null ||
+            observations.Count == 0 ||
+            reference is null ||
+            string.IsNullOrEmpty(reference.EntityLocator) ||
+            reference.LinkRating == 0 ||
+            reference.LinkMarkers is null ||
+            reference.LinkMarkers.Count == 0 ||
+            !reference.EntityLocator.Contains(
+                ":EXTRA_DECK:",
+                StringComparison.Ordinal) ||
+            !PublicSemanticLocatorV1.TryParse(
+                reference.EntityLocator,
+                out _))
+        {
+            return Failure(
+                I6C6ClosureHarnessErrorCodeV1.InvalidPropertyEvidenceInput);
+        }
+
+        bool ownerPrivatePresent = false;
+        bool opponentHiddenAbsent = false;
+        bool faceUpPublicPresent = false;
+        uint? observedRating = null;
+        IReadOnlyList<PerspectiveSafeLinkMarkerV1> observedMarkers =
+            Array.Empty<PerspectiveSafeLinkMarkerV1>();
+
+        foreach (I6C6LiveGameplayObservationV1 observation in observations)
+        {
+            if (observation.Ordinal != reference.BoundaryOrdinal)
+            {
+                continue;
+            }
+
+            foreach (PerspectiveSafeEntityV1 entity in observation.Frame.Entities)
+            {
+                PerspectiveSafeCardPropertiesV1? current = entity.Current;
+                bool hasLinkEvidence =
+                    current?.LinkRating is not null &&
+                    current.LinkMarkers.Count > 0;
+
+                if (entity.Zone == PerspectiveSafeSemanticZoneV1.ExtraDeck &&
+                    entity.IdentityKnown &&
+                    string.Equals(
+                        entity.Locator,
+                        reference.EntityLocator,
+                        StringComparison.Ordinal) &&
+                    hasLinkEvidence)
+                {
+                    ownerPrivatePresent = true;
+                    observedRating = current!.LinkRating;
+                    observedMarkers = current.LinkMarkers.ToArray();
+                }
+
+                if (entity.Zone == PerspectiveSafeSemanticZoneV1.ExtraDeck &&
+                    !entity.IdentityKnown &&
+                    entity.Passcode is null &&
+                    entity.Printed is null &&
+                    entity.Current is null)
+                {
+                    opponentHiddenAbsent = true;
+                }
+
+                if (entity.IdentityKnown && entity.FaceUp && hasLinkEvidence)
+                {
+                    faceUpPublicPresent = true;
+                }
+            }
+        }
+
+        bool ratingExact = ownerPrivatePresent &&
+            observedRating == reference.LinkRating;
+        bool markersExact = ownerPrivatePresent &&
+            observedMarkers.SequenceEqual(reference.LinkMarkers);
+        if (!ownerPrivatePresent ||
+            !opponentHiddenAbsent ||
+            !faceUpPublicPresent)
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.PropertyEvidenceMissing,
+                ownerPrivatePresent,
+                opponentHiddenAbsent,
+                faceUpPublicPresent,
+                ratingExact,
+                markersExact,
+                observedRating,
+                observedMarkers);
+        }
+
+        if (!ratingExact || !markersExact)
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.PropertyValueMismatch,
+                ownerPrivatePresent,
+                opponentHiddenAbsent,
+                faceUpPublicPresent,
+                ratingExact,
+                markersExact,
+                observedRating,
+                observedMarkers);
+        }
+
+        return new(
+            true,
+            I6C6ClosureHarnessErrorCodeV1.None,
+            ownerPrivatePresent,
+            opponentHiddenAbsent,
+            faceUpPublicPresent,
+            true,
+            true,
+            observedRating,
+            observedMarkers);
+    }
+
+    private static I6C6LinkPropertyEvidenceResultV1 Failure(
+        I6C6ClosureHarnessErrorCodeV1 errorCode) =>
+        new(
+            false,
+            errorCode,
+            false,
+            false,
+            false,
+            false,
+            false,
+            null,
+            Array.Empty<PerspectiveSafeLinkMarkerV1>());
+}
+
+internal static class I6C6CounterPropertyEvidenceExtractorV1
+{
+    internal static I6C6CounterPropertyEvidenceResultV1 Extract(
+        IReadOnlyList<I6C6LiveGameplayObservationV1> observations)
+    {
+        if (observations is null || observations.Count == 0)
+        {
+            return Failure(
+                I6C6ClosureHarnessErrorCodeV1.InvalidPropertyEvidenceInput);
+        }
+
+        List<I6C6CounterTransitionEvidenceV1> transitions = new();
+        bool addObserved = false;
+        bool addCurrentMatch = true;
+        bool removeObserved = false;
+        bool removeCurrentMatch = true;
+        bool resetLifecycleObserved = false;
+
+        for (int index = 0; index < observations.Count; index++)
+        {
+            I6C6LiveGameplayObservationV1 observation = observations[index];
+            if (IsLifecycleResetMessage(observation.Message.Kind) &&
+                index > 0 &&
+                HasAnyCounter(observations[index - 1].Frame) &&
+                !HasAnyCounter(observation.Frame))
+            {
+                resetLifecycleObserved = true;
+            }
+
+            if (observation.Message.Kind is not
+                (GameplayMessageKindV1.AddCounter or
+                GameplayMessageKindV1.RemoveCounter))
+            {
+                continue;
+            }
+
+            GameplayCounterPayloadV1 payload = observation.Message.Counter;
+            if (!TryGetCounterLocator(payload, out string locator))
+            {
+                return Failure(
+                    I6C6ClosureHarnessErrorCodeV1.InvalidPropertyEvidenceInput);
+            }
+
+            PerspectiveSafeFrameV1? beforeFrame = index > 0
+                ? observations[index - 1].Frame
+                : null;
+            if (!TryGetCounterCount(
+                    beforeFrame,
+                    locator,
+                    payload.CounterType,
+                    out uint before) ||
+                !TryGetCounterCount(
+                    observation.Frame,
+                    locator,
+                    payload.CounterType,
+                    out uint actualAfter))
+            {
+                return Failure(
+                    I6C6ClosureHarnessErrorCodeV1.PropertyEvidenceMissing);
+            }
+
+            uint expectedAfter;
+            if (observation.Message.Kind == GameplayMessageKindV1.AddCounter)
+            {
+                addObserved = true;
+                try
+                {
+                    expectedAfter = checked(before + payload.Count);
+                }
+                catch (OverflowException)
+                {
+                    return Failure(
+                        I6C6ClosureHarnessErrorCodeV1.PropertyValueMismatch);
+                }
+
+                addCurrentMatch &= expectedAfter == actualAfter;
+            }
+            else
+            {
+                removeObserved = true;
+                if (before == 0)
+                {
+                    return Failure(
+                        I6C6ClosureHarnessErrorCodeV1.PropertyValueMismatch);
+                }
+
+                expectedAfter = payload.Count >= before
+                    ? 0
+                    : before - payload.Count;
+                removeCurrentMatch &= expectedAfter == actualAfter;
+            }
+
+            transitions.Add(
+                new(
+                    observation.Message.Kind,
+                    locator,
+                    payload.CounterType,
+                    before,
+                    payload.Count,
+                    expectedAfter,
+                    actualAfter));
+        }
+
+        bool success = addObserved &&
+            addCurrentMatch &&
+            removeCurrentMatch;
+        return new(
+            success,
+            success
+                ? I6C6ClosureHarnessErrorCodeV1.None
+                : I6C6ClosureHarnessErrorCodeV1.PropertyEvidenceMissing,
+            addObserved,
+            addCurrentMatch,
+            removeObserved,
+            removeCurrentMatch,
+            resetLifecycleObserved,
+            transitions.ToArray());
+    }
+
+    private static bool TryGetCounterLocator(
+        GameplayCounterPayloadV1 payload,
+        out string locator)
+    {
+        PublicSemanticZoneV1 zone = payload.Location switch
+        {
+            0x04 => PublicSemanticZoneV1.MonsterZone,
+            0x08 => PublicSemanticZoneV1.SpellTrapZone,
+            _ => default
+        };
+        if (payload.Location is not (0x04 or 0x08) ||
+            !PublicSemanticLocatorV1.TryCreateIndexed(
+                payload.Controller,
+                zone,
+                payload.Sequence,
+                out PublicSemanticLocatorV1? value))
+        {
+            locator = string.Empty;
+            return false;
+        }
+
+        locator = value!.Value;
+        return true;
+    }
+
+    private static bool TryGetCounterCount(
+        PerspectiveSafeFrameV1? frame,
+        string locator,
+        ushort counterType,
+        out uint count)
+    {
+        count = 0;
+        if (frame is null)
+        {
+            return true;
+        }
+
+        PerspectiveSafeEntityV1? entity = frame.Entities.SingleOrDefault(
+            candidate => string.Equals(
+                candidate.Locator,
+                locator,
+                StringComparison.Ordinal));
+        if (entity is null || entity.Current is null)
+        {
+            return false;
+        }
+
+        PerspectiveSafeCounterV1[] counters = entity.Current.Counters
+            .Where(counter => counter.Type == counterType)
+            .ToArray();
+        if (counters.Length > 1)
+        {
+            return false;
+        }
+
+        count = counters.Length == 0 ? 0 : counters[0].Count;
+        return true;
+    }
+
+    private static bool HasAnyCounter(PerspectiveSafeFrameV1 frame) =>
+        frame.Entities.Any(entity =>
+            entity.Current is not null &&
+            entity.Current.Counters.Count > 0);
+
+    private static bool IsLifecycleResetMessage(
+        GameplayMessageKindV1 kind) =>
+        kind is GameplayMessageKindV1.Move or
+            GameplayMessageKindV1.PosChange or
+            GameplayMessageKindV1.Set or
+            GameplayMessageKindV1.ShuffleDeck or
+            GameplayMessageKindV1.ShuffleHand or
+            GameplayMessageKindV1.ShuffleExtra or
+            GameplayMessageKindV1.ShuffleSetCard or
+            GameplayMessageKindV1.ReverseDeck or
+            GameplayMessageKindV1.Swap or
+            GameplayMessageKindV1.SwapGraveDeck;
+
+    private static I6C6CounterPropertyEvidenceResultV1 Failure(
+        I6C6ClosureHarnessErrorCodeV1 errorCode) =>
+        new(
+            false,
+            errorCode,
+            false,
+            false,
+            false,
+            false,
+            false,
+            Array.Empty<I6C6CounterTransitionEvidenceV1>());
 }
 
 internal sealed class I6C6ExternalRuntimeProcessOwnerV1 : IAsyncDisposable
@@ -291,120 +805,6 @@ internal sealed class I6C6TcpCaptureTransportV1 : IByteTransport
     public ValueTask CloseAsync() => inner.CloseAsync();
 
     public ValueTask DisposeAsync() => inner.DisposeAsync();
-}
-
-internal static class I6C6LiveGameplayCaptureV1
-{
-    internal static async ValueTask<I6C6LiveGameplayCaptureResultV1> CaptureAsync(
-        I6C6ClosureHarnessBindingV1 binding,
-        GameplayHandoffOfferV1 handoff,
-        I6C6TcpCaptureTransportV1 captureTransport,
-        PerspectiveSafeMatchContextV1 matchContext,
-        PerspectiveSafePrintedProviderV1 printedProvider,
-        int maximumAdditionalMessages,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(binding);
-        ArgumentNullException.ThrowIfNull(handoff);
-        ArgumentNullException.ThrowIfNull(captureTransport);
-        ArgumentNullException.ThrowIfNull(matchContext);
-        ArgumentNullException.ThrowIfNull(printedProvider);
-        if (maximumAdditionalMessages < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(maximumAdditionalMessages));
-        }
-
-        GameplayHandoffAcquireResult acquired =
-            GameplayHandoffConsumerV1.TryCreate(handoff);
-        if (!acquired.IsSuccess || acquired.Consumer is null)
-        {
-            return Failure(
-                binding,
-                acquired.Error,
-                captureTransport,
-                Array.Empty<GameplayMessageV1>());
-        }
-
-        await using GameplayHandoffConsumerV1 consumer = acquired.Consumer;
-        GameplayPumpResult first = await consumer.PumpAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (!first.IsSuccess ||
-            first.Message is null ||
-            first.Perspective is null ||
-            first.Session is null)
-        {
-            return Failure(
-                binding,
-                first.Error,
-                captureTransport,
-                Array.Empty<GameplayMessageV1>());
-        }
-
-        MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
-            first.Message,
-            first.Perspective);
-        if (!created.IsSuccess || created.Mirror is null)
-        {
-            return Failure(
-                binding,
-                created.Error,
-                captureTransport,
-                new[] { first.Message });
-        }
-
-        await using GameplayMirrorSessionV1 session =
-            new(
-                first.Session,
-                created.Mirror,
-                matchContext,
-                printedProvider);
-        List<GameplayMessageV1> messages = new() { first.Message };
-        for (int index = 0; index < maximumAdditionalMessages; index++)
-        {
-            GameplayMirrorPumpResult next = await session.PumpAsync(
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (!next.IsSuccess || next.Message is null)
-            {
-                return Failure(
-                    binding,
-                    next.Error,
-                    captureTransport,
-                    messages);
-            }
-
-            messages.Add(next.Message);
-        }
-
-        PerspectiveSafeFrameSourceResultV1 frame =
-            session.TryCreateI6C5Frame();
-        if (!frame.IsSuccess || frame.Frame is null)
-        {
-            return Failure(
-                binding,
-                GameplayErrorCode.InvalidState,
-                captureTransport,
-                messages);
-        }
-
-        return I6C6LiveGameplayCaptureResultV1.Success(
-            binding,
-            captureTransport.ReceivedChunks,
-            messages,
-            frame.Frame);
-    }
-
-    private static I6C6LiveGameplayCaptureResultV1 Failure(
-        I6C6ClosureHarnessBindingV1 binding,
-        GameplayErrorCode error,
-        I6C6TcpCaptureTransportV1 captureTransport,
-        IReadOnlyList<GameplayMessageV1> messages) =>
-        I6C6LiveGameplayCaptureResultV1.Failure(
-            binding,
-            error,
-            captureTransport.ReceivedChunks,
-            messages);
 }
 
 internal static class I6C6ClosureHarnessV1
@@ -678,7 +1078,7 @@ internal static class I6C6ClosureHarnessV1
             }
 
             I6C6LiveGameplayCaptureResultV1 capture =
-                await I6C6LiveGameplayCaptureV1.CaptureAsync(
+                await I6C6LiveGameplayCaptureResultV1.CaptureAsync(
                         binding,
                         handoff.Offer,
                         captureTransport,
@@ -720,8 +1120,20 @@ internal static class I6C6ClosureHarnessV1
     }
 
     internal static I6C6ClosureEvidenceValidationResultV1 ValidateEvidence(
-        I6C6LiveGameplayCaptureResultV1? capture)
+        I6C6LiveGameplayCaptureResultV1? capture,
+        I6C6ClosureEvidenceRequirementsV1? requirements)
     {
+        if (requirements is null ||
+            requirements.LinkReference is null &&
+            !requirements.RequireCounterAdd &&
+            !requirements.RequireCounterRemove &&
+            !requirements.RequireCounterReset)
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.InvalidPropertyEvidenceInput);
+        }
+
         if (capture is null || !capture.IsSuccess)
         {
             return new(
@@ -729,9 +1141,20 @@ internal static class I6C6ClosureHarnessV1
                 I6C6ClosureHarnessErrorCodeV1.IncompleteLiveEvidence);
         }
 
+        if (requirements.LinkReference is not null &&
+            !string.Equals(
+                capture.Binding.Scenario.PatchedLocation,
+                "EXTRA",
+                StringComparison.Ordinal))
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.PropertyEvidenceMissing);
+        }
+
         if (capture.ReceivedTcpChunks.Count == 0 ||
             capture.ReceivedTcpChunks.Any(chunk => chunk.Length == 0) ||
-            capture.Messages.Count == 0 ||
+            capture.Observations.Count == 0 ||
             capture.Frame is null)
         {
             return new(
@@ -739,7 +1162,54 @@ internal static class I6C6ClosureHarnessV1
                 I6C6ClosureHarnessErrorCodeV1.IncompleteLiveEvidence);
         }
 
-        return new(true, I6C6ClosureHarnessErrorCodeV1.None);
+        I6C6LinkPropertyEvidenceResultV1? linkEvidence = null;
+        if (requirements.LinkReference is not null)
+        {
+            linkEvidence = I6C6LinkPropertyEvidenceExtractorV1.Extract(
+                capture.Observations,
+                requirements.LinkReference);
+            if (!linkEvidence.Value.IsSuccess)
+            {
+                return new(
+                    false,
+                    linkEvidence.Value.ErrorCode,
+                    linkEvidence,
+                    null);
+            }
+        }
+
+        I6C6CounterPropertyEvidenceResultV1? counterEvidence = null;
+        if (requirements.RequireCounterAdd ||
+            requirements.RequireCounterRemove ||
+            requirements.RequireCounterReset)
+        {
+            counterEvidence = I6C6CounterPropertyEvidenceExtractorV1.Extract(
+                capture.Observations);
+            if (!counterEvidence.Value.IsSuccess ||
+                requirements.RequireCounterAdd &&
+                !counterEvidence.Value.AddObserved ||
+                requirements.RequireCounterRemove &&
+                (!counterEvidence.Value.RemoveObserved ||
+                !counterEvidence.Value.RemoveCurrentMatch) ||
+                requirements.RequireCounterReset &&
+                !counterEvidence.Value.ResetLifecycleObserved)
+            {
+                return new(
+                    false,
+                    counterEvidence.Value.ErrorCode ==
+                        I6C6ClosureHarnessErrorCodeV1.None
+                        ? I6C6ClosureHarnessErrorCodeV1.PropertyEvidenceMissing
+                        : counterEvidence.Value.ErrorCode,
+                    linkEvidence,
+                    counterEvidence);
+            }
+        }
+
+        return new(
+            true,
+            I6C6ClosureHarnessErrorCodeV1.None,
+            linkEvidence,
+            counterEvidence);
     }
 
     internal static PrevalidatedProtocolDeck LoadDeck(string path)

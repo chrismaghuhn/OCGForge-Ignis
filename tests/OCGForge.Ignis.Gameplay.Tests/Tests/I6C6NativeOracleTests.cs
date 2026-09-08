@@ -103,7 +103,7 @@ internal static class I6C6NativeOracleTests
         Equal(I6C6ClosureHarnessErrorCodeV1.RealRunNotAuthorized,
             blocked.ErrorCode);
         False(blocked.ProcessStarted);
-        False(blocked.DuelExecuted);
+        False(blocked.GameplayCaptureSucceeded);
 
         I6C6ClosureHarnessExecutionResultV1 guarded =
             I6C6ClosureHarnessV1.TryBeginRealExecution(
@@ -112,12 +112,225 @@ internal static class I6C6NativeOracleTests
         Equal(I6C6ClosureHarnessErrorCodeV1.RealExecutionRequiresInputs,
             guarded.ErrorCode);
         False(guarded.ProcessStarted);
-        False(guarded.DuelExecuted);
+        False(guarded.GameplayCaptureSucceeded);
 
         I6C6ClosureEvidenceValidationResultV1 incomplete =
-            I6C6ClosureHarnessV1.ValidateEvidence(null);
+            I6C6ClosureHarnessV1.ValidateEvidence(
+                null,
+                new I6C6ClosureEvidenceRequirementsV1(
+                    null,
+                    true,
+                    false,
+                    false));
         Equal(I6C6ClosureHarnessErrorCodeV1.IncompleteLiveEvidence,
             incomplete.ErrorCode);
+
+        TestI6C6_3PropertyEvidenceExtraction();
+    }
+
+    internal static void TestI6C6_3PropertyEvidenceExtraction()
+    {
+        PerspectiveSafeCardPropertiesV1 linkProperties =
+            new(
+                type: 0x4000000,
+                linkRating: 3,
+                linkMarkers: new[]
+                {
+                    PerspectiveSafeLinkMarkerV1.Bottom,
+                    PerspectiveSafeLinkMarkerV1.Top
+                });
+        PerspectiveSafeFrameV1 linkFrame = CreatePropertyFrame(
+            new[]
+            {
+                new PerspectiveSafeEntityV1(
+                    "p0:EXTRA_DECK:public:12345678:0",
+                    true,
+                    12345678,
+                    0,
+                    0,
+                    PerspectiveSafeSemanticZoneV1.ExtraDeck,
+                    null,
+                    null,
+                    PerspectiveSafePositionV1.FaceDownDefense,
+                    false,
+                    true,
+                    linkProperties,
+                    linkProperties),
+                new PerspectiveSafeEntityV1(
+                    "p0:MONSTER_ZONE:0",
+                    true,
+                    12345678,
+                    0,
+                    0,
+                    PerspectiveSafeSemanticZoneV1.MonsterZone,
+                    0,
+                    null,
+                    PerspectiveSafePositionV1.FaceUpAttack,
+                    true,
+                    false,
+                    linkProperties,
+                    linkProperties),
+                new PerspectiveSafeEntityV1(
+                    "p1:EXTRA_DECK:0",
+                    false,
+                    null,
+                    null,
+                    1,
+                    PerspectiveSafeSemanticZoneV1.ExtraDeck,
+                    0,
+                    null,
+                    PerspectiveSafePositionV1.FaceDownDefense,
+                    false,
+                    true)
+            });
+
+        I6C6LinkPropertyEvidenceResultV1 linkEvidence =
+            I6C6LinkPropertyEvidenceExtractorV1.Extract(
+                new[]
+                {
+                    new I6C6LiveGameplayObservationV1(
+                        0,
+                        GameplayMessageV1.FromSummoned(
+                            8,
+                            GameplayMessageKindV1.Summoned),
+                        linkFrame)
+                },
+                new I6C6NativeLinkPropertyReferenceV1(
+                    "p0:EXTRA_DECK:public:12345678:0",
+                    0,
+                    3,
+                    new[]
+                    {
+                        PerspectiveSafeLinkMarkerV1.Bottom,
+                        PerspectiveSafeLinkMarkerV1.Top
+                    }));
+        True(linkEvidence.IsSuccess, linkEvidence.ErrorCode.ToString());
+        True(linkEvidence.OwnerPrivatePresent);
+        True(linkEvidence.OpponentHiddenAbsent);
+        True(linkEvidence.FaceUpPublicPresent);
+        True(linkEvidence.LinkRatingExactMatch);
+        True(linkEvidence.LinkMarkersExactMatch);
+
+        const string counterLocator = "p0:MONSTER_ZONE:0";
+        PerspectiveSafeFrameV1 counterBefore = CreatePropertyFrame(
+            new[]
+            {
+                new PerspectiveSafeEntityV1(
+                    counterLocator,
+                    true,
+                    12345678,
+                    0,
+                    0,
+                    PerspectiveSafeSemanticZoneV1.MonsterZone,
+                    0,
+                    null,
+                    PerspectiveSafePositionV1.FaceUpAttack,
+                    true,
+                    false,
+                    null,
+                    new PerspectiveSafeCardPropertiesV1(
+                        counters: Array.Empty<PerspectiveSafeCounterV1>()))
+            });
+        PerspectiveSafeFrameV1 counterAfterAdd = CreatePropertyFrame(
+            new[]
+            {
+                new PerspectiveSafeEntityV1(
+                    counterLocator,
+                    true,
+                    12345678,
+                    0,
+                    0,
+                    PerspectiveSafeSemanticZoneV1.MonsterZone,
+                    0,
+                    null,
+                    PerspectiveSafePositionV1.FaceUpAttack,
+                    true,
+                    false,
+                    null,
+                    new PerspectiveSafeCardPropertiesV1(
+                        counters: new[] { new PerspectiveSafeCounterV1(7, 3) }))
+            });
+        PerspectiveSafeFrameV1 counterAfterRemove = CreatePropertyFrame(
+            new[]
+            {
+                new PerspectiveSafeEntityV1(
+                    counterLocator,
+                    true,
+                    12345678,
+                    0,
+                    0,
+                    PerspectiveSafeSemanticZoneV1.MonsterZone,
+                    0,
+                    null,
+                    PerspectiveSafePositionV1.FaceUpAttack,
+                    true,
+                    false,
+                    null,
+                    new PerspectiveSafeCardPropertiesV1(
+                        counters: new[] { new PerspectiveSafeCounterV1(7, 2) }))
+            });
+        PerspectiveSafeFrameV1 counterAfterReset = CreatePropertyFrame(
+            new[]
+            {
+                new PerspectiveSafeEntityV1(
+                    counterLocator,
+                    true,
+                    12345678,
+                    0,
+                    0,
+                    PerspectiveSafeSemanticZoneV1.MonsterZone,
+                    0,
+                    null,
+                    PerspectiveSafePositionV1.FaceUpAttack,
+                    true,
+                    false,
+                    null,
+                    new PerspectiveSafeCardPropertiesV1(
+                        counters: Array.Empty<PerspectiveSafeCounterV1>()))
+            });
+
+        I6C6CounterPropertyEvidenceResultV1 counterEvidence =
+            I6C6CounterPropertyEvidenceExtractorV1.Extract(
+                new[]
+                {
+                    new I6C6LiveGameplayObservationV1(
+                        0,
+                        GameplayMessageV1.FromSummoned(
+                            8,
+                            GameplayMessageKindV1.Summoned),
+                        counterBefore),
+                    new I6C6LiveGameplayObservationV1(
+                        1,
+                        GameplayMessageV1.FromCounter(
+                            101,
+                            GameplayMessageKindV1.AddCounter,
+                            new GameplayCounterPayloadV1(7, 0, 0x04, 0, 3)),
+                        counterAfterAdd),
+                    new I6C6LiveGameplayObservationV1(
+                        2,
+                        GameplayMessageV1.FromCounter(
+                            102,
+                            GameplayMessageKindV1.RemoveCounter,
+                            new GameplayCounterPayloadV1(7, 0, 0x04, 0, 1)),
+                        counterAfterRemove),
+                    new I6C6LiveGameplayObservationV1(
+                        3,
+                        GameplayMessageV1.FromSet(
+                            new GameplaySetPayloadV1(
+                                12345678,
+                                new ModernLocInfoV1(0, 0x04, 0, 0x05))),
+                        counterAfterReset)
+                });
+        True(counterEvidence.IsSuccess, counterEvidence.ErrorCode.ToString());
+        True(counterEvidence.AddObserved);
+        True(counterEvidence.AddCurrentMatch);
+        True(counterEvidence.RemoveObserved);
+        True(counterEvidence.RemoveCurrentMatch);
+        True(counterEvidence.ResetLifecycleObserved);
+        Equal((uint)3, counterEvidence.Transitions[0].ExpectedAfter);
+        Equal((uint)3, counterEvidence.Transitions[0].ActualAfter);
+        Equal((uint)2, counterEvidence.Transitions[1].ExpectedAfter);
+        Equal((uint)2, counterEvidence.Transitions[1].ActualAfter);
     }
 
     internal static void TestI6C6_1RedContract()
@@ -659,4 +872,76 @@ internal static class I6C6NativeOracleTests
                 new I6C6NativeCounterV1(1, 0),
                 new I6C6NativeCounterV1(2, 1)
             });
+
+    private static PerspectiveSafeFrameV1 CreatePropertyFrame(
+        IReadOnlyList<PerspectiveSafeEntityV1> entities)
+    {
+        PerspectiveSafeFrameSourceResultV1 result =
+            PerspectiveSafePublicFrameSourceV1.TryCreate(
+                new PerspectiveSafeFrameSourceInputV1(
+                    new PerspectiveSafeGlobalsV1(
+                        duelFlags: 0x1234,
+                        lifePoints: new uint[] { 8000, 8000 },
+                        playerToAct: null,
+                        turnPlayer: 0,
+                        turnCount: 1,
+                        phase: 1,
+                        chainLength: 0),
+                    new[]
+                    {
+                        new PerspectiveSafeZoneV1(
+                            0,
+                            PerspectiveSafeSemanticZoneV1.MainDeck,
+                            40,
+                            0,
+                            40,
+                            false),
+                        new PerspectiveSafeZoneV1(
+                            0,
+                            PerspectiveSafeSemanticZoneV1.MonsterZone,
+                            1,
+                            1,
+                            0,
+                            true),
+                        new PerspectiveSafeZoneV1(
+                            0,
+                            PerspectiveSafeSemanticZoneV1.ExtraDeck,
+                            1,
+                            1,
+                            0,
+                            false),
+                        new PerspectiveSafeZoneV1(
+                            1,
+                            PerspectiveSafeSemanticZoneV1.ExtraDeck,
+                            1,
+                            0,
+                            1,
+                            false)
+                    },
+                    entities,
+                    Array.Empty<PerspectiveSafeRelationshipV1>(),
+                    new PerspectiveSafeChainStateV1(
+                        0,
+                        Array.Empty<PerspectiveSafeChainLinkV1>()),
+                    new[]
+                    {
+                        new PerspectiveSafeVisibleEventV1(
+                            0,
+                            PerspectiveSafeVisibleEventKindV1.TurnStarted,
+                            player: 0,
+                            targets: Array.Empty<string>())
+                    },
+                    new PerspectiveSafeMatchContextV1(
+                        perspectivePlayer: 0,
+                        duelFlags: 0x1234,
+                        knowledge: new PerspectiveSafeKnowledgeV1(true, false),
+                        ownDeck: new PerspectiveSafeDeckV1(
+                            known: true,
+                            mainDeck: new uint[] { 1, 2 },
+                            extraDeck: new uint[] { 3 }),
+                        opponentDeck: new PerspectiveSafeDeckV1(known: false))));
+        True(result.IsSuccess, result.Error?.ToString() ?? "frame rejected");
+        NotNull(result.Frame);
+        return result.Frame!;
+    }
 }
