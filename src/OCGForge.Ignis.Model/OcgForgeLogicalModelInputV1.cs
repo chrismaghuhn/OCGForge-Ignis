@@ -600,7 +600,10 @@ public static class OcgForgeLogicalModelInputBridgeV1
                 "decision_context.referenced_entities");
         }
 
-        OcgForgeLogicalPublicStateV1 state = BuildState(frame, table);
+        PerspectiveSafeGlobalsV1 composedGlobals = ComposeGlobals(
+            frame.Globals,
+            acceptedDecision.GlobalsPlayerToAct);
+        OcgForgeLogicalPublicStateV1 state = BuildState(frame, table, composedGlobals);
         List<OcgForgeLogicalCandidateV1> candidates = new(acceptedDecision.Candidates.Count);
         List<OcgForgeLogicalCandidateRoutingV1> routing =
             new(acceptedDecision.Candidates.Count);
@@ -640,7 +643,7 @@ public static class OcgForgeLogicalModelInputBridgeV1
                 descriptor.SourceIndex,
                 descriptor.Amount,
                 descriptor.ContinuationOperation,
-                DeriveSubmitsEngineResponse(descriptor.ContinuationOperation)));
+                source.SubmitsEngineResponse));
             routing.Add(new OcgForgeLogicalCandidateRoutingV1(source.PublicActionKey));
         }
 
@@ -658,7 +661,10 @@ public static class OcgForgeLogicalModelInputBridgeV1
         }
 
         string observationDigest =
-            OcgForgeI6ECanonicalV1.PublicObservationDigest(frame, acceptedDecision);
+            OcgForgeI6ECanonicalV1.PublicObservationDigest(
+                frame,
+                acceptedDecision,
+                composedGlobals);
         return new OcgForgeLogicalModelInputV1(
             OcgForgeLogicalModelInputV1.SchemaId,
             observationDigest,
@@ -674,14 +680,20 @@ public static class OcgForgeLogicalModelInputBridgeV1
             candidates);
     }
 
-    // I6D deliberately exposes only the public descriptor.  In the accepted
-    // I6 public mapping, the continuation token is the complete public
-    // transition class: pick/amount are intermediate actions and the empty,
-    // finish, cancel, and bypass tokens are terminal/atomic actions.  The
-    // native P5 boolean is therefore recovered from that already accepted
-    // descriptor without crossing private response state.
-    private static bool DeriveSubmitsEngineResponse(string continuationOperation) =>
-        continuationOperation is not ("pick" or "amount");
+    private static PerspectiveSafeGlobalsV1 ComposeGlobals(
+        PerspectiveSafeGlobalsV1 source,
+        byte playerToAct) =>
+        new(
+            source.DuelFlags,
+            source.LifePoints,
+            playerToAct,
+            source.TurnPlayer,
+            source.TurnCount,
+            source.Phase,
+            source.ChainLength,
+            source.Winner,
+            source.WinReason,
+            source.Terminal);
 
     private static List<string> CollectLocators(
         PerspectiveSafeFrameV1 frame,
@@ -764,7 +776,8 @@ public static class OcgForgeLogicalModelInputBridgeV1
 
     private static OcgForgeLogicalPublicStateV1 BuildState(
         PerspectiveSafeFrameV1 frame,
-        OcgForgeLocatorTable table)
+        OcgForgeLocatorTable table,
+        PerspectiveSafeGlobalsV1 globals)
     {
         OcgForgeLogicalEntityV1[] entities = frame.Entities
             .Select((entity, index) => new OcgForgeLogicalEntityV1(
@@ -824,7 +837,7 @@ public static class OcgForgeLogicalModelInputBridgeV1
             .ToArray();
 
         return new OcgForgeLogicalPublicStateV1(
-            frame.Globals,
+            globals,
             frame.Zones,
             entities,
             relationships,
@@ -1069,10 +1082,11 @@ internal static class OcgForgeI6ECanonicalV1
 
     internal static string PublicObservationDigest(
         PerspectiveSafeFrameV1 frame,
-        OcgForgePublicDecisionContextV1 decision)
+        OcgForgePublicDecisionContextV1 decision,
+        PerspectiveSafeGlobalsV1 composedGlobals)
     {
         Writer safeState = new();
-        WriteSafeFrame(safeState, frame);
+        WriteSafeFrame(safeState, frame, composedGlobals);
         Writer observation = new();
         const string schema = "ocgforge.public_environment_observation.v1";
         observation.String(schema);
@@ -1104,12 +1118,13 @@ internal static class OcgForgeI6ECanonicalV1
 
     private static void WriteSafeFrame(
         Writer writer,
-        PerspectiveSafeFrameV1 frame)
+        PerspectiveSafeFrameV1 frame,
+        PerspectiveSafeGlobalsV1? globalsOverride = null)
     {
         const string schema = "ocgforge.public_safe_state.v1";
         writer.String(schema);
         writer.String(schema);
-        WriteGlobals(writer, frame.Globals);
+        WriteGlobals(writer, globalsOverride ?? frame.Globals);
 
         PerspectiveSafeZoneV1[] zones = frame.Zones
             .OrderBy(value => value.Player)

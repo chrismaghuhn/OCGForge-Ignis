@@ -1167,8 +1167,8 @@ internal static class OcgForgeI6EEncodedCodecV1
         foreach (OcgForgeEncodedRelationshipV1 relationship in input.Relationships)
         {
             writer.U8(relationship.KindCode);
-            WriteCurrentReference(writer, relationship.Source);
-            WriteCurrentReference(writer, relationship.Target);
+            WriteRequiredCurrentReference(writer, relationship.Source);
+            WriteRequiredCurrentReference(writer, relationship.Target);
         }
 
         writer.U32(input.Chain.Length);
@@ -1183,7 +1183,7 @@ internal static class OcgForgeI6EEncodedCodecV1
             writer.Count(link.Targets.Count);
             foreach (OcgForgeEncodedCurrentReferenceV1 target in link.Targets)
             {
-                WriteCurrentReference(writer, target);
+                WriteRequiredCurrentReference(writer, target);
             }
         }
 
@@ -1301,6 +1301,14 @@ internal static class OcgForgeI6EEncodedCodecV1
     {
         writer.U32(reference.PublicLocatorOrdinal);
         writer.OptionalU32(reference.CurrentEntityOrdinal);
+    }
+
+    private static void WriteRequiredCurrentReference(
+        OcgForgeI6ECanonicalV1.Writer writer,
+        OcgForgeEncodedCurrentReferenceV1 reference)
+    {
+        writer.Bool(true);
+        WriteCurrentReference(writer, reference);
     }
 
     private static void OptionalCurrentReference(
