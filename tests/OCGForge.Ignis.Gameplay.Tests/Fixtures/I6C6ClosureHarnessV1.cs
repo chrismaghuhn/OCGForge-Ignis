@@ -123,12 +123,14 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         bool isSuccess,
         GameplayErrorCode errorCode,
         I6C6ClosureHarnessBindingV1 binding,
+        I6C6OpponentRuntimeBindingV1 opponentRuntimeBinding,
         IReadOnlyList<byte[]> receivedTcpChunks,
         IReadOnlyList<I6C6LiveGameplayObservationV1> observations)
     {
         IsSuccess = isSuccess;
         ErrorCode = errorCode;
         Binding = binding;
+        OpponentRuntimeBinding = opponentRuntimeBinding;
         ReceivedTcpChunks = receivedTcpChunks
             .Select(chunk => chunk.ToArray())
             .ToArray();
@@ -140,6 +142,8 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
     internal GameplayErrorCode ErrorCode { get; }
 
     internal I6C6ClosureHarnessBindingV1 Binding { get; }
+
+    internal I6C6OpponentRuntimeBindingV1 OpponentRuntimeBinding { get; }
 
     internal IReadOnlyList<byte[]> ReceivedTcpChunks { get; }
 
@@ -157,17 +161,20 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         bool isSuccess,
         GameplayErrorCode errorCode,
         I6C6ClosureHarnessBindingV1 binding,
+        I6C6OpponentRuntimeBindingV1 opponentRuntimeBinding,
         IReadOnlyList<byte[]> receivedTcpChunks,
         IReadOnlyList<I6C6LiveGameplayObservationV1> observations) =>
         new(
             isSuccess,
             errorCode,
             binding,
+            opponentRuntimeBinding,
             receivedTcpChunks,
             observations);
 
     internal static async ValueTask<I6C6LiveGameplayCaptureResultV1> CaptureAsync(
         I6C6ClosureHarnessBindingV1 binding,
+        I6C6OpponentRuntimeBindingV1 opponentRuntimeBinding,
         GameplayHandoffOfferV1 handoff,
         I6C6TcpCaptureTransportV1 captureTransport,
         PerspectiveSafeMatchContextV1 matchContext,
@@ -176,6 +183,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(binding);
+        ArgumentNullException.ThrowIfNull(opponentRuntimeBinding);
         ArgumentNullException.ThrowIfNull(handoff);
         ArgumentNullException.ThrowIfNull(captureTransport);
         ArgumentNullException.ThrowIfNull(matchContext);
@@ -192,6 +200,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         {
             return Failure(
                 binding,
+                opponentRuntimeBinding,
                 acquired.Error,
                 captureTransport,
                 Array.Empty<I6C6LiveGameplayObservationV1>());
@@ -207,6 +216,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         {
             return Failure(
                 binding,
+                opponentRuntimeBinding,
                 first.Error,
                 captureTransport,
                 Array.Empty<I6C6LiveGameplayObservationV1>());
@@ -219,6 +229,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         {
             return Failure(
                 binding,
+                opponentRuntimeBinding,
                 created.Error,
                 captureTransport,
                 Array.Empty<I6C6LiveGameplayObservationV1>());
@@ -236,6 +247,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         {
             return Failure(
                 binding,
+                opponentRuntimeBinding,
                 GameplayErrorCode.InvalidState,
                 captureTransport,
                 Array.Empty<I6C6LiveGameplayObservationV1>());
@@ -254,6 +266,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
             {
                 return Failure(
                     binding,
+                    opponentRuntimeBinding,
                     next.Error,
                     captureTransport,
                     observations);
@@ -265,6 +278,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
             {
                 return Failure(
                     binding,
+                    opponentRuntimeBinding,
                     GameplayErrorCode.InvalidState,
                     captureTransport,
                     observations);
@@ -278,12 +292,14 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
             true,
             GameplayErrorCode.None,
             binding,
+            opponentRuntimeBinding,
             captureTransport.ReceivedChunks,
             observations);
     }
 
     private static I6C6LiveGameplayCaptureResultV1 Failure(
         I6C6ClosureHarnessBindingV1 binding,
+        I6C6OpponentRuntimeBindingV1 opponentRuntimeBinding,
         GameplayErrorCode error,
         I6C6TcpCaptureTransportV1 captureTransport,
         IReadOnlyList<I6C6LiveGameplayObservationV1> observations) =>
@@ -291,6 +307,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
             false,
             error,
             binding,
+            opponentRuntimeBinding,
             captureTransport.ReceivedChunks,
             observations);
 }
@@ -1016,11 +1033,13 @@ internal static class I6C6ClosureHarnessV1
             byte rpsChoice,
             byte turnPreference,
             bool realRunAuthorized,
+            I6C6OpponentRuntimeParticipantLeaseV1 opponentRuntimeParticipant,
             CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(matchContext);
         ArgumentNullException.ThrowIfNull(printedProvider);
+        ArgumentNullException.ThrowIfNull(opponentRuntimeParticipant);
         if (!realRunAuthorized)
         {
             return new(
@@ -1039,6 +1058,16 @@ internal static class I6C6ClosureHarnessV1
         }
 
         I6C6ClosureHarnessBindingV1 binding = bindingResult.Binding;
+        if (!opponentRuntimeParticipant.IsLive ||
+            !opponentRuntimeParticipant.IsForConnection(connection) ||
+            !opponentRuntimeParticipant.Binding.Matches(binding.Scenario))
+        {
+            return new(
+                I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
+                false,
+                false);
+        }
+
         I6C6ExternalRuntimeProcessOwnerV1? processOwner = null;
         try
         {
@@ -1080,6 +1109,7 @@ internal static class I6C6ClosureHarnessV1
             I6C6LiveGameplayCaptureResultV1 capture =
                 await I6C6LiveGameplayCaptureResultV1.CaptureAsync(
                         binding,
+                        opponentRuntimeParticipant.Binding,
                         handoff.Offer,
                         captureTransport,
                         matchContext,
@@ -1087,6 +1117,15 @@ internal static class I6C6ClosureHarnessV1
                         maximumAdditionalMessages,
                         cancellationToken)
                     .ConfigureAwait(false);
+            if (!opponentRuntimeParticipant.IsLive)
+            {
+                return new(
+                    I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
+                    true,
+                    false,
+                    capture);
+            }
+
             return new(
                 capture.IsSuccess
                     ? I6C6ClosureHarnessErrorCodeV1.None

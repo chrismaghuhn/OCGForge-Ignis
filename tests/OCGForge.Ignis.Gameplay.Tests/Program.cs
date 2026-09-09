@@ -330,6 +330,18 @@ var tests = new (string Name, Action Body)[]
     ("I6G I6C6 real-run entry point requires bound inputs",
         I6C6RealRunEntryPointTests.TestMissingInputsFailClosed),
 
+    ("I6G safe evidence ignores TCP chunking",
+        I6C6RealRunEntryPointTests.TestSafeEvidenceDigestExcludesTcpChunking),
+
+    ("I6G safe evidence covers public frame fields",
+        I6C6RealRunEntryPointTests.TestSafeEvidenceDigestCoversPublicFrameFields),
+
+    ("I6G opponent runtime input hash binding",
+        I6C6RealRunEntryPointTests.TestOpponentRuntimeInputHashBinding),
+
+    ("I6G opponent participant requires an owned process",
+        I6C6RealRunEntryPointTests.TestOpponentParticipantLeaseRequiresOwnedProcess),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 

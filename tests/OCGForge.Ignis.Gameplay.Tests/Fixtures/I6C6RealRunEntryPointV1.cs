@@ -1,9 +1,257 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using OCGForge.Ignis.Client;
 using OCGForge.Ignis.Gameplay;
 
 namespace OCGForge.Ignis.Gameplay.Tests.Fixtures;
+
+internal readonly record struct I6C6OpponentRuntimeBindingResultV1(
+    bool IsSuccess,
+    I6C6ClosureHarnessErrorCodeV1 ErrorCode,
+    I6C6OpponentRuntimeBindingV1? Binding);
+
+internal sealed class I6C6OpponentRuntimeBindingV1
+{
+    private I6C6OpponentRuntimeBindingV1(
+        string scenarioId,
+        string actualParticipantDeckPath,
+        string opponentDeckSha256,
+        string participantInputIdentity)
+    {
+        ScenarioId = scenarioId;
+        ActualParticipantDeckPath = actualParticipantDeckPath;
+        OpponentDeckSha256 = opponentDeckSha256;
+        ParticipantInputIdentity = participantInputIdentity;
+    }
+
+    internal string ScenarioId { get; }
+
+    internal string ActualParticipantDeckPath { get; }
+
+    internal string OpponentDeckSha256 { get; }
+
+    internal string ParticipantInputIdentity { get; }
+
+    internal bool Matches(I6C6ClosureScenarioConfigurationV1 scenario) =>
+        string.Equals(ScenarioId, scenario.ScenarioId, StringComparison.Ordinal) &&
+        string.Equals(
+            ActualParticipantDeckPath,
+            scenario.OpponentDeckPath,
+            StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(
+            OpponentDeckSha256,
+            scenario.OpponentDeckSha256,
+            StringComparison.Ordinal) &&
+        ParticipantInputIdentity.Length != 0;
+
+    internal static I6C6OpponentRuntimeBindingResultV1
+        TryCreateFromActualParticipant(
+            I6C6ClosureScenarioConfigurationV1 scenario,
+            string actualParticipantDeckPath,
+            string participantInputIdentity)
+    {
+        if (scenario is null ||
+            string.IsNullOrWhiteSpace(actualParticipantDeckPath) ||
+            string.IsNullOrWhiteSpace(participantInputIdentity) ||
+            !File.Exists(actualParticipantDeckPath) ||
+            !string.Equals(
+                actualParticipantDeckPath,
+                scenario.OpponentDeckPath,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
+                null);
+        }
+
+        string actualHash;
+        try
+        {
+            using FileStream stream = File.OpenRead(actualParticipantDeckPath);
+            actualHash = Convert.ToHexString(SHA256.HashData(stream))
+                .ToLowerInvariant();
+        }
+        catch (IOException)
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
+                null);
+        }
+
+        if (!string.Equals(
+                actualHash,
+                scenario.OpponentDeckSha256,
+                StringComparison.Ordinal))
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
+                null);
+        }
+
+        return new(
+            true,
+            I6C6ClosureHarnessErrorCodeV1.None,
+            new I6C6OpponentRuntimeBindingV1(
+                scenario.ScenarioId,
+                actualParticipantDeckPath,
+                actualHash,
+                participantInputIdentity));
+    }
+}
+
+internal readonly record struct I6C6OpponentRuntimeParticipantLeaseResultV1(
+    bool IsSuccess,
+    I6C6ClosureHarnessErrorCodeV1 ErrorCode,
+    I6C6OpponentRuntimeParticipantLeaseV1? Lease);
+
+internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
+{
+    private readonly Process process;
+
+    private I6C6OpponentRuntimeParticipantLeaseV1(
+        Process process,
+        I6C6OpponentRuntimeBindingV1 binding,
+        int connectionPort)
+    {
+        this.process = process;
+        Binding = binding;
+        ConnectionPort = connectionPort;
+    }
+
+    internal I6C6OpponentRuntimeBindingV1 Binding { get; }
+
+    internal int ConnectionPort { get; }
+
+    internal bool IsLive => !process.HasExited;
+
+    internal bool IsForConnection(ConnectionConfigurationV1 connection) =>
+        connection.Port == ConnectionPort;
+
+    internal static I6C6OpponentRuntimeParticipantLeaseResultV1
+        TryCreateFromOwnedProcess(
+            Process? process,
+            I6C6ClosureScenarioConfigurationV1 scenario,
+            string actualParticipantDeckPath,
+            int connectionPort)
+    {
+        if (process is null || process.HasExited)
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
+                null);
+        }
+
+        if (connectionPort is < 1 or > 65535)
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
+                null);
+        }
+
+        string executablePath;
+        try
+        {
+            executablePath = process.MainModule?.FileName ?? string.Empty;
+        }
+        catch (InvalidOperationException)
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
+                null);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
+                null);
+        }
+
+        if (!string.Equals(
+                Path.GetFileName(executablePath),
+                "WindBot.exe",
+                StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(
+                executablePath,
+                @"C:\ProjectIgnis\WindBot\WindBot.exe",
+                StringComparison.OrdinalIgnoreCase) ||
+            !HasProcessInput(process.StartInfo, actualParticipantDeckPath) ||
+            !HasPortInput(process.StartInfo, connectionPort))
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
+                null);
+        }
+
+        I6C6OpponentRuntimeBindingResultV1 binding =
+            I6C6OpponentRuntimeBindingV1.TryCreateFromActualParticipant(
+                scenario,
+                actualParticipantDeckPath,
+                "windbot.deckfile.v1");
+        if (!binding.IsSuccess || binding.Binding is null)
+        {
+            return new(false, binding.ErrorCode, null);
+        }
+
+        return new(
+            true,
+            I6C6ClosureHarnessErrorCodeV1.None,
+            new I6C6OpponentRuntimeParticipantLeaseV1(
+                process,
+                binding.Binding,
+                connectionPort));
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.CloseMainWindow();
+                process.WaitForExit(2000);
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+        }
+        finally
+        {
+            process.Dispose();
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private static bool HasProcessInput(
+        ProcessStartInfo startInfo,
+        string deckPath)
+    {
+        string quoted = $"DeckFile=\"{deckPath}\"";
+        return startInfo.ArgumentList.Any(argument =>
+                   argument.Contains(deckPath, StringComparison.OrdinalIgnoreCase)) ||
+               startInfo.Arguments.Contains(quoted, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasPortInput(
+        ProcessStartInfo startInfo,
+        int port)
+    {
+        string expected = $"Port={port}";
+        return startInfo.ArgumentList.Any(argument =>
+                   string.Equals(argument, expected, StringComparison.Ordinal)) ||
+               startInfo.Arguments.Contains(expected, StringComparison.Ordinal);
+    }
+}
 
 internal sealed record I6C6RealRunRequestV1(
     I6C6ClosureHarnessConfigurationV1 Configuration,
@@ -14,7 +262,8 @@ internal sealed record I6C6RealRunRequestV1(
     int MaximumAdditionalMessages,
     byte RpsChoice,
     byte TurnPreference,
-    I6C6ClosureEvidenceRequirementsV1 Requirements);
+    I6C6ClosureEvidenceRequirementsV1 Requirements,
+    I6C6OpponentRuntimeParticipantLeaseV1 OpponentRuntimeParticipant);
 
 internal readonly record struct I6C6RealRunEntryPointResultV1(
     bool IsSuccess,
@@ -38,7 +287,8 @@ internal static class I6C6RealRunEntryPointV1
             request.Connection is null ||
             request.MatchContext is null ||
             request.PrintedProvider is null ||
-            request.Requirements is null)
+            request.Requirements is null ||
+            request.OpponentRuntimeParticipant is null)
         {
             return Blocked();
         }
@@ -47,7 +297,18 @@ internal static class I6C6RealRunEntryPointV1
             I6C6ClosureHarnessV1.ValidateConfiguration(
                 request.Configuration,
                 requireLocalArtifacts: true);
+        I6C6ClosureScenarioConfigurationV1? scenario = request.ScenarioKind switch
+        {
+            I6C6ClosureScenarioKindV1.Link => request.Configuration.LinkScenario,
+            I6C6ClosureScenarioKindV1.Counter => request.Configuration.CounterScenario,
+            _ => null
+        };
         if (!validation.IsSuccess ||
+            scenario is null ||
+            !request.OpponentRuntimeParticipant.IsLive ||
+            !request.OpponentRuntimeParticipant.IsForConnection(
+                request.Connection) ||
+            !request.OpponentRuntimeParticipant.Binding.Matches(scenario) ||
             request.MatchContext.PerspectivePlayer > 1 ||
             !IsLoopback(request.Connection.Host) ||
             request.MaximumAdditionalMessages <= 0 ||
@@ -96,6 +357,7 @@ internal static class I6C6RealRunEntryPointV1
                     request.RpsChoice,
                     request.TurnPreference,
                     realRunAuthorized: true,
+                    request.OpponentRuntimeParticipant,
                     cancellationToken)
                 .ConfigureAwait(false);
         if (!execution.GameplayCaptureSucceeded || execution.Capture is null)
@@ -171,17 +433,49 @@ internal static class I6C6RealRunEntryPointV1
 
     private static string CanonicalSafeEvidenceSha256(
         I6C6LiveGameplayCaptureResultV1 capture,
+        I6C6ClosureEvidenceValidationResultV1 evidence) =>
+        CanonicalSafeEvidenceSha256Core(
+            capture.Binding.Scenario.ScenarioId,
+            capture.OpponentRuntimeBinding,
+            capture.Observations,
+            evidence);
+
+    internal static string CanonicalSafeEvidenceSha256ForTest(
+        string scenarioId,
+        I6C6OpponentRuntimeBindingV1 opponentRuntimeBinding,
+        int diagnosticReceivedTcpChunkCount,
+        IReadOnlyList<I6C6LiveGameplayObservationV1> observations,
+        I6C6ClosureEvidenceValidationResultV1 evidence)
+    {
+        _ = diagnosticReceivedTcpChunkCount;
+        return CanonicalSafeEvidenceSha256Core(
+            scenarioId,
+            opponentRuntimeBinding,
+            observations,
+            evidence);
+    }
+
+    private static string CanonicalSafeEvidenceSha256Core(
+        string scenarioId,
+        I6C6OpponentRuntimeBindingV1 opponentRuntimeBinding,
+        IReadOnlyList<I6C6LiveGameplayObservationV1> observations,
         I6C6ClosureEvidenceValidationResultV1 evidence)
     {
         using MemoryStream stream = new();
         using BinaryWriter writer = new(stream, Encoding.UTF8, leaveOpen: true);
         WriteAscii(writer, "OCGFORGE-IGNIS-I6C6-SAFE-RUNTIME-EVIDENCE-V1\0");
-        writer.Write(capture.Binding.Scenario.ScenarioId);
-        writer.Write(capture.Frame!.MatchContext.PerspectivePlayer);
-        writer.Write(capture.ReceivedTcpChunks.Count);
-        writer.Write(capture.Observations.Count);
+        writer.Write(scenarioId);
+        writer.Write(opponentRuntimeBinding.OpponentDeckSha256);
+        writer.Write(opponentRuntimeBinding.ParticipantInputIdentity);
+        if (observations is null || observations.Count == 0)
+        {
+            throw new InvalidDataException("safe evidence needs observations");
+        }
 
-        foreach (I6C6LiveGameplayObservationV1 observation in capture.Observations)
+        writer.Write(observations[0].Frame.MatchContext.PerspectivePlayer);
+        writer.Write(observations.Count);
+
+        foreach (I6C6LiveGameplayObservationV1 observation in observations)
         {
             writer.Write(observation.Ordinal);
             writer.Write((byte)observation.Message.Kind);
@@ -244,12 +538,14 @@ internal static class I6C6RealRunEntryPointV1
         PerspectiveSafeFrameV1 frame)
     {
         PerspectiveSafeGlobalsV1 globals = frame.Globals;
+        writer.Write(globals.DuelFlags);
         writer.Write(globals.LifePoints.Count);
         foreach (uint lifePoints in globals.LifePoints)
         {
             writer.Write(lifePoints);
         }
 
+        WriteOptionalByte(writer, globals.PlayerToAct);
         WriteOptionalByte(writer, globals.TurnPlayer);
         WriteOptionalUInt32(writer, globals.TurnCount);
         WriteOptionalUInt32(writer, globals.Phase);
@@ -274,6 +570,16 @@ internal static class I6C6RealRunEntryPointV1
         {
             writer.Write(entity.Locator);
             writer.Write(entity.IdentityKnown);
+            if (!entity.IdentityKnown &&
+                (entity.Passcode.HasValue ||
+                 entity.Printed is not null ||
+                 entity.Current is not null))
+            {
+                throw new InvalidDataException(
+                    "hidden entity identity crossed the safe evidence boundary");
+            }
+
+            WriteOptionalUInt32(writer, entity.Passcode);
             WriteOptionalByte(writer, entity.Owner);
             WriteOptionalByte(writer, entity.Controller);
             writer.Write((byte)entity.Zone);
@@ -282,6 +588,7 @@ internal static class I6C6RealRunEntryPointV1
             writer.Write((byte)entity.Position);
             writer.Write(entity.FaceUp);
             writer.Write(entity.FaceDown);
+            WriteCurrentProperties(writer, entity.Printed);
             WriteCurrentProperties(writer, entity.Current);
         }
 
@@ -318,6 +625,7 @@ internal static class I6C6RealRunEntryPointV1
             writer.Write((byte)visibleEvent.Kind);
             WriteOptionalByte(writer, visibleEvent.Player);
             WriteOptionalString(writer, visibleEvent.EntityLocator);
+            WriteOptionalUInt32(writer, visibleEvent.PublicPasscode);
             WriteOptionalByte(writer, visibleEvent.FromZone is { }
                 ? (byte)visibleEvent.FromZone.Value
                 : null);
@@ -336,6 +644,32 @@ internal static class I6C6RealRunEntryPointV1
             {
                 writer.Write(target);
             }
+        }
+
+        PerspectiveSafeMatchContextV1 context = frame.MatchContext;
+        writer.Write(context.PerspectivePlayer);
+        writer.Write(context.DuelFlags);
+        writer.Write(context.Knowledge.OwnDecklistKnown);
+        writer.Write(context.Knowledge.OpponentDecklistKnown);
+        WriteDeck(writer, context.OwnDeck);
+        WriteDeck(writer, context.OpponentDeck);
+    }
+
+    private static void WriteDeck(
+        BinaryWriter writer,
+        PerspectiveSafeDeckV1 deck)
+    {
+        writer.Write(deck.Known);
+        writer.Write(deck.MainDeck.Count);
+        foreach (uint passcode in deck.MainDeck)
+        {
+            writer.Write(passcode);
+        }
+
+        writer.Write(deck.ExtraDeck.Count);
+        foreach (uint passcode in deck.ExtraDeck)
+        {
+            writer.Write(passcode);
         }
     }
 
