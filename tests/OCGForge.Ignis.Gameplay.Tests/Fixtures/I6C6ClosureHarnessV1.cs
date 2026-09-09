@@ -56,6 +56,10 @@ internal sealed record I6C6ClosureHarnessConfigurationV1(
     string LoopbackHostPatchParent,
     string LoopbackHostPatchCommit,
     string LoopbackHostPatchsetSha256,
+    string ServerBootstrapPatchParent,
+    string ServerBootstrapPatchCommit,
+    string ServerBootstrapPatchsetSha256,
+    string ServerBootstrapRuntimeExecutableSha256,
     I6C6ClosureScenarioConfigurationV1 LinkScenario,
     I6C6ClosureScenarioConfigurationV1 CounterScenario);
 
@@ -737,6 +741,7 @@ internal sealed class I6C6ExternalRuntimeProcessOwnerV1 : IAsyncDisposable
         startInfo.ArgumentList.Add(configuration.AssetRoot);
         startInfo.ArgumentList.Add("-r");
         startInfo.ArgumentList.Add("-m");
+        startInfo.ArgumentList.Add("-i6c6-server-only");
         return startInfo;
     }
 
@@ -849,13 +854,19 @@ internal static class I6C6ClosureHarnessV1
     private const string ExpectedStartupCompatPatchsetSha256 =
         "83bf958fd115b6f85e4dee744dfc4685d5612d1c9d795480adc01831e7e33b49";
     private const string ExpectedRuntimeExecutableSha256 =
-        "3181aa38af4cef92b018455ef5f091993aace9c27b867401edc8eca53af6e5fb";
+        "ebb959d087ed0dd26a2b891f4db42ff5afc79f73e3aeadce06dac10fb49b504e";
     private const string ExpectedLoopbackHostPatchParent =
         ExpectedRuntimeHead;
     private const string ExpectedLoopbackHostPatchCommit =
         "68a660565650aa2988cf4ad55831bd9ef861931d";
     private const string ExpectedLoopbackHostPatchsetSha256 =
         "aa87d5467290b4ae7a95774e1e8ba2288a5587501991e0a7fcfc20271e102997";
+    private const string ExpectedServerBootstrapPatchParent =
+        ExpectedLoopbackHostPatchCommit;
+    private const string ExpectedServerBootstrapPatchCommit =
+        "690d031c9b882a36ffd1ea167af80d0ef9cf791b";
+    private const string ExpectedServerBootstrapPatchsetSha256 =
+        "7500ad5f75fe31910427343d65672b871e8a7c092f75f121ef57831ce4b0c31f";
     private const string ExpectedDatabaseSha256 =
         "c49a077285e1d999f32056cb65303b75e311e859b4486c48f41772a193069225";
     private const string ExpectedCardscriptsCommit =
@@ -910,6 +921,22 @@ internal static class I6C6ClosureHarnessV1
             !string.Equals(
                 configuration.LoopbackHostPatchsetSha256,
                 ExpectedLoopbackHostPatchsetSha256,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.ServerBootstrapPatchParent,
+                ExpectedServerBootstrapPatchParent,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.ServerBootstrapPatchCommit,
+                ExpectedServerBootstrapPatchCommit,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.ServerBootstrapPatchsetSha256,
+                ExpectedServerBootstrapPatchsetSha256,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.ServerBootstrapRuntimeExecutableSha256,
+                ExpectedRuntimeExecutableSha256,
                 StringComparison.Ordinal) ||
             !string.Equals(
                 configuration.RuntimeExecutableSha256,

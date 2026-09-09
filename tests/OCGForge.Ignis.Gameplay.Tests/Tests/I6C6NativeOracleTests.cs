@@ -12,9 +12,9 @@ internal static class I6C6NativeOracleTests
         I6C6ClosureHarnessConfigurationV1 configuration =
             new(
                 RuntimeExecutablePath:
-                    @"C:\Users\chris\.config\superpowers\worktrees\edopro\i6c6-edopro-local-host-v1\bin\release\ygoprodll.exe",
+                    @"C:\Users\chris\.config\superpowers\worktrees\edopro\i6c6-edopro-server-only-v1\bin\release\ygoprodll.exe",
                 RuntimeExecutableSha256:
-                    "3181aa38af4cef92b018455ef5f091993aace9c27b867401edc8eca53af6e5fb",
+                    "ebb959d087ed0dd26a2b891f4db42ff5afc79f73e3aeadce06dac10fb49b504e",
                 AssetRoot: @"C:\ProjectIgnis",
                 DatabaseSha256:
                     "c49a077285e1d999f32056cb65303b75e311e859b4486c48f41772a193069225",
@@ -36,6 +36,14 @@ internal static class I6C6NativeOracleTests
                     "68a660565650aa2988cf4ad55831bd9ef861931d",
                 LoopbackHostPatchsetSha256:
                     "aa87d5467290b4ae7a95774e1e8ba2288a5587501991e0a7fcfc20271e102997",
+                ServerBootstrapPatchParent:
+                    "68a660565650aa2988cf4ad55831bd9ef861931d",
+                ServerBootstrapPatchCommit:
+                    "690d031c9b882a36ffd1ea167af80d0ef9cf791b",
+                ServerBootstrapPatchsetSha256:
+                    "7500ad5f75fe31910427343d65672b871e8a7c092f75f121ef57831ce4b0c31f",
+                ServerBootstrapRuntimeExecutableSha256:
+                    "ebb959d087ed0dd26a2b891f4db42ff5afc79f73e3aeadce06dac10fb49b504e",
                 LinkScenario: new(
                     "projectignis.tactical-try.cyber-dragon.v1",
                     @"C:\ProjectIgnis\deck\[Tactical-Try Deck] Decisive Strike Cyber Dragon.ydk",
@@ -108,6 +116,33 @@ internal static class I6C6NativeOracleTests
         Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
             wrongLoopbackPatchset.ErrorCode);
 
+        I6C6ClosureHarnessValidationResultV1 wrongBootstrapParent =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { ServerBootstrapPatchParent = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongBootstrapParent.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongBootstrapCommit =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { ServerBootstrapPatchCommit = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongBootstrapCommit.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongBootstrapPatchset =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { ServerBootstrapPatchsetSha256 = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongBootstrapPatchset.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongBootstrapRuntime =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with
+                {
+                    ServerBootstrapRuntimeExecutableSha256 = "wrong"
+                });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongBootstrapRuntime.ErrorCode);
+
         I6C6ClosureHarnessValidationResultV1 forbiddenExecutable =
             I6C6ClosureHarnessV1.ValidateConfiguration(
                 configuration with
@@ -120,7 +155,7 @@ internal static class I6C6NativeOracleTests
         var startInfo = I6C6ExternalRuntimeProcessOwnerV1.CreateStartInfo(
             configuration);
         True(startInfo.ArgumentList.SequenceEqual(
-            new[] { "-C", @"C:\ProjectIgnis", "-r", "-m" },
+            new[] { "-C", @"C:\ProjectIgnis", "-r", "-m", "-i6c6-server-only" },
             StringComparer.Ordinal));
 
         I6C6ClosureHarnessExecutionResultV1 blocked =
