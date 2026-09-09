@@ -420,6 +420,9 @@ var tests = new (string Name, Action Body)[]
     ("I6G real I4 idle prompt boundary binds every candidate",
         I6GRealI4PromptBoundaryTests.TestExistingIdleBoundaryBindsEveryCandidate),
 
+    ("I6G ToEp response uses existing I4 binding",
+        I6GSingleResponseProofTests.TestToEpResponseUsesExistingI4Binding),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 

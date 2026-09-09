@@ -2622,6 +2622,8 @@ internal sealed class I6C6TcpCaptureTransportV1 : IByteTransport
         .Select(chunk => chunk.ToArray())
         .ToArray();
 
+    internal int CtosResponseWriteCount { get; private set; }
+
     public ValueTask ConnectAsync(
         string host,
         int port,
@@ -2649,10 +2651,21 @@ internal sealed class I6C6TcpCaptureTransportV1 : IByteTransport
         return count;
     }
 
-    public ValueTask WriteAsync(
+    public async ValueTask WriteAsync(
         ReadOnlyMemory<byte> source,
-        CancellationToken cancellationToken) =>
-        inner.WriteAsync(source, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        await inner.WriteAsync(source, cancellationToken)
+            .ConfigureAwait(false);
+        FrameReadResult<ValidatedCtosPacket> parsed =
+            PacketPayloadValidator.TryReadValidatedCtos(source.Span);
+        if (parsed.Status == FrameReadStatus.Success &&
+            parsed.Frame is not null &&
+            parsed.Frame.Type == CtosPacketType.Response)
+        {
+            CtosResponseWriteCount = checked(CtosResponseWriteCount + 1);
+        }
+    }
 
     public ValueTask CloseAsync() => inner.CloseAsync();
 
