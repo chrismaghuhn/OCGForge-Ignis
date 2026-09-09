@@ -415,6 +415,53 @@ internal static class I6FTask7MaterializationTests
                     .IsSuccess,
             "out-of-range reference ordinal was accepted");
 
+        OcgForgeEncodedEntityV1 paddedRealEntity = New<OcgForgeEncodedEntityV1>(
+            valid.Entities[0].PublicLocatorOrdinal,
+            true,
+            OcgForgeCardVocabularyV1.PadId,
+            valid.Entities[0].Owner,
+            valid.Entities[0].Controller,
+            valid.Entities[0].ZoneCode,
+            valid.Entities[0].Sequence,
+            valid.Entities[0].OverlaySequence,
+            valid.Entities[0].PositionCode,
+            valid.Entities[0].FaceUp,
+            valid.Entities[0].FaceDown,
+            valid.Entities[0].Printed,
+            valid.Entities[0].Current);
+        OcgForgeEncodedEntityV1[] paddedEntities =
+            source.Encoded.Entities.ToArray();
+        paddedEntities[0] = paddedRealEntity;
+        OcgForgeEncodedModelInputV1 paddedEncoded = New<OcgForgeEncodedModelInputV1>(
+            source.Encoded.SchemaIdValue,
+            source.Encoded.CardVocabularyIdentity,
+            source.Encoded.PublicObservationDigest,
+            source.Encoded.PerspectivePlayer,
+            source.Encoded.DecisionIndex,
+            source.Encoded.PublicLocatorTable,
+            source.Encoded.PublicObservationContextKindCode,
+            source.Encoded.PublicObservationContextPlayer,
+            source.Encoded.ObservationContextReferenceOrdinals,
+            source.Encoded.Globals,
+            source.Encoded.Zones,
+            paddedEntities,
+            source.Encoded.Relationships,
+            source.Encoded.Chain,
+            source.Encoded.VisibleEvents,
+            source.Encoded.MatchContext,
+            source.Encoded.PublicCandidateDomainDigest,
+            source.Encoded.CandidateFeatures,
+            source.Encoded.RoutingKeys);
+        OcgForgeTask7MaterializationSourceSampleResultV1 paddedResult =
+            OcgForgeTask7InputMaterializationV1.TryCreateSourceSample(
+                bundle,
+                source.Logical,
+                paddedEncoded,
+                source.Vocabulary);
+        Require(!paddedResult.IsSuccess && paddedResult.Error?.Code ==
+                    OcgForgeTask7MaterializationErrorCodeV1.CardVocabularyMismatch,
+            "PAD vocabulary ID on a real row was accepted");
+
         OcgForgeTask7MaterializationSourceSampleV1 detachedVocabulary = New<
             OcgForgeTask7MaterializationSourceSampleV1>(
                 source.Logical,
