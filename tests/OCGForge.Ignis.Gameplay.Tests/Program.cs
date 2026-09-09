@@ -366,6 +366,21 @@ var tests = new (string Name, Action Body)[]
     ("I6G invalid MSG_HINT player fails closed",
         I6GMsgHintIngressTests.TestInvalidMsgHintPlayerFailsClosed),
 
+    ("I6G player-zero STOC_TIME_LIMIT continues without mutation",
+        I6GTimeLimitIngressTests.TestPlayerZeroTimeLimitContinuesWithoutMutation),
+
+    ("I6G player-one STOC_TIME_LIMIT continues without mutation",
+        I6GTimeLimitIngressTests.TestPlayerOneTimeLimitContinuesWithoutMutation),
+
+    ("I6G invalid STOC_TIME_LIMIT player fails closed",
+        I6GTimeLimitIngressTests.TestInvalidTimeLimitPlayerFailsClosed),
+
+    ("I6G short STOC_TIME_LIMIT fails closed",
+        I6GTimeLimitIngressTests.TestShortTimeLimitFailsClosed),
+
+    ("I6G overlong STOC_TIME_LIMIT fails closed",
+        I6GTimeLimitIngressTests.TestOverlongTimeLimitFailsClosed),
+
     ("I6G missing MZONE skipped slot is a no-op",
         I6GEmptyFieldSlotMirrorTests.TestMissingMonsterSkippedFieldSlotIsNoOp),
     ("I6G missing SZONE skipped slot is a no-op",

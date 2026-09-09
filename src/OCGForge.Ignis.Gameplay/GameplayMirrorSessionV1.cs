@@ -159,6 +159,25 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
 
                         ValidatedStocPacket packet = parsed.Frame;
                         Consume(parsed.ConsumedBytes);
+                        if (packet.Type == StocPacketType.TimeLimit)
+                        {
+                            if (packet.Payload is not StocTimeLimitPayload timeLimit)
+                            {
+                                return await FailAsync(
+                                        GameplayErrorCode.MalformedOuterFrame)
+                                    .ConfigureAwait(false);
+                            }
+
+                            if (timeLimit.Player > 1)
+                            {
+                                return await FailAsync(
+                                        GameplayErrorCode.InvalidParticipant)
+                                    .ConfigureAwait(false);
+                            }
+
+                            continue;
+                        }
+
                         if (packet.Type != StocPacketType.GameMsg ||
                             packet.Payload is not StocGameMessagePayload gameMessage)
                         {
