@@ -30,7 +30,8 @@ public sealed class OcgForgePublicCandidateV1
     internal OcgForgePublicCandidateV1(
         OcgForgePublicActionDescriptorV1 descriptor,
         byte[] canonicalDescriptorBytes,
-        string publicActionKey)
+        string publicActionKey,
+        bool submitsEngineResponse)
     {
         Descriptor = descriptor ?? throw new ArgumentNullException(nameof(descriptor));
         this.canonicalDescriptorBytes =
@@ -38,6 +39,7 @@ public sealed class OcgForgePublicCandidateV1
             .ToArray();
         PublicActionKey = publicActionKey ??
             throw new ArgumentNullException(nameof(publicActionKey));
+        SubmitsEngineResponse = submitsEngineResponse;
     }
 
     public OcgForgePublicActionDescriptorV1 Descriptor { get; }
@@ -45,6 +47,12 @@ public sealed class OcgForgePublicCandidateV1
     public byte[] CanonicalDescriptorBytes => canonicalDescriptorBytes.ToArray();
 
     public string PublicActionKey { get; }
+
+    /// <summary>
+    /// Accepted I4/I5 transition metadata. It is intentionally excluded from
+    /// the public-action identity descriptor and its canonical key.
+    /// </summary>
+    public bool SubmitsEngineResponse { get; }
 }
 
 public sealed class OcgForgeAcceptedDecisionIndexV1
@@ -385,11 +393,21 @@ public static class OcgForgePublicCandidateBridgeV1
                     $"candidates[{index}].public_action_key");
             }
 
+            if (!TryGetSubmitsEngineResponse(
+                    descriptor!.ContinuationOperation,
+                    out bool submitsEngineResponse))
+            {
+                return Failure(
+                    OcgForgePublicCandidateBridgeErrorCodeV1.UnsupportedCandidate,
+                    $"candidates[{index}].continuation_operation");
+            }
+
             mapped.Add(
                 new OcgForgePublicCandidateV1(
                     descriptor!,
                     identity.CanonicalDescriptorBytes,
-                    identity.PublicActionKey));
+                    identity.PublicActionKey,
+                    submitsEngineResponse));
         }
 
         OcgForgePublicCandidateDomainResultV1 domain =
@@ -1698,4 +1716,30 @@ public static class OcgForgePublicCandidateBridgeV1
         OcgForgePublicCandidateBridgeErrorCodeV1 code,
         string path) =>
         OcgForgePublicDecisionContextResultV1.Failure(code, path);
+
+    // Accepted I4/I5 continuation semantics expose exactly two intermediate
+    // operations. All other admitted operations are atomic or terminal. This
+    // is the complete public transition classification needed by P5; no
+    // private response bytes or continuation instance crosses the boundary.
+    private static bool TryGetSubmitsEngineResponse(
+        string continuationOperation,
+        out bool submitsEngineResponse)
+    {
+        switch (continuationOperation)
+        {
+            case "pick":
+            case "amount":
+                submitsEngineResponse = false;
+                return true;
+            case "":
+            case "finish":
+            case "cancel":
+            case "bypass":
+                submitsEngineResponse = true;
+                return true;
+            default:
+                submitsEngineResponse = false;
+                return false;
+        }
+    }
 }
