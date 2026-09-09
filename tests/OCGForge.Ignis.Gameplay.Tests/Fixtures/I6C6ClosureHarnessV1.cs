@@ -136,6 +136,28 @@ internal enum I6C6CaptureFailureStageV1 : byte
     ReadinessLimit = 7
 }
 
+internal enum I6C6GameplayMessageClassV1 : byte
+{
+    Unknown = 0,
+    ExistingI4Prompt = 1,
+    ExistingI5Prompt = 2,
+    KnownNonPromptGameplayMessage = 3
+}
+
+internal enum I6C6PromptParseResultV1 : byte
+{
+    NotApplicable = 0,
+    Fail = 1,
+    Pass = 2
+}
+
+internal readonly record struct I6C6UnknownGameplayMessageClassificationV1(
+    byte InnerMessageId,
+    I6C6GameplayMessageClassV1 MessageClass,
+    FlatPromptFamilyV1? PromptFamily,
+    byte? PromptPlayer,
+    I6C6PromptParseResultV1 PromptParseResult);
+
 internal readonly record struct I6C6CaptureFailureDiagnosticsV1(
     I6C6CaptureFailureStageV1 Stage,
     ulong? FailureOrdinal,
@@ -143,7 +165,9 @@ internal readonly record struct I6C6CaptureFailureDiagnosticsV1(
     PerspectiveSafeFrameSourceErrorCodeV1? FrameSourceErrorCode,
     PerspectiveSafeSourceSectionV1? FrameSourceErrorSection,
     string? MirrorFailureSite = null,
-    I6C6MirrorFailureInputDiagnosticsV1? MirrorFailureInput = null)
+    I6C6MirrorFailureInputDiagnosticsV1? MirrorFailureInput = null,
+    I6C6UnknownGameplayMessageClassificationV1?
+        UnknownGameplayMessageClassification = null)
 {
     internal static I6C6CaptureFailureDiagnosticsV1 FromFrameSourceFailure(
         I6C6CaptureFailureStageV1 stage,
@@ -215,6 +239,52 @@ internal static class I6C6CapturedGameplayMessageTraceV1
             allowLeadingNonGameplayPackets: false);
     }
 
+    internal static I6C6UnknownGameplayMessageClassificationV1?
+        TryClassifyMessageAtOrdinal(
+            GameplayPerspectiveV1 expectedPerspective,
+            ReadOnlyMemory<byte> pendingBytes,
+            IReadOnlyList<byte[]> receivedChunks,
+            ulong ordinal)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPerspective);
+        ArgumentNullException.ThrowIfNull(receivedChunks);
+
+        int totalLength = pendingBytes.Length;
+        foreach (byte[] chunk in receivedChunks)
+        {
+            ArgumentNullException.ThrowIfNull(chunk);
+            totalLength = checked(totalLength + chunk.Length);
+        }
+
+        byte[] receivedBytes = new byte[totalLength - pendingBytes.Length];
+        int writeOffset = 0;
+        foreach (byte[] chunk in receivedChunks)
+        {
+            chunk.CopyTo(receivedBytes, writeOffset);
+            writeOffset += chunk.Length;
+        }
+
+        I6C6UnknownGameplayMessageClassificationV1? classification =
+            TryClassifyMessage(
+                expectedPerspective,
+                receivedBytes,
+                ordinal,
+                allowLeadingNonGameplayPackets: true);
+        if (classification is not null)
+        {
+            return classification;
+        }
+
+        byte[] bytes = new byte[pendingBytes.Length + receivedBytes.Length];
+        pendingBytes.Span.CopyTo(bytes);
+        receivedBytes.CopyTo(bytes, pendingBytes.Length);
+        return TryClassifyMessage(
+            expectedPerspective,
+            bytes,
+            ordinal,
+            allowLeadingNonGameplayPackets: false);
+    }
+
     private static GameplayMessageV1? TryFindMessage(
         GameplayPerspectiveV1 expectedPerspective,
         byte[] bytes,
@@ -279,6 +349,204 @@ internal static class I6C6CapturedGameplayMessageTraceV1
         }
 
         return null;
+    }
+
+    private static I6C6UnknownGameplayMessageClassificationV1?
+        TryClassifyMessage(
+            GameplayPerspectiveV1 expectedPerspective,
+            byte[] bytes,
+            ulong ordinal,
+            bool allowLeadingNonGameplayPackets)
+    {
+        GameplayMessageDecoderV1 decoder = new();
+        ulong currentOrdinal = 0;
+        int readOffset = 0;
+        bool gameplayStarted = false;
+        while (readOffset < bytes.Length)
+        {
+            FrameReadResult<ValidatedStocPacket> parsed =
+                PacketPayloadValidator.TryReadValidatedStoc(
+                    bytes.AsSpan(readOffset));
+            if (parsed.Status != FrameReadStatus.Success ||
+                parsed.Frame is null ||
+                parsed.ConsumedBytes <= 0)
+            {
+                return null;
+            }
+
+            if (parsed.Frame.Type != StocPacketType.GameMsg)
+            {
+                if (!allowLeadingNonGameplayPackets || gameplayStarted)
+                {
+                    return null;
+                }
+
+                readOffset = checked(readOffset + parsed.ConsumedBytes);
+                continue;
+            }
+
+            if (parsed.Frame.Payload is not StocGameMessagePayload gameMessage)
+            {
+                return null;
+            }
+
+            ReadOnlySpan<byte> innerBytes = gameMessage.Bytes.Span;
+            if (innerBytes.IsEmpty)
+            {
+                return null;
+            }
+
+            GameplayMessageDecodeResult decoded = decoder.Decode(gameMessage);
+            if (currentOrdinal == ordinal)
+            {
+                if (decoded.IsSuccess && decoded.Message is not null)
+                {
+                    if (decoded.Perspective is not null &&
+                        decoded.Perspective.PlayerType !=
+                            expectedPerspective.PlayerType)
+                    {
+                        return null;
+                    }
+
+                    return new(
+                        innerBytes[0],
+                        I6C6GameplayMessageClassV1.KnownNonPromptGameplayMessage,
+                        null,
+                        null,
+                        I6C6PromptParseResultV1.NotApplicable);
+                }
+
+                return ClassifyPrompt(innerBytes);
+            }
+
+            if (!decoded.IsSuccess || decoded.Message is null ||
+                (decoded.Perspective is not null &&
+                 decoded.Perspective.PlayerType !=
+                     expectedPerspective.PlayerType))
+            {
+                return null;
+            }
+
+            gameplayStarted = true;
+            if (currentOrdinal == ulong.MaxValue)
+            {
+                return null;
+            }
+
+            currentOrdinal++;
+            readOffset = checked(readOffset + parsed.ConsumedBytes);
+        }
+
+        return null;
+    }
+
+    private static I6C6UnknownGameplayMessageClassificationV1
+        ClassifyPrompt(ReadOnlySpan<byte> bytes)
+    {
+        byte innerMessageId = bytes[0];
+        if (FlatPromptProjectionV1.TryProject(
+                bytes,
+                out FlatPromptProjectionDraftV1? projected,
+                out _) &&
+            projected is not null)
+        {
+            return new(
+                innerMessageId,
+                I6C6GameplayMessageClassV1.ExistingI4Prompt,
+                projected.Context.PromptFamily,
+                projected.Context.ActingPlayer,
+                I6C6PromptParseResultV1.Pass);
+        }
+
+        if (FlatPromptProjectionV1.TryParseWireDraft(
+                bytes,
+                out FlatPromptWireDraftV1? i4Draft,
+                out _) &&
+            i4Draft is not null)
+        {
+            return new(
+                innerMessageId,
+                I6C6GameplayMessageClassV1.ExistingI4Prompt,
+                i4Draft.Family,
+                TryGetActingPlayer(i4Draft, out byte i4Player)
+                    ? i4Player
+                    : null,
+                I6C6PromptParseResultV1.Pass);
+        }
+
+        if (FlatPromptProjectionV1.TryParseI5WireDraft(
+                bytes,
+                out FlatPromptWireDraftV1? i5Draft,
+                out _) &&
+            i5Draft is not null)
+        {
+            return new(
+                innerMessageId,
+                I6C6GameplayMessageClassV1.ExistingI5Prompt,
+                i5Draft.Family,
+                TryGetActingPlayer(i5Draft, out byte i5Player)
+                    ? i5Player
+                    : null,
+                I6C6PromptParseResultV1.Pass);
+        }
+
+        return new(
+            innerMessageId,
+            I6C6GameplayMessageClassV1.Unknown,
+            null,
+            null,
+            I6C6PromptParseResultV1.Fail);
+    }
+
+    private static bool TryGetActingPlayer(
+        FlatPromptWireDraftV1 draft,
+        out byte actingPlayer)
+    {
+        switch (draft)
+        {
+            case FlatPromptSelectCardWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptSelectTributeWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptSelectUnselectWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptAnnounceNumberWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptPlaceWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptRaceWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptAttributeWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptSelectCounterWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptSortWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptEffectYnWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptChainWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptBattleWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            case FlatPromptIdleWireDraftV1 value:
+                actingPlayer = value.ActingPlayer;
+                return true;
+            default:
+                actingPlayer = 0;
+                return false;
+        }
     }
 }
 
@@ -761,6 +1029,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                 printedProvider);
         PerspectiveSafeFrameSourceResultV1 initialFrame =
             session.TryCreateI6C5Frame();
+        ulong wireOrdinal = 0;
 
         readiness.RecordMessage(first.Message);
         List<I6C6LiveGameplayObservationV1> observations = new();
@@ -800,9 +1069,33 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
 
         for (int index = 0; index < maximumAdditionalMessages; index++)
         {
+            int presentationMessagesBefore =
+                session.PresentationMessagesConsumed;
             GameplayMirrorPumpResult next = await session.PumpAsync(
                     cancellationToken)
                 .ConfigureAwait(false);
+            int presentationMessagesConsumed =
+                session.PresentationMessagesConsumed -
+                presentationMessagesBefore;
+            if (presentationMessagesConsumed < 0)
+            {
+                return Failure(
+                    binding,
+                    opponentRuntimeBinding,
+                    GameplayErrorCode.InvalidState,
+                    captureTransport,
+                    observations,
+                    new(
+                        I6C6CaptureFailureStageV1.SubsequentPump,
+                        null,
+                        null,
+                        null,
+                        null),
+                    readiness.Snapshot());
+            }
+
+            ulong currentWireOrdinal = checked(
+                wireOrdinal + (ulong)presentationMessagesConsumed + 1);
             if (!next.IsSuccess || next.Message is null)
             {
                 if (!frameReady &&
@@ -812,7 +1105,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                     readiness.ActionRequiredBeforeFrameReady = null;
                 }
 
-                ulong failureOrdinal = (ulong)index + 1;
+                ulong failureOrdinal = currentWireOrdinal;
                 GameplayMessageV1? failedMessage =
                     I6C6CapturedGameplayMessageTraceV1.TryFindMessageAtOrdinal(
                         first.Perspective,
@@ -826,6 +1119,15 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                         next.Error,
                         failedMessage,
                         next.Snapshot);
+                I6C6UnknownGameplayMessageClassificationV1?
+                    unknownMessageClassification = failedMessage is null
+                    ? I6C6CapturedGameplayMessageTraceV1
+                        .TryClassifyMessageAtOrdinal(
+                            first.Perspective,
+                            initialPendingBytes,
+                            captureTransport.ReceivedChunks,
+                            failureOrdinal)
+                    : null;
 
                 return Failure(
                     binding,
@@ -840,12 +1142,14 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                         null,
                         null,
                         failureClassification?.Site,
-                        failureClassification?.Input),
+                        failureClassification?.Input,
+                        unknownMessageClassification),
                     readiness.Snapshot());
             }
 
             readiness.RecordMessage(next.Message);
-            ulong ordinal = (ulong)index + 1;
+            wireOrdinal = currentWireOrdinal;
+            ulong ordinal = currentWireOrdinal;
             PerspectiveSafeFrameSourceResultV1 frame =
                 session.TryCreateI6C5Frame();
 

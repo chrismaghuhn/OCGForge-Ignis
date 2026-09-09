@@ -37,6 +37,10 @@ public sealed class GameplayMirrorPumpResult
 
 public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
 {
+    private const byte MsgHint = 2;
+    private const int MsgHintLength = 11;
+    private const int MsgHintPlayerOffset = 2;
+
     private readonly GameplaySessionV1 transportSession;
     private readonly PerspectiveStateMirrorV1 mirror;
     private readonly GameplayMessageDecoderV1 decoder;
@@ -47,6 +51,7 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
         ProtocolContractV1.MaxPacketLength +
         ProtocolContractV1.LengthPrefixSize];
     private int receiveCount;
+    private int presentationMessagesConsumed;
     private int terminal;
 
     public GameplayMirrorSessionV1(
@@ -97,6 +102,9 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
     }
 
     public PerspectiveStateMirrorV1 Mirror => mirror;
+
+    public int PresentationMessagesConsumed =>
+        Volatile.Read(ref presentationMessagesConsumed);
 
     public PerspectiveSafeFrameSourceResultV1 TryCreateI6C5Frame()
     {
@@ -157,6 +165,27 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
                             return await FailAsync(
                                     GameplayErrorCode.UnsupportedOuterPacket)
                                 .ConfigureAwait(false);
+                        }
+
+                        ReadOnlySpan<byte> messageBytes = gameMessage.Bytes.Span;
+                        if (!messageBytes.IsEmpty && messageBytes[0] == MsgHint)
+                        {
+                            if (!IsValidMsgHint(messageBytes))
+                            {
+                                return await FailAsync(
+                                        GameplayErrorCode.MalformedGameMessage)
+                                    .ConfigureAwait(false);
+                            }
+
+                            if (presentationMessagesConsumed == int.MaxValue)
+                            {
+                                return await FailAsync(
+                                        GameplayErrorCode.MalformedGameMessage)
+                                    .ConfigureAwait(false);
+                            }
+
+                            presentationMessagesConsumed++;
+                            continue;
                         }
 
                         GameplayMessageDecodeResult decoded = decoder.Decode(gameMessage);
@@ -280,4 +309,8 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
                 GameplayErrorCode.TruncatedStream,
             _ => GameplayErrorCode.MalformedOuterFrame
         };
+
+    private static bool IsValidMsgHint(ReadOnlySpan<byte> bytes) =>
+        bytes.Length == MsgHintLength &&
+        bytes[MsgHintPlayerOffset] <= 1;
 }

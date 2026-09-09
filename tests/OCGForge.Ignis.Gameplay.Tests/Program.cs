@@ -351,6 +351,18 @@ var tests = new (string Name, Action Body)[]
     ("I6G capture exposes mirror-failure input diagnostics",
         I6C6RealRunEntryPointTests.TestMirrorFailureInputDiagnosticsExposeFields),
 
+    ("I6G unknown gameplay messages use existing prompt parsers",
+        I6C6RealRunEntryPointTests.TestUnknownGameplayMessageClassificationHasParserSeam),
+
+    ("I6G valid MSG_HINT is consumed without mirror mutation",
+        I6GMsgHintIngressTests.TestValidMsgHintIsConsumedWithoutMirrorMutation),
+
+    ("I6G short MSG_HINT fails closed",
+        I6GMsgHintIngressTests.TestShortMsgHintFailsClosed),
+
+    ("I6G overlong MSG_HINT fails closed",
+        I6GMsgHintIngressTests.TestOverlongMsgHintFailsClosed),
+
     ("I6G missing MZONE skipped slot is a no-op",
         I6GEmptyFieldSlotMirrorTests.TestMissingMonsterSkippedFieldSlotIsNoOp),
     ("I6G missing SZONE skipped slot is a no-op",

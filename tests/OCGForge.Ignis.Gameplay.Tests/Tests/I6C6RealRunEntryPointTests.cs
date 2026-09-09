@@ -179,6 +179,19 @@ internal static class I6C6RealRunEntryPointTests
         }
     }
 
+    internal static void TestUnknownGameplayMessageClassificationHasParserSeam()
+    {
+        Type? traceType = typeof(I6C6LiveGameplayCaptureResultV1)
+            .Assembly
+            .GetType(
+                "OCGForge.Ignis.Gameplay.Tests.Fixtures.I6C6CapturedGameplayMessageTraceV1");
+        NotNull(traceType);
+        NotNull(
+            traceType!.GetMethod(
+                "TryClassifyMessageAtOrdinal",
+                BindingFlags.Static | BindingFlags.NonPublic));
+    }
+
     internal static void TestMissingInputsFailClosed()
     {
         I6C6RealRunEntryPointResultV1 result =
