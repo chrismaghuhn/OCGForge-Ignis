@@ -285,6 +285,50 @@ internal static class I6C6CapturedGameplayMessageTraceV1
             allowLeadingNonGameplayPackets: false);
     }
 
+    internal static byte[]? TryFindInnerMessageAtOrdinal(
+        GameplayPerspectiveV1 expectedPerspective,
+        ReadOnlyMemory<byte> pendingBytes,
+        IReadOnlyList<byte[]> receivedChunks,
+        ulong ordinal)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPerspective);
+        ArgumentNullException.ThrowIfNull(receivedChunks);
+
+        int totalLength = pendingBytes.Length;
+        foreach (byte[] chunk in receivedChunks)
+        {
+            ArgumentNullException.ThrowIfNull(chunk);
+            totalLength = checked(totalLength + chunk.Length);
+        }
+
+        byte[] receivedBytes = new byte[totalLength - pendingBytes.Length];
+        int writeOffset = 0;
+        foreach (byte[] chunk in receivedChunks)
+        {
+            chunk.CopyTo(receivedBytes, writeOffset);
+            writeOffset += chunk.Length;
+        }
+
+        byte[]? receivedMessage = TryFindInnerMessage(
+            expectedPerspective,
+            receivedBytes,
+            ordinal,
+            allowLeadingNonGameplayPackets: true);
+        if (receivedMessage is not null)
+        {
+            return receivedMessage;
+        }
+
+        byte[] bytes = new byte[pendingBytes.Length + receivedBytes.Length];
+        pendingBytes.Span.CopyTo(bytes);
+        receivedBytes.CopyTo(bytes, pendingBytes.Length);
+        return TryFindInnerMessage(
+            expectedPerspective,
+            bytes,
+            ordinal,
+            allowLeadingNonGameplayPackets: false);
+    }
+
     private static GameplayMessageV1? TryFindMessage(
         GameplayPerspectiveV1 expectedPerspective,
         byte[] bytes,
@@ -309,6 +353,13 @@ internal static class I6C6CapturedGameplayMessageTraceV1
 
             if (parsed.Frame.Type != StocPacketType.GameMsg)
             {
+                if (gameplayStarted &&
+                    parsed.Frame.Type == StocPacketType.TimeLimit)
+                {
+                    readOffset = checked(readOffset + parsed.ConsumedBytes);
+                    continue;
+                }
+
                 if (!allowLeadingNonGameplayPackets || gameplayStarted)
                 {
                     return null;
@@ -321,6 +372,25 @@ internal static class I6C6CapturedGameplayMessageTraceV1
             if (parsed.Frame.Payload is not StocGameMessagePayload gameMessage)
             {
                 return null;
+            }
+
+            if (gameMessage.Bytes.Span.Length == 11 &&
+                gameMessage.Bytes.Span[0] == 2)
+            {
+                if (!IsValidMsgHint(gameMessage.Bytes.Span))
+                {
+                    return null;
+                }
+
+                gameplayStarted = true;
+                if (currentOrdinal == ulong.MaxValue)
+                {
+                    return null;
+                }
+
+                currentOrdinal++;
+                readOffset = checked(readOffset + parsed.ConsumedBytes);
+                continue;
             }
 
             GameplayMessageDecodeResult decoded = decoder.Decode(gameMessage);
@@ -351,6 +421,94 @@ internal static class I6C6CapturedGameplayMessageTraceV1
         return null;
     }
 
+    private static byte[]? TryFindInnerMessage(
+        GameplayPerspectiveV1 expectedPerspective,
+        byte[] bytes,
+        ulong ordinal,
+        bool allowLeadingNonGameplayPackets)
+    {
+        GameplayMessageDecoderV1 decoder = new();
+        ulong currentOrdinal = 0;
+        int readOffset = 0;
+        bool gameplayStarted = false;
+        while (readOffset < bytes.Length)
+        {
+            FrameReadResult<ValidatedStocPacket> parsed =
+                PacketPayloadValidator.TryReadValidatedStoc(
+                    bytes.AsSpan(readOffset));
+            if (parsed.Status != FrameReadStatus.Success ||
+                parsed.Frame is null ||
+                parsed.ConsumedBytes <= 0)
+            {
+                return null;
+            }
+
+            if (parsed.Frame.Type != StocPacketType.GameMsg)
+            {
+                if (gameplayStarted &&
+                    parsed.Frame.Type == StocPacketType.TimeLimit)
+                {
+                    readOffset = checked(readOffset + parsed.ConsumedBytes);
+                    continue;
+                }
+
+                if (!allowLeadingNonGameplayPackets || gameplayStarted)
+                {
+                    return null;
+                }
+
+                readOffset = checked(readOffset + parsed.ConsumedBytes);
+                continue;
+            }
+
+            if (parsed.Frame.Payload is not StocGameMessagePayload gameMessage ||
+                gameMessage.Bytes.IsEmpty)
+            {
+                return null;
+            }
+
+            ReadOnlySpan<byte> innerBytes = gameMessage.Bytes.Span;
+            if (currentOrdinal == ordinal)
+            {
+                return innerBytes.ToArray();
+            }
+
+            if (innerBytes[0] == 2)
+            {
+                if (!IsValidMsgHint(innerBytes))
+                {
+                    return null;
+                }
+            }
+            else
+            {
+                GameplayMessageDecodeResult decoded = decoder.Decode(gameMessage);
+                if (!decoded.IsSuccess ||
+                    decoded.Message is null ||
+                    (decoded.Perspective is not null &&
+                     decoded.Perspective.PlayerType !=
+                         expectedPerspective.PlayerType))
+                {
+                    return null;
+                }
+            }
+
+            gameplayStarted = true;
+            if (currentOrdinal == ulong.MaxValue)
+            {
+                return null;
+            }
+
+            currentOrdinal++;
+            readOffset = checked(readOffset + parsed.ConsumedBytes);
+        }
+
+        return null;
+    }
+
+    private static bool IsValidMsgHint(ReadOnlySpan<byte> bytes) =>
+        bytes.Length == 11 && bytes[2] <= 1;
+
     private static I6C6UnknownGameplayMessageClassificationV1?
         TryClassifyMessage(
             GameplayPerspectiveV1 expectedPerspective,
@@ -376,6 +534,13 @@ internal static class I6C6CapturedGameplayMessageTraceV1
 
             if (parsed.Frame.Type != StocPacketType.GameMsg)
             {
+                if (gameplayStarted &&
+                    parsed.Frame.Type == StocPacketType.TimeLimit)
+                {
+                    readOffset = checked(readOffset + parsed.ConsumedBytes);
+                    continue;
+                }
+
                 if (!allowLeadingNonGameplayPackets || gameplayStarted)
                 {
                     return null;
@@ -417,6 +582,24 @@ internal static class I6C6CapturedGameplayMessageTraceV1
                 }
 
                 return ClassifyPrompt(innerBytes);
+            }
+
+            if (innerBytes[0] == 2)
+            {
+                if (!IsValidMsgHint(innerBytes))
+                {
+                    return null;
+                }
+
+                gameplayStarted = true;
+                if (currentOrdinal == ulong.MaxValue)
+                {
+                    return null;
+                }
+
+                currentOrdinal++;
+                readOffset = checked(readOffset + parsed.ConsumedBytes);
+                continue;
             }
 
             if (!decoded.IsSuccess || decoded.Message is null ||
@@ -548,6 +731,167 @@ internal static class I6C6CapturedGameplayMessageTraceV1
                 return false;
         }
     }
+}
+
+internal readonly record struct I6GRealI4PromptBoundaryEvidenceV1(
+    bool IsSuccess,
+    FlatPromptErrorCodeV1 Error,
+    byte PromptId,
+    FlatPromptFamilyV1? PromptFamily,
+    byte? ActingPlayer,
+    bool ActingPlayerMatchesPerspective,
+    bool PublicStateProjectionPassed,
+    bool PromptProjectionPassed,
+    int LegalCandidateCount,
+    IReadOnlyList<FlatPromptChoiceKindV1> ChoiceKinds,
+    bool CompleteDomain,
+    bool AllCandidatesResponseBound,
+    bool ToBattlePhasePresent,
+    bool ToEndPhasePresent,
+    bool ShuffleHandPresent);
+
+internal static class I6GRealI4PromptBoundaryV1
+{
+    internal static I6GRealI4PromptBoundaryEvidenceV1 TryEvaluate(
+        GameplayPerspectiveV1 expectedPerspective,
+        ReadOnlyMemory<byte> pendingBytes,
+        IReadOnlyList<byte[]> receivedChunks,
+        ulong ordinal,
+        PerspectiveStateMirrorV1 mirror,
+        ulong duelFlags)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPerspective);
+        ArgumentNullException.ThrowIfNull(receivedChunks);
+        ArgumentNullException.ThrowIfNull(mirror);
+
+        byte[]? promptBytes = I6C6CapturedGameplayMessageTraceV1
+            .TryFindInnerMessageAtOrdinal(
+                expectedPerspective,
+                pendingBytes,
+                receivedChunks,
+                ordinal);
+        if (promptBytes is null || promptBytes.Length == 0)
+        {
+            return Failure(0, FlatPromptErrorCodeV1.MalformedPrompt);
+        }
+
+        byte promptId = promptBytes[0];
+        if (promptId != (byte)FlatPromptFamilyV1.MsgSelectIdleCmd)
+        {
+            return Failure(
+                promptId,
+                FlatPromptErrorCodeV1.UnsupportedPromptLayout);
+        }
+
+        PublicStateProjectionResultV1 publicProjection =
+            PublicStateProjectionV1.TryProject(
+                mirror.Snapshot,
+                new PublicStateProjectionContextV1(duelFlags));
+        if (!publicProjection.IsSuccess || publicProjection.Snapshot is null)
+        {
+            return Failure(
+                promptId,
+                FlatPromptErrorCodeV1.UnprovenPublicReference);
+        }
+
+        FlatPromptSessionV1 session = new();
+        FlatPromptProjectionResultV1 prompt = session.TryAcceptPrompt(
+            promptBytes,
+            mirror,
+            publicProjection);
+        if (!prompt.IsSuccess ||
+            prompt.Context is null ||
+            prompt.Candidates is null)
+        {
+            return Failure(
+                promptId,
+                prompt.Error,
+                publicStateProjectionPassed: true);
+        }
+
+        FlatPromptPublicContextV1 context = prompt.Context;
+        FlatPromptChoiceKindV1[] choiceKinds = prompt.Candidates
+            .Select(candidate => candidate.ChoiceKind)
+            .ToArray();
+        bool actingPlayerMatchesPerspective =
+            context.ActingPlayer == expectedPerspective.PlayerType;
+        if (!actingPlayerMatchesPerspective)
+        {
+            return new(
+                false,
+                FlatPromptErrorCodeV1.InvalidParticipant,
+                promptId,
+                context.PromptFamily,
+                context.ActingPlayer,
+                false,
+                true,
+                true,
+                prompt.Candidates.Count,
+                choiceKinds,
+                true,
+                false,
+                choiceKinds.Contains(FlatPromptChoiceKindV1.ToBp),
+                choiceKinds.Contains(FlatPromptChoiceKindV1.ToEp),
+                choiceKinds.Contains(FlatPromptChoiceKindV1.ShuffleHand));
+        }
+
+        bool allCandidatesResponseBound = true;
+        foreach (FlatPublicCandidateDescriptorV1 candidate in prompt.Candidates)
+        {
+            if (!session.TryCaptureSelection(
+                    candidate.I4LocalCandidateKey,
+                    out FlatPromptSelectionHandleV1? handle,
+                    out _) ||
+                !session.TryResolveSelection(
+                    handle,
+                    out _,
+                    out _))
+            {
+                allCandidatesResponseBound = false;
+                break;
+            }
+        }
+
+        return new(
+            allCandidatesResponseBound,
+            allCandidatesResponseBound
+                ? FlatPromptErrorCodeV1.None
+                : FlatPromptErrorCodeV1.InvalidResponseBinding,
+            promptId,
+            context.PromptFamily,
+            context.ActingPlayer,
+            true,
+            true,
+            true,
+            prompt.Candidates.Count,
+            choiceKinds,
+            true,
+            allCandidatesResponseBound,
+            choiceKinds.Contains(FlatPromptChoiceKindV1.ToBp),
+            choiceKinds.Contains(FlatPromptChoiceKindV1.ToEp),
+            choiceKinds.Contains(FlatPromptChoiceKindV1.ShuffleHand));
+    }
+
+    private static I6GRealI4PromptBoundaryEvidenceV1 Failure(
+        byte promptId,
+        FlatPromptErrorCodeV1 error,
+        bool publicStateProjectionPassed = false) =>
+        new(
+            false,
+            error,
+            promptId,
+            null,
+            null,
+            false,
+            publicStateProjectionPassed,
+            false,
+            0,
+            Array.Empty<FlatPromptChoiceKindV1>(),
+            false,
+            false,
+            false,
+            false,
+            false);
 }
 
 internal readonly record struct I6C6MirrorFailureInputDiagnosticsV1(
@@ -854,13 +1198,15 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         IReadOnlyList<byte[]> receivedTcpChunks,
         IReadOnlyList<I6C6LiveGameplayObservationV1> observations,
         I6C6CaptureFailureDiagnosticsV1? failureDiagnostics,
-        I6C6FrameReadinessDiagnosticsV1 readinessDiagnostics)
+        I6C6FrameReadinessDiagnosticsV1 readinessDiagnostics,
+        I6GRealI4PromptBoundaryEvidenceV1? i4PromptBoundaryEvidence)
     {
         IsSuccess = isSuccess;
         ErrorCode = errorCode;
         Binding = binding;
         OpponentRuntimeBinding = opponentRuntimeBinding;
         FailureDiagnostics = failureDiagnostics;
+        I4PromptBoundaryEvidence = i4PromptBoundaryEvidence;
         ReadinessDiagnostics = readinessDiagnostics ??
             throw new ArgumentNullException(nameof(readinessDiagnostics));
         ReceivedTcpChunks = receivedTcpChunks
@@ -878,6 +1224,9 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
     internal I6C6OpponentRuntimeBindingV1 OpponentRuntimeBinding { get; }
 
     internal I6C6CaptureFailureDiagnosticsV1? FailureDiagnostics { get; }
+
+    internal I6GRealI4PromptBoundaryEvidenceV1?
+        I4PromptBoundaryEvidence { get; }
 
     internal I6C6CaptureFailureStageV1 FailureStage =>
         FailureDiagnostics?.Stage ?? I6C6CaptureFailureStageV1.None;
@@ -915,7 +1264,8 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         IReadOnlyList<byte[]> receivedTcpChunks,
         IReadOnlyList<I6C6LiveGameplayObservationV1> observations,
         I6C6CaptureFailureDiagnosticsV1? failureDiagnostics = null,
-        I6C6FrameReadinessDiagnosticsV1? readinessDiagnostics = null) =>
+        I6C6FrameReadinessDiagnosticsV1? readinessDiagnostics = null,
+        I6GRealI4PromptBoundaryEvidenceV1? i4PromptBoundaryEvidence = null) =>
         new(
             isSuccess,
             errorCode,
@@ -933,7 +1283,8 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                     false,
                     0,
                     Array.Empty<GameplayMessageKindV1>(),
-                    null));
+                    null),
+            i4PromptBoundaryEvidence);
 
     internal static async ValueTask<I6C6LiveGameplayCaptureResultV1> CaptureAsync(
         I6C6ClosureHarnessBindingV1 binding,
@@ -1135,7 +1486,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                     next.Error,
                     captureTransport,
                     observations,
-                    new(
+                new(
                         I6C6CaptureFailureStageV1.SubsequentPump,
                         failureOrdinal,
                         failedMessage?.Kind,
@@ -1144,7 +1495,16 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                         failureClassification?.Site,
                         failureClassification?.Input,
                         unknownMessageClassification),
-                    readiness.Snapshot());
+                    readiness.Snapshot(),
+                    next.Error == GameplayErrorCode.UnknownMessageId
+                        ? I6GRealI4PromptBoundaryV1.TryEvaluate(
+                            first.Perspective,
+                            initialPendingBytes,
+                            captureTransport.ReceivedChunks,
+                            failureOrdinal,
+                            created.Mirror,
+                            matchContext.DuelFlags)
+                        : null);
             }
 
             readiness.RecordMessage(next.Message);
@@ -1252,7 +1612,8 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         I6C6TcpCaptureTransportV1 captureTransport,
         IReadOnlyList<I6C6LiveGameplayObservationV1> observations,
         I6C6CaptureFailureDiagnosticsV1? failureDiagnostics = null,
-        I6C6FrameReadinessDiagnosticsV1? readinessDiagnostics = null) =>
+        I6C6FrameReadinessDiagnosticsV1? readinessDiagnostics = null,
+        I6GRealI4PromptBoundaryEvidenceV1? i4PromptBoundaryEvidence = null) =>
         FromCapture(
             false,
             error,
@@ -1261,7 +1622,8 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
             captureTransport.ReceivedChunks,
             observations,
             failureDiagnostics,
-            readinessDiagnostics);
+            readinessDiagnostics,
+            i4PromptBoundaryEvidence);
 }
 
 internal readonly record struct I6C6LiveGameplayObservationV1(

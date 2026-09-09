@@ -417,6 +417,9 @@ var tests = new (string Name, Action Body)[]
     ("I6G opponent participant arguments are token exact",
         I6C6RealRunEntryPointTests.TestOpponentParticipantArgumentsAreTokenExact),
 
+    ("I6G real I4 idle prompt boundary binds every candidate",
+        I6GRealI4PromptBoundaryTests.TestExistingIdleBoundaryBindsEveryCandidate),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 
