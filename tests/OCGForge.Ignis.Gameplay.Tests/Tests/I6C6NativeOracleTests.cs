@@ -12,9 +12,9 @@ internal static class I6C6NativeOracleTests
         I6C6ClosureHarnessConfigurationV1 configuration =
             new(
                 RuntimeExecutablePath:
-                    @"C:\Users\chris\.config\superpowers\worktrees\edopro\i6c6-edopro-startup-compat-v1\bin\release\ygoprodll.exe",
+                    @"C:\Users\chris\.config\superpowers\worktrees\edopro\i6c6-edopro-local-host-v1\bin\release\ygoprodll.exe",
                 RuntimeExecutableSha256:
-                    "3101a7fd5b49309b9fa19c9d826964e4291547fd6852df96415101d50f132dd0",
+                    "3181aa38af4cef92b018455ef5f091993aace9c27b867401edc8eca53af6e5fb",
                 AssetRoot: @"C:\ProjectIgnis",
                 DatabaseSha256:
                     "c49a077285e1d999f32056cb65303b75e311e859b4486c48f41772a193069225",
@@ -30,6 +30,12 @@ internal static class I6C6NativeOracleTests
                     "d72872347c34e7a7f37ba12b7e8fb20cdac78e0d",
                 StartupCompatPatchsetSha256:
                     "83bf958fd115b6f85e4dee744dfc4685d5612d1c9d795480adc01831e7e33b49",
+                LoopbackHostPatchParent:
+                    "d72872347c34e7a7f37ba12b7e8fb20cdac78e0d",
+                LoopbackHostPatchCommit:
+                    "68a660565650aa2988cf4ad55831bd9ef861931d",
+                LoopbackHostPatchsetSha256:
+                    "aa87d5467290b4ae7a95774e1e8ba2288a5587501991e0a7fcfc20271e102997",
                 LinkScenario: new(
                     "projectignis.tactical-try.cyber-dragon.v1",
                     @"C:\ProjectIgnis\deck\[Tactical-Try Deck] Decisive Strike Cyber Dragon.ydk",
@@ -83,6 +89,24 @@ internal static class I6C6NativeOracleTests
                 configuration with { EdoproRuntimeHead = "wrong" });
         Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
             wrongRuntime.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongLoopbackParent =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { LoopbackHostPatchParent = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongLoopbackParent.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongLoopbackCommit =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { LoopbackHostPatchCommit = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongLoopbackCommit.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongLoopbackPatchset =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { LoopbackHostPatchsetSha256 = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongLoopbackPatchset.ErrorCode);
 
         I6C6ClosureHarnessValidationResultV1 forbiddenExecutable =
             I6C6ClosureHarnessV1.ValidateConfiguration(

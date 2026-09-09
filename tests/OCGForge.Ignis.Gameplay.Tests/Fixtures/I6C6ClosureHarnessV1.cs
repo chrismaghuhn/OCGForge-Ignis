@@ -53,6 +53,9 @@ internal sealed record I6C6ClosureHarnessConfigurationV1(
     string A2PatchsetSha256,
     string StartupCompatPatchCommit,
     string StartupCompatPatchsetSha256,
+    string LoopbackHostPatchParent,
+    string LoopbackHostPatchCommit,
+    string LoopbackHostPatchsetSha256,
     I6C6ClosureScenarioConfigurationV1 LinkScenario,
     I6C6ClosureScenarioConfigurationV1 CounterScenario);
 
@@ -846,7 +849,13 @@ internal static class I6C6ClosureHarnessV1
     private const string ExpectedStartupCompatPatchsetSha256 =
         "83bf958fd115b6f85e4dee744dfc4685d5612d1c9d795480adc01831e7e33b49";
     private const string ExpectedRuntimeExecutableSha256 =
-        "3101a7fd5b49309b9fa19c9d826964e4291547fd6852df96415101d50f132dd0";
+        "3181aa38af4cef92b018455ef5f091993aace9c27b867401edc8eca53af6e5fb";
+    private const string ExpectedLoopbackHostPatchParent =
+        ExpectedRuntimeHead;
+    private const string ExpectedLoopbackHostPatchCommit =
+        "68a660565650aa2988cf4ad55831bd9ef861931d";
+    private const string ExpectedLoopbackHostPatchsetSha256 =
+        "aa87d5467290b4ae7a95774e1e8ba2288a5587501991e0a7fcfc20271e102997";
     private const string ExpectedDatabaseSha256 =
         "c49a077285e1d999f32056cb65303b75e311e859b4486c48f41772a193069225";
     private const string ExpectedCardscriptsCommit =
@@ -889,6 +898,18 @@ internal static class I6C6ClosureHarnessV1
             !string.Equals(
                 configuration.StartupCompatPatchsetSha256,
                 ExpectedStartupCompatPatchsetSha256,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.LoopbackHostPatchParent,
+                ExpectedLoopbackHostPatchParent,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.LoopbackHostPatchCommit,
+                ExpectedLoopbackHostPatchCommit,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.LoopbackHostPatchsetSha256,
+                ExpectedLoopbackHostPatchsetSha256,
                 StringComparison.Ordinal) ||
             !string.Equals(
                 configuration.RuntimeExecutableSha256,
