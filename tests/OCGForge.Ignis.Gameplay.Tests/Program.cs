@@ -363,6 +363,9 @@ var tests = new (string Name, Action Body)[]
     ("I6G overlong MSG_HINT fails closed",
         I6GMsgHintIngressTests.TestOverlongMsgHintFailsClosed),
 
+    ("I6G invalid MSG_HINT player fails closed",
+        I6GMsgHintIngressTests.TestInvalidMsgHintPlayerFailsClosed),
+
     ("I6G missing MZONE skipped slot is a no-op",
         I6GEmptyFieldSlotMirrorTests.TestMissingMonsterSkippedFieldSlotIsNoOp),
     ("I6G missing SZONE skipped slot is a no-op",

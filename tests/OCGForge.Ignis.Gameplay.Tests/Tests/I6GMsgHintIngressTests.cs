@@ -57,6 +57,18 @@ internal static class I6GMsgHintIngressTests
         Equal(0, result.VisibleEventCount);
     }
 
+    internal static void TestInvalidMsgHintPlayerFailsClosed()
+    {
+        SessionRunResult result = Run(
+            Join(new byte[] { 2, 1, 2 }, U64(0x2122232425262728)));
+
+        False(result.Result.IsSuccess);
+        Equal(GameplayErrorCode.MalformedGameMessage, result.Result.Error);
+        Equal(0, result.PresentationMessagesConsumed);
+        Equal(result.BeforeSnapshot, result.AfterSnapshot);
+        Equal(0, result.VisibleEventCount);
+    }
+
     private static SessionRunResult Run(params byte[][] messages)
     {
         byte[] startFrame = WireFrameCodec.EncodeStoc(
