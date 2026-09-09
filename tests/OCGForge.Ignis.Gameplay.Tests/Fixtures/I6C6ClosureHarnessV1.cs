@@ -733,6 +733,47 @@ internal static class I6C6CapturedGameplayMessageTraceV1
     }
 }
 
+internal enum I6GCorrelationFailureClassV1 : byte
+{
+    NormalizationFailure = 0,
+    MirrorAddressNotUnique = 1,
+    MainDeckUnsupported = 2,
+    PileCardCodeUnproven = 3,
+    PublicReferenceNotUnique = 4,
+    PublicReferenceMissing = 5,
+    OtherUnproven = 6
+}
+
+internal enum I6GMirrorCardCodeStateV1 : byte
+{
+    KnownProven = 0,
+    UnknownRedacted = 1,
+    Unproven = 2,
+    NotApplicable = 3
+}
+
+internal readonly record struct I6GRealI4CorrelationFailureV1(
+    FlatPromptSourceSectionV1 Section,
+    int SectionLocalOrdinal,
+    MirrorZoneV1? FailureZone,
+    I6GCorrelationFailureClassV1 FailureClass,
+    int MirrorAddressMatchCount,
+    int? PublicReferenceMatchCount,
+    I6GMirrorCardCodeStateV1 MirrorCardCodeState,
+    bool SourceCardCodePresent,
+    bool? PublicSafeCardCodeMatch);
+
+internal readonly record struct I6GRealI4PromptReferenceDiagnosticsV1(
+    FlatPromptFamilyV1 PromptFamily,
+    byte ActingPlayer,
+    int SummonCount,
+    int SpecialSummonCount,
+    int RepositionCount,
+    int MsetCount,
+    int SsetCount,
+    int ActivateCount,
+    I6GRealI4CorrelationFailureV1? FirstCorrelationFailure);
+
 internal readonly record struct I6GRealI4PromptBoundaryEvidenceV1(
     bool IsSuccess,
     FlatPromptErrorCodeV1 Error,
@@ -748,7 +789,463 @@ internal readonly record struct I6GRealI4PromptBoundaryEvidenceV1(
     bool AllCandidatesResponseBound,
     bool ToBattlePhasePresent,
     bool ToEndPhasePresent,
-    bool ShuffleHandPresent);
+    bool ShuffleHandPresent,
+    I6GRealI4PromptReferenceDiagnosticsV1? ReferenceDiagnostics);
+
+internal static class I6GRealI4PromptReferenceDiagnosticExtractorV1
+{
+    internal static I6GRealI4PromptReferenceDiagnosticsV1 Create(
+        FlatPromptIdleWireDraftV1 prompt,
+        MirrorSnapshotV1 capturedMirror,
+        PublicStateSnapshotV1 acceptedSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(prompt);
+        ArgumentNullException.ThrowIfNull(capturedMirror);
+        ArgumentNullException.ThrowIfNull(acceptedSnapshot);
+
+        I6GRealI4CorrelationFailureV1? firstFailure = null;
+        for (int ordinal = 0; ordinal < prompt.SummonEntries.Count; ordinal++)
+        {
+            FlatPromptIdleCardWireEntryV1 entry = prompt.SummonEntries[ordinal];
+            if (!TryCorrelate(
+                    FlatPromptSourceSectionV1.Summon,
+                    ordinal,
+                    entry.SourceCardCode,
+                    new ModernLocInfoV1(
+                        entry.Controller,
+                        entry.Location,
+                        entry.Sequence,
+                        0),
+                    capturedMirror,
+                    acceptedSnapshot,
+                    ref firstFailure))
+            {
+                return CreateResult(prompt, firstFailure);
+            }
+        }
+
+        for (int ordinal = 0;
+             ordinal < prompt.SpecialSummonEntries.Count;
+             ordinal++)
+        {
+            FlatPromptIdleCardWireEntryV1 entry =
+                prompt.SpecialSummonEntries[ordinal];
+            if (!TryCorrelate(
+                    FlatPromptSourceSectionV1.SpecialSummon,
+                    ordinal,
+                    entry.SourceCardCode,
+                    new ModernLocInfoV1(
+                        entry.Controller,
+                        entry.Location,
+                        entry.Sequence,
+                        0),
+                    capturedMirror,
+                    acceptedSnapshot,
+                    ref firstFailure))
+            {
+                return CreateResult(prompt, firstFailure);
+            }
+        }
+
+        for (int ordinal = 0;
+             ordinal < prompt.RepositionEntries.Count;
+             ordinal++)
+        {
+            FlatPromptIdleRepositionWireEntryV1 entry =
+                prompt.RepositionEntries[ordinal];
+            if (!TryCorrelate(
+                    FlatPromptSourceSectionV1.Reposition,
+                    ordinal,
+                    entry.SourceCardCode,
+                    new ModernLocInfoV1(
+                        entry.Controller,
+                        entry.Location,
+                        entry.Sequence,
+                        0),
+                    capturedMirror,
+                    acceptedSnapshot,
+                    ref firstFailure))
+            {
+                return CreateResult(prompt, firstFailure);
+            }
+        }
+
+        for (int ordinal = 0; ordinal < prompt.MonsterSetEntries.Count; ordinal++)
+        {
+            FlatPromptIdleCardWireEntryV1 entry =
+                prompt.MonsterSetEntries[ordinal];
+            if (!TryCorrelate(
+                    FlatPromptSourceSectionV1.Mset,
+                    ordinal,
+                    entry.SourceCardCode,
+                    new ModernLocInfoV1(
+                        entry.Controller,
+                        entry.Location,
+                        entry.Sequence,
+                        0),
+                    capturedMirror,
+                    acceptedSnapshot,
+                    ref firstFailure))
+            {
+                return CreateResult(prompt, firstFailure);
+            }
+        }
+
+        for (int ordinal = 0;
+             ordinal < prompt.SpellTrapSetEntries.Count;
+             ordinal++)
+        {
+            FlatPromptIdleCardWireEntryV1 entry =
+                prompt.SpellTrapSetEntries[ordinal];
+            if (!TryCorrelate(
+                    FlatPromptSourceSectionV1.Sset,
+                    ordinal,
+                    entry.SourceCardCode,
+                    new ModernLocInfoV1(
+                        entry.Controller,
+                        entry.Location,
+                        entry.Sequence,
+                        0),
+                    capturedMirror,
+                    acceptedSnapshot,
+                    ref firstFailure))
+            {
+                return CreateResult(prompt, firstFailure);
+            }
+        }
+
+        for (int ordinal = 0; ordinal < prompt.ActivatableEntries.Count; ordinal++)
+        {
+            FlatPromptIdleActivatableWireEntryV1 entry =
+                prompt.ActivatableEntries[ordinal];
+            if (!TryCorrelate(
+                    FlatPromptSourceSectionV1.Activate,
+                    ordinal,
+                    entry.SourceCardCode,
+                    new ModernLocInfoV1(
+                        entry.Controller,
+                        entry.Location,
+                        entry.Sequence,
+                        0),
+                    capturedMirror,
+                    acceptedSnapshot,
+                    ref firstFailure))
+            {
+                return CreateResult(prompt, firstFailure);
+            }
+        }
+
+        return CreateResult(prompt, null);
+    }
+
+    private static I6GRealI4PromptReferenceDiagnosticsV1 CreateResult(
+        FlatPromptIdleWireDraftV1 prompt,
+        I6GRealI4CorrelationFailureV1? firstFailure) =>
+        new(
+            FlatPromptFamilyV1.MsgSelectIdleCmd,
+            prompt.ActingPlayer,
+            prompt.SummonEntries.Count,
+            prompt.SpecialSummonEntries.Count,
+            prompt.RepositionEntries.Count,
+            prompt.MonsterSetEntries.Count,
+            prompt.SpellTrapSetEntries.Count,
+            prompt.ActivatableEntries.Count,
+            firstFailure);
+
+    private static bool TryCorrelate(
+        FlatPromptSourceSectionV1 section,
+        int sectionLocalOrdinal,
+        uint sourceCardCode,
+        ModernLocInfoV1 sourceLocation,
+        MirrorSnapshotV1 capturedMirror,
+        PublicStateSnapshotV1 acceptedSnapshot,
+        ref I6GRealI4CorrelationFailureV1? firstFailure)
+    {
+        if (FlatPromptCardCorrelationV1.TryCorrelate(
+                capturedMirror,
+                acceptedSnapshot,
+                sourceCardCode,
+                sourceLocation,
+                out _,
+                out FlatPromptErrorCodeV1 correlationError))
+        {
+            return true;
+        }
+
+        firstFailure ??= DiagnoseFailure(
+            section,
+            sectionLocalOrdinal,
+            sourceCardCode,
+            sourceLocation,
+            capturedMirror,
+            acceptedSnapshot,
+            correlationError);
+        return false;
+    }
+
+    private static I6GRealI4CorrelationFailureV1 DiagnoseFailure(
+        FlatPromptSourceSectionV1 section,
+        int sectionLocalOrdinal,
+        uint sourceCardCode,
+        ModernLocInfoV1 sourceLocation,
+        MirrorSnapshotV1 capturedMirror,
+        PublicStateSnapshotV1 acceptedSnapshot,
+        FlatPromptErrorCodeV1 correlationError)
+    {
+        bool sourceCardCodePresent = sourceCardCode != 0;
+        if (!MirrorAddressNormalizationV1.TryNormalize(
+                sourceLocation,
+                out MirrorAddressNormalizationV1 normalized,
+                out _))
+        {
+            return new(
+                section,
+                sectionLocalOrdinal,
+                null,
+                I6GCorrelationFailureClassV1.NormalizationFailure,
+                0,
+                null,
+                I6GMirrorCardCodeStateV1.NotApplicable,
+                sourceCardCodePresent,
+                null);
+        }
+
+        MirrorCardSnapshotV1[] mirrorMatches = capturedMirror.Cards
+            .Where(card =>
+                card.Zone == normalized.Zone &&
+                card.Sequence == normalized.Sequence &&
+                card.IsOverlay == normalized.IsOverlay &&
+                (!normalized.IsOverlay ||
+                 card.OverlayIndex == normalized.OverlayIndex) &&
+                PublicSemanticLocatorV1.TryGetAbsolutePlayer(
+                    capturedMirror.Perspective,
+                    card.Controller,
+                    out byte absolutePlayer) &&
+                absolutePlayer == normalized.Controller)
+            .ToArray();
+        if (mirrorMatches.Length != 1)
+        {
+            return new(
+                section,
+                sectionLocalOrdinal,
+                normalized.Zone,
+                I6GCorrelationFailureClassV1.MirrorAddressNotUnique,
+                mirrorMatches.Length,
+                null,
+                I6GMirrorCardCodeStateV1.NotApplicable,
+                sourceCardCodePresent,
+                null);
+        }
+
+        MirrorCardSnapshotV1 resolvedCard = mirrorMatches[0];
+        I6GMirrorCardCodeStateV1 cardCodeState =
+            GetCardCodeState(resolvedCard.CardCode);
+        if (normalized.Zone == MirrorZoneV1.MainDeck)
+        {
+            return new(
+                section,
+                sectionLocalOrdinal,
+                normalized.Zone,
+                I6GCorrelationFailureClassV1.MainDeckUnsupported,
+                1,
+                null,
+                cardCodeState,
+                sourceCardCodePresent,
+                null);
+        }
+
+        if (normalized.Zone is MirrorZoneV1.Hand or MirrorZoneV1.ExtraDeck)
+        {
+            if (cardCodeState != I6GMirrorCardCodeStateV1.KnownProven)
+            {
+                return new(
+                    section,
+                    sectionLocalOrdinal,
+                    normalized.Zone,
+                    I6GCorrelationFailureClassV1.PileCardCodeUnproven,
+                    1,
+                    null,
+                    cardCodeState,
+                    sourceCardCodePresent,
+                    null);
+            }
+
+            PublicSemanticZoneV1 publicZone = normalized.Zone == MirrorZoneV1.Hand
+                ? PublicSemanticZoneV1.Hand
+                : PublicSemanticZoneV1.ExtraDeck;
+            PublicCardStateV1[] publicMatches = acceptedSnapshot.Cards
+                .Where(card =>
+                    card.AbsolutePlayer == normalized.Controller &&
+                    card.Zone == publicZone &&
+                    card.CardCode.HasValue &&
+                    card.CardCode.Value == resolvedCard.CardCode.Value)
+                .ToArray();
+            return CreatePublicReferenceFailure(
+                section,
+                sectionLocalOrdinal,
+                normalized.Zone,
+                sourceCardCode,
+                publicMatches,
+                cardCodeState,
+                sourceCardCodePresent);
+        }
+
+        if (normalized.IsOverlay)
+        {
+            if (!PublicSemanticLocatorV1.TryCreateOverlay(
+                    normalized.Controller,
+                    resolvedCard.Sequence,
+                    resolvedCard.OverlayIndex,
+                    out PublicSemanticLocatorV1? expectedLocator) ||
+                expectedLocator is null)
+            {
+                return OtherFailure(
+                    section,
+                    sectionLocalOrdinal,
+                    normalized.Zone,
+                    1,
+                    null,
+                    cardCodeState,
+                    sourceCardCodePresent);
+            }
+
+            PublicCardStateV1[] publicMatches = acceptedSnapshot.Cards
+                .Where(card =>
+                    card.AbsolutePlayer == normalized.Controller &&
+                    card.Zone == PublicSemanticZoneV1.Overlay &&
+                    card.Locator == expectedLocator)
+                .ToArray();
+            return CreatePublicReferenceFailure(
+                section,
+                sectionLocalOrdinal,
+                normalized.Zone,
+                sourceCardCode,
+                publicMatches,
+                cardCodeState,
+                sourceCardCodePresent);
+        }
+
+        PublicCardStateV1[] indexedMatches = acceptedSnapshot.Cards
+            .Where(card =>
+                card.AbsolutePlayer == normalized.Controller &&
+                IsIndexedZoneCompatible(normalized.Zone, card.Zone) &&
+                PublicSemanticLocatorV1.TryCreateIndexed(
+                    normalized.Controller,
+                    card.Zone,
+                    resolvedCard.Sequence,
+                    out PublicSemanticLocatorV1? expectedLocator) &&
+                expectedLocator is not null &&
+                card.Locator == expectedLocator)
+            .ToArray();
+        if (correlationError != FlatPromptErrorCodeV1.UnprovenPublicReference)
+        {
+            return OtherFailure(
+                section,
+                sectionLocalOrdinal,
+                normalized.Zone,
+                1,
+                indexedMatches,
+                cardCodeState,
+                sourceCardCodePresent);
+        }
+
+        return CreatePublicReferenceFailure(
+            section,
+            sectionLocalOrdinal,
+            normalized.Zone,
+            sourceCardCode,
+            indexedMatches,
+            cardCodeState,
+            sourceCardCodePresent);
+    }
+
+    private static I6GRealI4CorrelationFailureV1 CreatePublicReferenceFailure(
+        FlatPromptSourceSectionV1 section,
+        int sectionLocalOrdinal,
+        MirrorZoneV1 zone,
+        uint sourceCardCode,
+        IReadOnlyList<PublicCardStateV1> publicMatches,
+        I6GMirrorCardCodeStateV1 cardCodeState,
+        bool sourceCardCodePresent)
+    {
+        I6GCorrelationFailureClassV1 failureClass = publicMatches.Count switch
+        {
+            0 => I6GCorrelationFailureClassV1.PublicReferenceMissing,
+            1 => I6GCorrelationFailureClassV1.OtherUnproven,
+            _ => I6GCorrelationFailureClassV1.PublicReferenceNotUnique
+        };
+        bool? safeCardCodeMatch = publicMatches.Count == 1 &&
+                                  sourceCardCodePresent
+            ? publicMatches[0].CardCode is uint publicCardCode &&
+              publicCardCode == sourceCardCode
+            : null;
+        return new(
+            section,
+            sectionLocalOrdinal,
+            zone,
+            failureClass,
+            1,
+            publicMatches.Count,
+            cardCodeState,
+            sourceCardCodePresent,
+            safeCardCodeMatch);
+    }
+
+    private static I6GRealI4CorrelationFailureV1 OtherFailure(
+        FlatPromptSourceSectionV1 section,
+        int sectionLocalOrdinal,
+        MirrorZoneV1 zone,
+        int mirrorAddressMatchCount,
+        IReadOnlyList<PublicCardStateV1>? publicMatches,
+        I6GMirrorCardCodeStateV1 cardCodeState,
+        bool sourceCardCodePresent) =>
+        new(
+            section,
+            sectionLocalOrdinal,
+            zone,
+            I6GCorrelationFailureClassV1.OtherUnproven,
+            mirrorAddressMatchCount,
+            publicMatches?.Count,
+            cardCodeState,
+            sourceCardCodePresent,
+            null);
+
+    private static I6GMirrorCardCodeStateV1 GetCardCodeState(
+        MirrorValueV1<uint> value)
+    {
+        if (!value.IsKnown)
+        {
+            return value.Provenance == MirrorProvenanceV1.UnknownRedacted
+                ? I6GMirrorCardCodeStateV1.UnknownRedacted
+                : I6GMirrorCardCodeStateV1.Unproven;
+        }
+
+        return value.Value != 0 &&
+               value.Provenance is
+                   MirrorProvenanceV1.PublicProtocolFact or
+                   MirrorProvenanceV1.PerspectivePrivateFact or
+                   MirrorProvenanceV1.DerivedFromProvenPublicFacts
+            ? I6GMirrorCardCodeStateV1.KnownProven
+            : I6GMirrorCardCodeStateV1.Unproven;
+    }
+
+    private static bool IsIndexedZoneCompatible(
+        MirrorZoneV1 mirrorZone,
+        PublicSemanticZoneV1 publicZone) =>
+        (mirrorZone, publicZone) switch
+        {
+            (MirrorZoneV1.MonsterZone, PublicSemanticZoneV1.MonsterZone) => true,
+            (MirrorZoneV1.Graveyard, PublicSemanticZoneV1.Graveyard) => true,
+            (MirrorZoneV1.Banished, PublicSemanticZoneV1.Banished) => true,
+            (MirrorZoneV1.SpellTrapZone,
+                PublicSemanticZoneV1.SpellTrapZone) => true,
+            (MirrorZoneV1.SpellTrapZone,
+                PublicSemanticZoneV1.FieldZone) => true,
+            (MirrorZoneV1.SpellTrapZone,
+                PublicSemanticZoneV1.PendulumRelevantState) => true,
+            _ => false
+        };
+}
 
 internal static class I6GRealI4PromptBoundaryV1
 {
@@ -794,6 +1291,24 @@ internal static class I6GRealI4PromptBoundaryV1
                 FlatPromptErrorCodeV1.UnprovenPublicReference);
         }
 
+        if (!FlatPromptProjectionV1.TryParseWireDraft(
+                promptBytes,
+                out FlatPromptWireDraftV1? wireDraft,
+                out FlatPromptErrorCodeV1 wireError) ||
+            wireDraft is not FlatPromptIdleWireDraftV1 idleDraft)
+        {
+            return Failure(
+                promptId,
+                wireError,
+                publicStateProjectionPassed: true);
+        }
+
+        I6GRealI4PromptReferenceDiagnosticsV1 referenceDiagnostics =
+            I6GRealI4PromptReferenceDiagnosticExtractorV1.Create(
+                idleDraft,
+                mirror.Snapshot,
+                publicProjection.Snapshot);
+
         FlatPromptSessionV1 session = new();
         FlatPromptProjectionResultV1 prompt = session.TryAcceptPrompt(
             promptBytes,
@@ -806,7 +1321,8 @@ internal static class I6GRealI4PromptBoundaryV1
             return Failure(
                 promptId,
                 prompt.Error,
-                publicStateProjectionPassed: true);
+                publicStateProjectionPassed: true,
+                referenceDiagnostics: referenceDiagnostics);
         }
 
         FlatPromptPublicContextV1 context = prompt.Context;
@@ -832,7 +1348,8 @@ internal static class I6GRealI4PromptBoundaryV1
                 false,
                 choiceKinds.Contains(FlatPromptChoiceKindV1.ToBp),
                 choiceKinds.Contains(FlatPromptChoiceKindV1.ToEp),
-                choiceKinds.Contains(FlatPromptChoiceKindV1.ShuffleHand));
+                choiceKinds.Contains(FlatPromptChoiceKindV1.ShuffleHand),
+                referenceDiagnostics);
         }
 
         bool allCandidatesResponseBound = true;
@@ -869,13 +1386,15 @@ internal static class I6GRealI4PromptBoundaryV1
             allCandidatesResponseBound,
             choiceKinds.Contains(FlatPromptChoiceKindV1.ToBp),
             choiceKinds.Contains(FlatPromptChoiceKindV1.ToEp),
-            choiceKinds.Contains(FlatPromptChoiceKindV1.ShuffleHand));
+            choiceKinds.Contains(FlatPromptChoiceKindV1.ShuffleHand),
+            referenceDiagnostics);
     }
 
     private static I6GRealI4PromptBoundaryEvidenceV1 Failure(
         byte promptId,
         FlatPromptErrorCodeV1 error,
-        bool publicStateProjectionPassed = false) =>
+        bool publicStateProjectionPassed = false,
+        I6GRealI4PromptReferenceDiagnosticsV1? referenceDiagnostics = null) =>
         new(
             false,
             error,
@@ -891,7 +1410,8 @@ internal static class I6GRealI4PromptBoundaryV1
             false,
             false,
             false,
-            false);
+            false,
+            referenceDiagnostics);
 }
 
 internal readonly record struct I6C6MirrorFailureInputDiagnosticsV1(
