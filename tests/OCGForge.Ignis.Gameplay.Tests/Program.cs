@@ -330,6 +330,48 @@ var tests = new (string Name, Action Body)[]
     ("I6G I6C6 real-run entry point requires bound inputs",
         I6C6RealRunEntryPointTests.TestMissingInputsFailClosed),
 
+    ("I6G capture preserves frame-source failure diagnostics",
+        I6C6RealRunEntryPointTests.TestCaptureFailureDiagnosticsExposeSourceError),
+
+    ("I6G capture diagnostics retain frame-source error values",
+        I6C6RealRunEntryPointTests.TestCaptureFailureDiagnosticsRetainFrameSourceError),
+
+    ("I6G capture exposes bounded frame-readiness diagnostics",
+        I6C6RealRunEntryPointTests.TestFrameReadinessDiagnosticsExposeBoundary),
+
+    ("I6G capture can reassemble a failed gameplay message kind",
+        I6C6RealRunEntryPointTests.TestCapturedFailureMessageDiagnosticsHaveReassemblySeam),
+
+    ("I6G capture reassembly decodes typed message kinds",
+        I6C6RealRunEntryPointTests.TestCapturedFailureMessageDiagnosticsDecodeKind),
+
+    ("I6G capture classifies missing update entities",
+        I6C6RealRunEntryPointTests.TestMirrorFailureSiteClassifiesMissingUpdateEntity),
+
+    ("I6G capture exposes mirror-failure input diagnostics",
+        I6C6RealRunEntryPointTests.TestMirrorFailureInputDiagnosticsExposeFields),
+
+    ("I6G missing MZONE skipped slot is a no-op",
+        I6GEmptyFieldSlotMirrorTests.TestMissingMonsterSkippedFieldSlotIsNoOp),
+    ("I6G missing SZONE skipped slot is a no-op",
+        I6GEmptyFieldSlotMirrorTests.TestMissingSpellTrapSkippedFieldSlotIsNoOp),
+    ("I6G existing MZONE skipped slot conflicts",
+        I6GEmptyFieldSlotMirrorTests.TestExistingMonsterSkippedFieldSlotConflicts),
+    ("I6G existing SZONE skipped slot conflicts",
+        I6GEmptyFieldSlotMirrorTests.TestExistingSpellTrapSkippedFieldSlotConflicts),
+    ("I6G missing MZONE non-skipped slot fails closed",
+        I6GEmptyFieldSlotMirrorTests.TestMissingMonsterNonSkippedFieldSlotFailsClosed),
+    ("I6G missing SZONE non-skipped slot fails closed",
+        I6GEmptyFieldSlotMirrorTests.TestMissingSpellTrapNonSkippedFieldSlotFailsClosed),
+    ("I6G missing hand skipped slot fails closed",
+        I6GEmptyFieldSlotMirrorTests.TestMissingHandSkippedFieldSlotFailsClosed),
+    ("I6G missing graveyard skipped slot fails closed",
+        I6GEmptyFieldSlotMirrorTests.TestMissingGraveyardSkippedFieldSlotFailsClosed),
+    ("I6G missing banished skipped slot fails closed",
+        I6GEmptyFieldSlotMirrorTests.TestMissingBanishedSkippedFieldSlotFailsClosed),
+    ("I6G missing main-deck skipped slot fails closed",
+        I6GEmptyFieldSlotMirrorTests.TestMissingMainDeckSkippedFieldSlotFailsClosed),
+
     ("I6G safe evidence ignores TCP chunking",
         I6C6RealRunEntryPointTests.TestSafeEvidenceDigestExcludesTcpChunking),
 

@@ -1323,6 +1323,12 @@ public sealed class PerspectiveStateMirrorV1
             bool bootstrapped = false;
             if (!candidate.Entities.TryGetValue(address, out EntityState? entity))
             {
+                if (query.IsOnFieldSkipped &&
+                    zone is MirrorZoneV1.MonsterZone or MirrorZoneV1.SpellTrapZone)
+                {
+                    continue;
+                }
+
                 if (!bootstrapExtra)
                 {
                     return GameplayErrorCode.UnknownMirrorReference;

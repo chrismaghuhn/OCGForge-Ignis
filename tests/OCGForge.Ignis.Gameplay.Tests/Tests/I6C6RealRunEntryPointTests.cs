@@ -1,13 +1,184 @@
 using System.Diagnostics;
 using System.Reflection;
 using OCGForge.Ignis.Gameplay;
+using OCGForge.Ignis.Protocol;
 using static OCGForge.Ignis.Gameplay.Tests.TestAssert;
 using OCGForge.Ignis.Gameplay.Tests.Fixtures;
+using static OCGForge.Ignis.Gameplay.Tests.GameplayMessageFixtures;
+using static OCGForge.Ignis.Gameplay.Tests.ModernQueryFixtures;
 
 namespace OCGForge.Ignis.Gameplay.Tests;
 
 internal static class I6C6RealRunEntryPointTests
 {
+    internal static void TestCaptureFailureDiagnosticsExposeSourceError()
+    {
+        Type resultType = typeof(I6C6LiveGameplayCaptureResultV1);
+        BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+
+        NotNull(resultType.GetProperty("FailureStage", flags));
+        NotNull(resultType.GetProperty("FailureOrdinal", flags));
+        NotNull(resultType.GetProperty("FailureMessageKind", flags));
+        NotNull(resultType.GetProperty("FrameSourceErrorCode", flags));
+        NotNull(resultType.GetProperty("FrameSourceErrorSection", flags));
+    }
+
+    internal static void TestCaptureFailureDiagnosticsRetainFrameSourceError()
+    {
+        PerspectiveSafeFrameSourceResultV1 sourceFailure =
+            PerspectiveSafeFrameSourceResultV1.Failure(
+                new PerspectiveSafeFrameSourceErrorV1(
+                    PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                    PerspectiveSafeSourceSectionV1.Entities));
+
+        I6C6CaptureFailureDiagnosticsV1 diagnostics =
+            I6C6CaptureFailureDiagnosticsV1.FromFrameSourceFailure(
+                I6C6CaptureFailureStageV1.SubsequentFrame,
+                17,
+                GameplayMessageKindV1.UpdateData,
+                sourceFailure);
+
+        Equal(I6C6CaptureFailureStageV1.SubsequentFrame, diagnostics.Stage);
+        Equal((ulong?)17, diagnostics.FailureOrdinal);
+        Equal(
+            GameplayMessageKindV1.UpdateData,
+            diagnostics.FailureMessageKind);
+        Equal(
+            PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            diagnostics.FrameSourceErrorCode);
+        Equal(
+            PerspectiveSafeSourceSectionV1.Entities,
+            diagnostics.FrameSourceErrorSection);
+    }
+
+    internal static void TestFrameReadinessDiagnosticsExposeBoundary()
+    {
+        Type resultType = typeof(I6C6LiveGameplayCaptureResultV1);
+        BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        PropertyInfo? readinessProperty = resultType.GetProperty(
+            "ReadinessDiagnostics",
+            flags);
+        NotNull(readinessProperty);
+
+        Type readinessType = readinessProperty!.PropertyType;
+        foreach (string propertyName in new[]
+                 {
+                     "InitialFrameError",
+                     "ProvisionalNotReadyCount",
+                     "FirstCompleteFrame",
+                     "FirstCompleteFrameOrdinal",
+                     "FirstCompleteFrameMessageKind",
+                     "ActionRequiredBeforeFrameReady",
+                     "MessagesAppliedBeforeReady",
+                     "AppliedMessageKinds",
+                     "VisibleEventHistoryPreserved"
+                 })
+        {
+            NotNull(readinessType.GetProperty(propertyName, flags));
+        }
+    }
+
+    internal static void TestCapturedFailureMessageDiagnosticsHaveReassemblySeam()
+    {
+        Type? traceType = typeof(I6C6LiveGameplayCaptureResultV1)
+            .Assembly
+            .GetType(
+                "OCGForge.Ignis.Gameplay.Tests.Fixtures.I6C6CapturedGameplayMessageTraceV1");
+        NotNull(traceType);
+        NotNull(
+            traceType!.GetMethod(
+                "TryFindMessageAtOrdinal",
+                BindingFlags.Static | BindingFlags.NonPublic));
+    }
+
+    internal static void TestCapturedFailureMessageDiagnosticsDecodeKind()
+    {
+        byte[] startFrame = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            CreateStartBytes(0));
+        byte[] drawFrame = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            DrawMessage(0, (0x10203040u, 0x05u)));
+
+        GameplayMessageV1? failedMessage =
+            I6C6CapturedGameplayMessageTraceV1.TryFindMessageAtOrdinal(
+                GameplayPerspectiveV1.SelfIsPlayer0,
+                startFrame,
+                new[] { drawFrame },
+                1);
+
+        NotNull(failedMessage);
+        Equal(GameplayMessageKindV1.Draw, failedMessage!.Kind);
+    }
+
+    internal static void TestMirrorFailureSiteClassifiesMissingUpdateEntity()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            MirrorFixtures.CreateMirror(0, deckCount0: 1);
+        GameplayMessageV1 message = DecodeMessage(
+            decoder,
+            UpdateDataMessage(
+                0,
+                0x01,
+                Join(
+                    QueryRecord(QueryFlagV1.Position, U32(0x04)),
+                    QueryEnd())));
+
+        I6C6MirrorFailureClassificationV1? classification =
+            I6C6MirrorFailureSiteV1.TryClassify(
+                GameplayErrorCode.UnknownMirrorReference,
+                message,
+                mirror.Snapshot);
+        NotNull(classification);
+        Equal(
+            "ApplyUpdateData/non-extra-entity-missing",
+            classification!.Value.Site);
+        NotNull(classification.Value.Input);
+        Equal((byte)0, classification.Value.Input!.Value.Player);
+        Equal(MirrorZoneV1.MainDeck, classification.Value.Input.Value.Location);
+        Equal(1, classification.Value.Input.Value.QueryCount);
+        Equal(0, classification.Value.Input.Value.QueryIndex);
+        False(classification.Value.Input.Value.QueryIsOnFieldSkipped);
+        Equal((uint?)1, classification.Value.Input.Value.PreZoneCount);
+        Equal(0, classification.Value.Input.Value.PreRepresentedEntityCount);
+    }
+
+    internal static void TestMirrorFailureInputDiagnosticsExposeFields()
+    {
+        Type diagnosticsType = typeof(I6C6CaptureFailureDiagnosticsV1);
+        PropertyInfo? inputProperty = diagnosticsType.GetProperty(
+            "MirrorFailureInput",
+            BindingFlags.Instance |
+            BindingFlags.Public |
+            BindingFlags.NonPublic);
+        NotNull(inputProperty);
+
+        Type inputType = inputProperty!.PropertyType;
+        if (Nullable.GetUnderlyingType(inputType) is Type underlying)
+        {
+            inputType = underlying;
+        }
+
+        foreach (string propertyName in new[]
+                 {
+                     "Player",
+                     "Location",
+                     "QueryCount",
+                     "QueryIndex",
+                     "QueryIsOnFieldSkipped",
+                     "PreZoneCount",
+                     "PreRepresentedEntityCount"
+                 })
+        {
+            NotNull(
+                inputType.GetProperty(
+                    propertyName,
+                    BindingFlags.Instance |
+                    BindingFlags.Public |
+                    BindingFlags.NonPublic));
+        }
+    }
+
     internal static void TestMissingInputsFailClosed()
     {
         I6C6RealRunEntryPointResultV1 result =

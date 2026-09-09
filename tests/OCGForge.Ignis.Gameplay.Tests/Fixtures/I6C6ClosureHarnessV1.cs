@@ -124,6 +124,458 @@ internal sealed class I6C6ClosureHarnessBindingV1
     }
 }
 
+internal enum I6C6CaptureFailureStageV1 : byte
+{
+    None = 0,
+    HandoffAcquire = 1,
+    InitialPump = 2,
+    MirrorCreate = 3,
+    InitialFrame = 4,
+    SubsequentPump = 5,
+    SubsequentFrame = 6,
+    ReadinessLimit = 7
+}
+
+internal readonly record struct I6C6CaptureFailureDiagnosticsV1(
+    I6C6CaptureFailureStageV1 Stage,
+    ulong? FailureOrdinal,
+    GameplayMessageKindV1? FailureMessageKind,
+    PerspectiveSafeFrameSourceErrorCodeV1? FrameSourceErrorCode,
+    PerspectiveSafeSourceSectionV1? FrameSourceErrorSection,
+    string? MirrorFailureSite = null,
+    I6C6MirrorFailureInputDiagnosticsV1? MirrorFailureInput = null)
+{
+    internal static I6C6CaptureFailureDiagnosticsV1 FromFrameSourceFailure(
+        I6C6CaptureFailureStageV1 stage,
+        ulong failureOrdinal,
+        GameplayMessageKindV1 messageKind,
+        PerspectiveSafeFrameSourceResultV1 result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (result.IsSuccess || result.Error is null)
+        {
+            throw new ArgumentException(
+                "A frame-source failure diagnostic requires a failed result.",
+                nameof(result));
+        }
+
+        PerspectiveSafeFrameSourceErrorV1 error = result.Error.Value;
+        return new(
+            stage,
+            failureOrdinal,
+            messageKind,
+            error.Code,
+            error.Section);
+    }
+}
+
+internal static class I6C6CapturedGameplayMessageTraceV1
+{
+    internal static GameplayMessageV1? TryFindMessageAtOrdinal(
+        GameplayPerspectiveV1 expectedPerspective,
+        ReadOnlyMemory<byte> pendingBytes,
+        IReadOnlyList<byte[]> receivedChunks,
+        ulong ordinal)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPerspective);
+        ArgumentNullException.ThrowIfNull(receivedChunks);
+
+        int totalLength = pendingBytes.Length;
+        foreach (byte[] chunk in receivedChunks)
+        {
+            ArgumentNullException.ThrowIfNull(chunk);
+            totalLength = checked(totalLength + chunk.Length);
+        }
+
+        byte[] receivedBytes = new byte[totalLength - pendingBytes.Length];
+        int writeOffset = 0;
+        foreach (byte[] chunk in receivedChunks)
+        {
+            chunk.CopyTo(receivedBytes, writeOffset);
+            writeOffset += chunk.Length;
+        }
+
+        GameplayMessageV1? receivedMessage = TryFindMessage(
+            expectedPerspective,
+            receivedBytes,
+            ordinal,
+            allowLeadingNonGameplayPackets: true);
+        if (receivedMessage is not null)
+        {
+            return receivedMessage;
+        }
+
+        byte[] bytes = new byte[pendingBytes.Length + receivedBytes.Length];
+        pendingBytes.Span.CopyTo(bytes);
+        receivedBytes.CopyTo(bytes, pendingBytes.Length);
+        return TryFindMessage(
+            expectedPerspective,
+            bytes,
+            ordinal,
+            allowLeadingNonGameplayPackets: false);
+    }
+
+    private static GameplayMessageV1? TryFindMessage(
+        GameplayPerspectiveV1 expectedPerspective,
+        byte[] bytes,
+        ulong ordinal,
+        bool allowLeadingNonGameplayPackets)
+    {
+        GameplayMessageDecoderV1 decoder = new();
+        ulong currentOrdinal = 0;
+        int readOffset = 0;
+        bool gameplayStarted = false;
+        while (readOffset < bytes.Length)
+        {
+            FrameReadResult<ValidatedStocPacket> parsed =
+                PacketPayloadValidator.TryReadValidatedStoc(
+                    bytes.AsSpan(readOffset));
+            if (parsed.Status != FrameReadStatus.Success ||
+                parsed.Frame is null ||
+                parsed.ConsumedBytes <= 0)
+            {
+                return null;
+            }
+
+            if (parsed.Frame.Type != StocPacketType.GameMsg)
+            {
+                if (!allowLeadingNonGameplayPackets || gameplayStarted)
+                {
+                    return null;
+                }
+
+                readOffset = checked(readOffset + parsed.ConsumedBytes);
+                continue;
+            }
+
+            if (parsed.Frame.Payload is not StocGameMessagePayload gameMessage)
+            {
+                return null;
+            }
+
+            GameplayMessageDecodeResult decoded = decoder.Decode(gameMessage);
+            if (!decoded.IsSuccess ||
+                decoded.Message is null ||
+                (decoded.Perspective is not null &&
+                 decoded.Perspective.PlayerType != expectedPerspective.PlayerType))
+            {
+                return null;
+            }
+
+            gameplayStarted = true;
+
+            if (currentOrdinal == ordinal)
+            {
+                return decoded.Message;
+            }
+
+            if (currentOrdinal == ulong.MaxValue)
+            {
+                return null;
+            }
+
+            currentOrdinal++;
+            readOffset = checked(readOffset + parsed.ConsumedBytes);
+        }
+
+        return null;
+    }
+}
+
+internal readonly record struct I6C6MirrorFailureInputDiagnosticsV1(
+    byte Player,
+    MirrorZoneV1 Location,
+    int QueryCount,
+    int QueryIndex,
+    bool QueryIsOnFieldSkipped,
+    uint? PreZoneCount,
+    int PreRepresentedEntityCount);
+
+internal static class I6C6MirrorFailureSiteV1
+{
+    internal static I6C6MirrorFailureClassificationV1? TryClassify(
+        GameplayErrorCode error,
+        GameplayMessageV1 message,
+        MirrorSnapshotV1 snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (error != GameplayErrorCode.UnknownMirrorReference ||
+            message.Kind is not GameplayMessageKindV1.Draw and
+                not GameplayMessageKindV1.UpdateData)
+        {
+            return null;
+        }
+
+        if (message.Kind == GameplayMessageKindV1.UpdateData)
+        {
+            return ClassifyUpdateDataFailure(message, snapshot);
+        }
+
+        if (message.Draw is null || message.Draw.Player > 1)
+        {
+            return null;
+        }
+
+        MirrorParticipantRoleV1 role =
+            message.Draw.Player == snapshot.Perspective.PlayerType
+                ? MirrorParticipantRoleV1.Self
+                : MirrorParticipantRoleV1.Opponent;
+        bool representedMainDeckEntity = snapshot
+            .GetZone(role, MirrorZoneV1.MainDeck)
+            .Cards
+            .Count > 0;
+        return representedMainDeckEntity
+            ? new I6C6MirrorFailureClassificationV1(
+                "ApplyDraw/hidden-main-deck-continuity-guard",
+                null)
+            : null;
+    }
+
+    private static I6C6MirrorFailureClassificationV1? ClassifyUpdateDataFailure(
+        GameplayMessageV1 message,
+        MirrorSnapshotV1 snapshot)
+    {
+        GameplayUpdateDataPayloadV1? payload = message.UpdateData;
+        if (payload is null)
+        {
+            return null;
+        }
+
+        byte baseLocation = (byte)(payload.Location & 0x7f);
+        if (baseLocation == 0x40)
+        {
+            MirrorParticipantRoleV1 role =
+                payload.Player == snapshot.Perspective.PlayerType
+                    ? MirrorParticipantRoleV1.Self
+                    : MirrorParticipantRoleV1.Opponent;
+            MirrorZoneSnapshotV1 extraDeck = snapshot.GetZone(
+                role,
+                MirrorZoneV1.ExtraDeck);
+            uint? preZoneCount = extraDeck.Count.IsKnown
+                ? extraDeck.Count.Value
+                : null;
+
+            if (payload.Queries.Any(query => query.IsOnFieldSkipped))
+            {
+                int index = payload.Queries
+                    .Select((query, queryIndex) => (query, queryIndex))
+                    .First(value => value.query.IsOnFieldSkipped)
+                    .queryIndex;
+                return new I6C6MirrorFailureClassificationV1(
+                    "ApplyUpdateData/extra-bootstrap-skipped-query",
+                    new(
+                        payload.Player,
+                        MirrorZoneV1.ExtraDeck,
+                        payload.Queries.Count,
+                        index,
+                        true,
+                        preZoneCount,
+                        extraDeck.Cards.Count));
+            }
+
+            if (payload.Queries.Any(query => !query.Fields.Any(
+                    field => field.Flag == QueryFlagV1.Position)))
+            {
+                int index = payload.Queries
+                    .Select((query, queryIndex) => (query, queryIndex))
+                    .First(value => !value.query.Fields.Any(
+                        field => field.Flag == QueryFlagV1.Position))
+                    .queryIndex;
+                return new I6C6MirrorFailureClassificationV1(
+                    "ApplyUpdateData/extra-bootstrap-missing-position",
+                    new(
+                        payload.Player,
+                        MirrorZoneV1.ExtraDeck,
+                        payload.Queries.Count,
+                        index,
+                        false,
+                        preZoneCount,
+                        extraDeck.Cards.Count));
+            }
+
+            if (payload.Player == snapshot.Perspective.PlayerType &&
+                extraDeck.Cards.Any(
+                    card => !card.CardCode.IsKnown ||
+                            !card.Position.IsKnown))
+            {
+                int index = payload.Queries
+                    .Select((query, queryIndex) => (query, queryIndex))
+                    .FirstOrDefault(value =>
+                        !value.query.Fields.Any(
+                            field => field.Flag == QueryFlagV1.Position) ||
+                        !value.query.Fields.Any(
+                            field => field.Flag == QueryFlagV1.Code))
+                    .queryIndex;
+                return new I6C6MirrorFailureClassificationV1(
+                    "ApplyUpdateData/extra-self-card-or-position-unproven",
+                    new(
+                        payload.Player,
+                        MirrorZoneV1.ExtraDeck,
+                        payload.Queries.Count,
+                        index,
+                        false,
+                        preZoneCount,
+                        extraDeck.Cards.Count));
+            }
+
+            return null;
+        }
+
+        if (!TryMapZone(baseLocation, out MirrorZoneV1 zone) ||
+            payload.Player > 1)
+        {
+            return null;
+        }
+
+        MirrorParticipantRoleV1 participant =
+            payload.Player == snapshot.Perspective.PlayerType
+                ? MirrorParticipantRoleV1.Self
+                : MirrorParticipantRoleV1.Opponent;
+        MirrorZoneSnapshotV1 zoneSnapshot = snapshot.GetZone(participant, zone);
+        int missingIndex = -1;
+        for (int index = 0; index < payload.Queries.Count; index++)
+        {
+            if (!zoneSnapshot.Cards.Any(card =>
+                    !card.IsOverlay && card.Sequence == (uint)index))
+            {
+                missingIndex = index;
+                break;
+            }
+        }
+
+        if (missingIndex < 0)
+        {
+            return null;
+        }
+
+        uint? preNonExtraZoneCount = zoneSnapshot.Count.IsKnown
+            ? zoneSnapshot.Count.Value
+            : null;
+        return new I6C6MirrorFailureClassificationV1(
+            "ApplyUpdateData/non-extra-entity-missing",
+            new(
+                payload.Player,
+                zone,
+                payload.Queries.Count,
+                missingIndex,
+                payload.Queries[missingIndex].IsOnFieldSkipped,
+                preNonExtraZoneCount,
+                zoneSnapshot.Cards.Count));
+    }
+
+    private static bool TryMapZone(byte location, out MirrorZoneV1 zone)
+    {
+        zone = (byte)(location & 0x7f) switch
+        {
+            0x01 => MirrorZoneV1.MainDeck,
+            0x02 => MirrorZoneV1.Hand,
+            0x04 => MirrorZoneV1.MonsterZone,
+            0x08 => MirrorZoneV1.SpellTrapZone,
+            0x10 => MirrorZoneV1.Graveyard,
+            0x20 => MirrorZoneV1.Banished,
+            0x40 => MirrorZoneV1.ExtraDeck,
+            _ => default
+        };
+        return (location & 0x7f) is 0x01 or 0x02 or 0x04 or 0x08 or
+            0x10 or 0x20 or 0x40;
+    }
+}
+
+internal readonly record struct I6C6MirrorFailureClassificationV1(
+    string Site,
+    I6C6MirrorFailureInputDiagnosticsV1? Input);
+
+internal sealed class I6C6FrameReadinessDiagnosticsV1
+{
+    internal I6C6FrameReadinessDiagnosticsV1(
+        PerspectiveSafeFrameSourceErrorV1? initialFrameError,
+        int provisionalNotReadyCount,
+        ulong? firstCompleteFrameOrdinal,
+        GameplayMessageKindV1? firstCompleteFrameMessageKind,
+        bool? actionRequiredBeforeFrameReady,
+        int messagesAppliedBeforeReady,
+        IReadOnlyList<GameplayMessageKindV1> appliedMessageKinds,
+        bool? visibleEventHistoryPreserved)
+    {
+        InitialFrameError = initialFrameError;
+        ProvisionalNotReadyCount = provisionalNotReadyCount;
+        FirstCompleteFrameOrdinal = firstCompleteFrameOrdinal;
+        FirstCompleteFrameMessageKind = firstCompleteFrameMessageKind;
+        ActionRequiredBeforeFrameReady = actionRequiredBeforeFrameReady;
+        MessagesAppliedBeforeReady = messagesAppliedBeforeReady;
+        AppliedMessageKinds = appliedMessageKinds.ToArray();
+        VisibleEventHistoryPreserved = visibleEventHistoryPreserved;
+    }
+
+    internal PerspectiveSafeFrameSourceErrorV1? InitialFrameError { get; }
+
+    internal int ProvisionalNotReadyCount { get; }
+
+    internal bool FirstCompleteFrame => FirstCompleteFrameOrdinal.HasValue;
+
+    internal ulong? FirstCompleteFrameOrdinal { get; }
+
+    internal GameplayMessageKindV1? FirstCompleteFrameMessageKind { get; }
+
+    internal bool? ActionRequiredBeforeFrameReady { get; }
+
+    internal int MessagesAppliedBeforeReady { get; }
+
+    internal IReadOnlyList<GameplayMessageKindV1> AppliedMessageKinds { get; }
+
+    internal bool? VisibleEventHistoryPreserved { get; }
+}
+
+internal sealed class I6C6FrameReadinessTraceV1
+{
+    private readonly List<GameplayMessageKindV1> appliedMessageKinds = new();
+
+    internal PerspectiveSafeFrameSourceErrorV1? InitialFrameError { get; set; }
+
+    internal int ProvisionalNotReadyCount { get; set; }
+
+    internal ulong? FirstCompleteFrameOrdinal { get; set; }
+
+    internal GameplayMessageKindV1? FirstCompleteFrameMessageKind { get; set; }
+
+    internal bool? ActionRequiredBeforeFrameReady { get; set; } = false;
+
+    internal int MessagesAppliedBeforeReady { get; set; }
+
+    internal bool? VisibleEventHistoryPreserved { get; set; }
+
+    internal IReadOnlyList<GameplayMessageKindV1> AppliedMessageKinds =>
+        appliedMessageKinds;
+
+    internal void RecordMessage(GameplayMessageV1 message) =>
+        appliedMessageKinds.Add(message.Kind);
+
+    internal void MarkReady(
+        ulong ordinal,
+        GameplayMessageKindV1 messageKind,
+        PerspectiveSafeFrameV1 frame,
+        PerspectiveStateMirrorV1 mirror)
+    {
+        FirstCompleteFrameOrdinal = ordinal;
+        FirstCompleteFrameMessageKind = messageKind;
+        MessagesAppliedBeforeReady = appliedMessageKinds.Count - 1;
+        VisibleEventHistoryPreserved =
+            frame.VisibleEvents.SequenceEqual(mirror.VisibleEvents);
+    }
+
+    internal I6C6FrameReadinessDiagnosticsV1 Snapshot() =>
+        new(
+            InitialFrameError,
+            ProvisionalNotReadyCount,
+            FirstCompleteFrameOrdinal,
+            FirstCompleteFrameMessageKind,
+            ActionRequiredBeforeFrameReady,
+            MessagesAppliedBeforeReady,
+            appliedMessageKinds,
+            VisibleEventHistoryPreserved);
+}
+
 internal sealed class I6C6LiveGameplayCaptureResultV1
 {
     private I6C6LiveGameplayCaptureResultV1(
@@ -132,12 +584,17 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         I6C6ClosureHarnessBindingV1 binding,
         I6C6OpponentRuntimeBindingV1 opponentRuntimeBinding,
         IReadOnlyList<byte[]> receivedTcpChunks,
-        IReadOnlyList<I6C6LiveGameplayObservationV1> observations)
+        IReadOnlyList<I6C6LiveGameplayObservationV1> observations,
+        I6C6CaptureFailureDiagnosticsV1? failureDiagnostics,
+        I6C6FrameReadinessDiagnosticsV1 readinessDiagnostics)
     {
         IsSuccess = isSuccess;
         ErrorCode = errorCode;
         Binding = binding;
         OpponentRuntimeBinding = opponentRuntimeBinding;
+        FailureDiagnostics = failureDiagnostics;
+        ReadinessDiagnostics = readinessDiagnostics ??
+            throw new ArgumentNullException(nameof(readinessDiagnostics));
         ReceivedTcpChunks = receivedTcpChunks
             .Select(chunk => chunk.ToArray())
             .ToArray();
@@ -151,6 +608,24 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
     internal I6C6ClosureHarnessBindingV1 Binding { get; }
 
     internal I6C6OpponentRuntimeBindingV1 OpponentRuntimeBinding { get; }
+
+    internal I6C6CaptureFailureDiagnosticsV1? FailureDiagnostics { get; }
+
+    internal I6C6CaptureFailureStageV1 FailureStage =>
+        FailureDiagnostics?.Stage ?? I6C6CaptureFailureStageV1.None;
+
+    internal ulong? FailureOrdinal => FailureDiagnostics?.FailureOrdinal;
+
+    internal GameplayMessageKindV1? FailureMessageKind =>
+        FailureDiagnostics?.FailureMessageKind;
+
+    internal PerspectiveSafeFrameSourceErrorCodeV1? FrameSourceErrorCode =>
+        FailureDiagnostics?.FrameSourceErrorCode;
+
+    internal PerspectiveSafeSourceSectionV1? FrameSourceErrorSection =>
+        FailureDiagnostics?.FrameSourceErrorSection;
+
+    internal I6C6FrameReadinessDiagnosticsV1 ReadinessDiagnostics { get; }
 
     internal IReadOnlyList<byte[]> ReceivedTcpChunks { get; }
 
@@ -170,14 +645,27 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         I6C6ClosureHarnessBindingV1 binding,
         I6C6OpponentRuntimeBindingV1 opponentRuntimeBinding,
         IReadOnlyList<byte[]> receivedTcpChunks,
-        IReadOnlyList<I6C6LiveGameplayObservationV1> observations) =>
+        IReadOnlyList<I6C6LiveGameplayObservationV1> observations,
+        I6C6CaptureFailureDiagnosticsV1? failureDiagnostics = null,
+        I6C6FrameReadinessDiagnosticsV1? readinessDiagnostics = null) =>
         new(
             isSuccess,
             errorCode,
             binding,
             opponentRuntimeBinding,
             receivedTcpChunks,
-            observations);
+            observations,
+            failureDiagnostics,
+            readinessDiagnostics ??
+                new I6C6FrameReadinessDiagnosticsV1(
+                    null,
+                    0,
+                    null,
+                    null,
+                    false,
+                    0,
+                    Array.Empty<GameplayMessageKindV1>(),
+                    null));
 
     internal static async ValueTask<I6C6LiveGameplayCaptureResultV1> CaptureAsync(
         I6C6ClosureHarnessBindingV1 binding,
@@ -201,6 +689,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                 nameof(maximumAdditionalMessages));
         }
 
+        I6C6FrameReadinessTraceV1 readiness = new();
         GameplayHandoffAcquireResult acquired =
             GameplayHandoffConsumerV1.TryCreate(handoff);
         if (!acquired.IsSuccess || acquired.Consumer is null)
@@ -210,7 +699,14 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                 opponentRuntimeBinding,
                 acquired.Error,
                 captureTransport,
-                Array.Empty<I6C6LiveGameplayObservationV1>());
+                Array.Empty<I6C6LiveGameplayObservationV1>(),
+                new(
+                    I6C6CaptureFailureStageV1.HandoffAcquire,
+                    null,
+                    null,
+                    null,
+                    null),
+                readiness.Snapshot());
         }
 
         await using GameplayHandoffConsumerV1 consumer = acquired.Consumer;
@@ -226,7 +722,14 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                 opponentRuntimeBinding,
                 first.Error,
                 captureTransport,
-                Array.Empty<I6C6LiveGameplayObservationV1>());
+                Array.Empty<I6C6LiveGameplayObservationV1>(),
+                new(
+                    I6C6CaptureFailureStageV1.InitialPump,
+                    0,
+                    null,
+                    null,
+                    null),
+                readiness.Snapshot());
         }
 
         MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
@@ -239,9 +742,17 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                 opponentRuntimeBinding,
                 created.Error,
                 captureTransport,
-                Array.Empty<I6C6LiveGameplayObservationV1>());
+                Array.Empty<I6C6LiveGameplayObservationV1>(),
+                new(
+                    I6C6CaptureFailureStageV1.MirrorCreate,
+                    0,
+                    first.Message?.Kind,
+                    null,
+                    null),
+                readiness.Snapshot());
         }
 
+        byte[] initialPendingBytes = first.Session.PendingBytes.ToArray();
         await using GameplayMirrorSessionV1 session =
             new(
                 first.Session,
@@ -250,20 +761,43 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                 printedProvider);
         PerspectiveSafeFrameSourceResultV1 initialFrame =
             session.TryCreateI6C5Frame();
-        if (!initialFrame.IsSuccess || initialFrame.Frame is null)
+
+        readiness.RecordMessage(first.Message);
+        List<I6C6LiveGameplayObservationV1> observations = new();
+        bool frameReady = initialFrame.IsSuccess && initialFrame.Frame is not null;
+        if (frameReady)
         {
-            return Failure(
-                binding,
-                opponentRuntimeBinding,
-                GameplayErrorCode.InvalidState,
-                captureTransport,
-                Array.Empty<I6C6LiveGameplayObservationV1>());
+            readiness.MarkReady(
+                0,
+                first.Message.Kind,
+                initialFrame.Frame!,
+                created.Mirror);
+            observations.Add(new(0, first.Message, initialFrame.Frame!));
+        }
+        else
+        {
+            if (!IsProvisionalFrameReadinessFailure(initialFrame))
+            {
+                return Failure(
+                    binding,
+                    opponentRuntimeBinding,
+                    GameplayErrorCode.InvalidState,
+                    captureTransport,
+                    observations,
+                    I6C6CaptureFailureDiagnosticsV1.FromFrameSourceFailure(
+                        I6C6CaptureFailureStageV1.InitialFrame,
+                        0,
+                        first.Message.Kind,
+                        initialFrame),
+                    readiness.Snapshot());
+            }
+
+            readiness.InitialFrameError = initialFrame.Error;
+            readiness.ProvisionalNotReadyCount = 1;
+            readiness.MessagesAppliedBeforeReady =
+                readiness.AppliedMessageKinds.Count;
         }
 
-        List<I6C6LiveGameplayObservationV1> observations = new()
-        {
-            new(0, first.Message, initialFrame.Frame)
-        };
         for (int index = 0; index < maximumAdditionalMessages; index++)
         {
             GameplayMirrorPumpResult next = await session.PumpAsync(
@@ -271,16 +805,86 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                 .ConfigureAwait(false);
             if (!next.IsSuccess || next.Message is null)
             {
+                if (!frameReady &&
+                    next.Error is GameplayErrorCode.UnsupportedMessage or
+                        GameplayErrorCode.UnknownMessageId)
+                {
+                    readiness.ActionRequiredBeforeFrameReady = null;
+                }
+
+                ulong failureOrdinal = (ulong)index + 1;
+                GameplayMessageV1? failedMessage =
+                    I6C6CapturedGameplayMessageTraceV1.TryFindMessageAtOrdinal(
+                        first.Perspective,
+                        initialPendingBytes,
+                        captureTransport.ReceivedChunks,
+                        failureOrdinal);
+                I6C6MirrorFailureClassificationV1? failureClassification =
+                    failedMessage is null
+                    ? null
+                    : I6C6MirrorFailureSiteV1.TryClassify(
+                        next.Error,
+                        failedMessage,
+                        next.Snapshot);
+
                 return Failure(
                     binding,
                     opponentRuntimeBinding,
                     next.Error,
                     captureTransport,
-                    observations);
+                    observations,
+                    new(
+                        I6C6CaptureFailureStageV1.SubsequentPump,
+                        failureOrdinal,
+                        failedMessage?.Kind,
+                        null,
+                        null,
+                        failureClassification?.Site,
+                        failureClassification?.Input),
+                    readiness.Snapshot());
             }
 
+            readiness.RecordMessage(next.Message);
+            ulong ordinal = (ulong)index + 1;
             PerspectiveSafeFrameSourceResultV1 frame =
                 session.TryCreateI6C5Frame();
+
+            if (!frameReady)
+            {
+                if (frame.IsSuccess && frame.Frame is not null)
+                {
+                    frameReady = true;
+                    readiness.MarkReady(
+                        ordinal,
+                        next.Message.Kind,
+                        frame.Frame,
+                        created.Mirror);
+                    observations.Add(new(ordinal, next.Message, frame.Frame));
+                    continue;
+                }
+
+                if (IsProvisionalFrameReadinessFailure(frame))
+                {
+                    readiness.ProvisionalNotReadyCount++;
+                    readiness.MessagesAppliedBeforeReady =
+                        readiness.AppliedMessageKinds.Count;
+                    continue;
+                }
+
+                return Failure(
+                    binding,
+                    opponentRuntimeBinding,
+                    GameplayErrorCode.InvalidState,
+                    captureTransport,
+                    observations,
+                    I6C6CaptureFailureDiagnosticsV1.FromFrameSourceFailure(
+                        I6C6CaptureFailureStageV1.SubsequentFrame,
+                        ordinal,
+                        next.Message.Kind,
+                        frame),
+                    readiness.Snapshot());
+            }
+
             if (!frame.IsSuccess || frame.Frame is null)
             {
                 return Failure(
@@ -288,11 +892,34 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                     opponentRuntimeBinding,
                     GameplayErrorCode.InvalidState,
                     captureTransport,
-                    observations);
+                    observations,
+                    I6C6CaptureFailureDiagnosticsV1.FromFrameSourceFailure(
+                        I6C6CaptureFailureStageV1.SubsequentFrame,
+                        ordinal,
+                        next.Message.Kind,
+                        frame),
+                    readiness.Snapshot());
             }
 
             observations.Add(
-                new((ulong)index + 1, next.Message, frame.Frame));
+                new(ordinal, next.Message, frame.Frame));
+        }
+
+        if (!frameReady)
+        {
+            return Failure(
+                binding,
+                opponentRuntimeBinding,
+                GameplayErrorCode.InvalidState,
+                captureTransport,
+                observations,
+                new(
+                    I6C6CaptureFailureStageV1.ReadinessLimit,
+                    null,
+                    null,
+                    null,
+                    null),
+                readiness.Snapshot());
         }
 
         return FromCapture(
@@ -301,22 +928,36 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
             binding,
             opponentRuntimeBinding,
             captureTransport.ReceivedChunks,
-            observations);
+            observations,
+            readinessDiagnostics: readiness.Snapshot());
     }
+
+    private static bool IsProvisionalFrameReadinessFailure(
+        PerspectiveSafeFrameSourceResultV1 result) =>
+        !result.IsSuccess &&
+        result.Error is
+        {
+            Code: PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            Section: PerspectiveSafeSourceSectionV1.Entities
+        };
 
     private static I6C6LiveGameplayCaptureResultV1 Failure(
         I6C6ClosureHarnessBindingV1 binding,
         I6C6OpponentRuntimeBindingV1 opponentRuntimeBinding,
         GameplayErrorCode error,
         I6C6TcpCaptureTransportV1 captureTransport,
-        IReadOnlyList<I6C6LiveGameplayObservationV1> observations) =>
+        IReadOnlyList<I6C6LiveGameplayObservationV1> observations,
+        I6C6CaptureFailureDiagnosticsV1? failureDiagnostics = null,
+        I6C6FrameReadinessDiagnosticsV1? readinessDiagnostics = null) =>
         FromCapture(
             false,
             error,
             binding,
             opponentRuntimeBinding,
             captureTransport.ReceivedChunks,
-            observations);
+            observations,
+            failureDiagnostics,
+            readinessDiagnostics);
 }
 
 internal readonly record struct I6C6LiveGameplayObservationV1(
