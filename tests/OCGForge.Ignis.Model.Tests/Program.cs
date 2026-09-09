@@ -7,7 +7,8 @@ var tests = new (string Name, Action Body)[]
     ("I6B manifest mismatch rejection matrix", I6BBundlePreflightTests.TestManifestMismatchMatrix),
     ("I6B failure atomicity and immutability", I6BBundlePreflightTests.TestFailureAtomicityAndImmutability),
     ("I6D public candidate action-key bridge", I6DPublicCandidateKeyTests.TestPublicCandidateActionKeyBridge),
-    ("I6E logical encoded vocabulary bridge", I6EModelInputTests.TestLogicalEncodedVocabularyBridge)
+    ("I6E logical encoded vocabulary bridge", I6EModelInputTests.TestLogicalEncodedVocabularyBridge),
+    ("I6F Task7 exact materialization bridge", I6FTask7MaterializationTests.TestTask7MaterializationBridge)
 };
 
 int passed = 0;
