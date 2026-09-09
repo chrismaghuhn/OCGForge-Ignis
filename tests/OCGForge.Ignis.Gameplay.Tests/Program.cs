@@ -342,6 +342,9 @@ var tests = new (string Name, Action Body)[]
     ("I6G opponent participant requires an owned process",
         I6C6RealRunEntryPointTests.TestOpponentParticipantLeaseRequiresOwnedProcess),
 
+    ("I6G opponent participant arguments are token exact",
+        I6C6RealRunEntryPointTests.TestOpponentParticipantArgumentsAreTokenExact),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 

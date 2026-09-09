@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using OCGForge.Ignis.Gameplay;
 using static OCGForge.Ignis.Gameplay.Tests.TestAssert;
@@ -178,6 +179,70 @@ internal static class I6C6RealRunEntryPointTests
             I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
             result.ErrorCode);
         Null(result.Lease);
+    }
+
+    internal static void TestOpponentParticipantArgumentsAreTokenExact()
+    {
+        const string expectedDeck =
+            @"C:\ProjectIgnis\WindBot\Decks\AI_CyberDragon.ydk";
+
+        ProcessStartInfo validArgumentList = new()
+        {
+            FileName = "WindBot.exe"
+        };
+        validArgumentList.ArgumentList.Add($"DeckFile=\"{expectedDeck}\"");
+        validArgumentList.ArgumentList.Add("Port=7911");
+        True(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasProcessInputForTest(
+                validArgumentList,
+                expectedDeck));
+        True(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasPortInputForTest(
+                validArgumentList,
+                7911));
+
+        ProcessStartInfo invalidArgumentList = new()
+        {
+            FileName = "WindBot.exe"
+        };
+        invalidArgumentList.ArgumentList.Add($"DeckFile=\"{expectedDeck}.bak\"");
+        invalidArgumentList.ArgumentList.Add("Port=79110");
+        False(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasProcessInputForTest(
+                invalidArgumentList,
+                expectedDeck));
+        False(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasPortInputForTest(
+                invalidArgumentList,
+                7911));
+
+        ProcessStartInfo validRawArguments = new()
+        {
+            FileName = "WindBot.exe",
+            Arguments = $"DeckFile=\"{expectedDeck}\" Port=7911"
+        };
+        True(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasProcessInputForTest(
+                validRawArguments,
+                expectedDeck));
+        True(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasPortInputForTest(
+                validRawArguments,
+                7911));
+
+        ProcessStartInfo invalidRawArguments = new()
+        {
+            FileName = "WindBot.exe",
+            Arguments = $"DeckFile=\"{expectedDeck}.bak\" Port=79110"
+        };
+        False(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasProcessInputForTest(
+                invalidRawArguments,
+                expectedDeck));
+        False(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasPortInputForTest(
+                invalidRawArguments,
+                7911));
     }
 
     private static I6C6ClosureScenarioConfigurationV1 CounterScenario() =>

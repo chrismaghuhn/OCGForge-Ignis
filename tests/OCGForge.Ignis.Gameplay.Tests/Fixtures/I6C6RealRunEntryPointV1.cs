@@ -232,24 +232,181 @@ internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
+    internal static bool HasProcessInputForTest(
+        ProcessStartInfo startInfo,
+        string deckPath) =>
+        HasProcessInput(startInfo, deckPath);
+
+    internal static bool HasPortInputForTest(
+        ProcessStartInfo startInfo,
+        int port) =>
+        HasPortInput(startInfo, port);
+
     private static bool HasProcessInput(
         ProcessStartInfo startInfo,
         string deckPath)
     {
-        string quoted = $"DeckFile=\"{deckPath}\"";
-        return startInfo.ArgumentList.Any(argument =>
-                   argument.Contains(deckPath, StringComparison.OrdinalIgnoreCase)) ||
-               startInfo.Arguments.Contains(quoted, StringComparison.OrdinalIgnoreCase);
+        if (startInfo is null || string.IsNullOrWhiteSpace(deckPath))
+        {
+            return false;
+        }
+
+        string expectedDeckPath = NormalizeDeckPath(deckPath);
+        return GetEffectiveArgumentTokens(startInfo).Any(argument =>
+            TryReadExactAssignment(argument, "DeckFile", out string actualDeckPath) &&
+            string.Equals(
+                NormalizeDeckPath(actualDeckPath),
+                expectedDeckPath,
+                StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool HasPortInput(
         ProcessStartInfo startInfo,
         int port)
     {
+        if (startInfo is null || port is < 1 or > 65535)
+        {
+            return false;
+        }
+
         string expected = $"Port={port}";
-        return startInfo.ArgumentList.Any(argument =>
-                   string.Equals(argument, expected, StringComparison.Ordinal)) ||
-               startInfo.Arguments.Contains(expected, StringComparison.Ordinal);
+        return GetEffectiveArgumentTokens(startInfo).Any(argument =>
+            string.Equals(argument, expected, StringComparison.Ordinal));
+    }
+
+    private static IEnumerable<string> GetEffectiveArgumentTokens(
+        ProcessStartInfo startInfo)
+    {
+        if (startInfo.ArgumentList.Count != 0)
+        {
+            if (!string.IsNullOrWhiteSpace(startInfo.Arguments))
+            {
+                yield break;
+            }
+
+            foreach (string argument in startInfo.ArgumentList)
+            {
+                yield return argument;
+            }
+
+            yield break;
+        }
+
+        foreach (string argument in TokenizeRawArguments(startInfo.Arguments))
+        {
+            yield return argument;
+        }
+    }
+
+    private static bool TryReadExactAssignment(
+        string argument,
+        string key,
+        out string value)
+    {
+        value = string.Empty;
+        string prefix = key + "=";
+        if (string.IsNullOrEmpty(argument) ||
+            !argument.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string rawValue = argument[prefix.Length..];
+        if (rawValue.Length == 0)
+        {
+            return false;
+        }
+
+        if (rawValue[0] == '"')
+        {
+            if (rawValue.Length < 2 || rawValue[^1] != '"')
+            {
+                return false;
+            }
+
+            rawValue = rawValue[1..^1];
+            if (rawValue.Contains('"', StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+        else if (rawValue.Contains('"', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (rawValue.Length == 0)
+        {
+            return false;
+        }
+
+        value = rawValue;
+        return true;
+    }
+
+    private static string NormalizeDeckPath(string path)
+    {
+        string normalized = path;
+        if (normalized.Length >= 2 &&
+            normalized[0] == '"' &&
+            normalized[^1] == '"')
+        {
+            normalized = normalized[1..^1];
+        }
+
+        return normalized
+            .Replace('/', '\\')
+            .TrimEnd('\\');
+    }
+
+    private static IReadOnlyList<string> TokenizeRawArguments(string arguments)
+    {
+        if (string.IsNullOrWhiteSpace(arguments))
+        {
+            return Array.Empty<string>();
+        }
+
+        List<string> tokens = new();
+        StringBuilder token = new();
+        bool inQuotes = false;
+        bool tokenStarted = false;
+
+        foreach (char character in arguments)
+        {
+            if (character == '"')
+            {
+                inQuotes = !inQuotes;
+                tokenStarted = true;
+                continue;
+            }
+
+            if (char.IsWhiteSpace(character) && !inQuotes)
+            {
+                if (tokenStarted)
+                {
+                    tokens.Add(token.ToString());
+                    token.Clear();
+                    tokenStarted = false;
+                }
+
+                continue;
+            }
+
+            token.Append(character);
+            tokenStarted = true;
+        }
+
+        if (inQuotes)
+        {
+            return Array.Empty<string>();
+        }
+
+        if (tokenStarted)
+        {
+            tokens.Add(token.ToString());
+        }
+
+        return tokens;
     }
 }
 
