@@ -327,6 +327,9 @@ var tests = new (string Name, Action Body)[]
     ("I6C6-3 test-only closure harness contract",
         I6C6NativeOracleTests.TestI6C6_3ClosureHarnessContract),
 
+    ("I6G I6C6 real-run entry point requires bound inputs",
+        I6C6RealRunEntryPointTests.TestMissingInputsFailClosed),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 
