@@ -103,12 +103,13 @@ The semantic mapping consumer is the I6D
 `OcgForgePublicCandidateBridgeV1`, but the single same-snapshot composition
 owner is `GameplayMirrorSessionV1`. Source-proof acquisition belongs at the
 internal Gameplay/I4 correlation seam, while the normalized prompt occurrence
-and the same-snapshot I6C5 locator are both available. Concretely, the future
-handoff is created by the
-`FlatPromptProjectionV1` / `FlatPromptCardCorrelationV1` path after exact
-`ModernLocInfoV1` normalization and exact current-mirror resolution, but
-before `CompleteCorrelation` reduces the result to `AcceptedLocator` and
-`SafeCardCode`.
+and the same-snapshot I6C5 locator are both available. The
+`FlatPromptProjectionV1` / `FlatPromptCardCorrelationV1` path derives and
+exposes the exact internal I4 occurrence proof after `ModernLocInfoV1`
+normalization and current-mirror resolution; it does not own complete I6D
+composition or handoff creation. `GameplayMirrorSessionV1` consumes that proof
+before the transient I6C3 map is discarded and creates the complete opaque
+handoff.
 
 The carrier is an internal immutable `PrivateCrossLocatorBindingV1` value,
 owned by the Gameplay-side source-proof implementation and never exposed as a
@@ -116,7 +117,8 @@ public I4 or I6D member. The Model assembly does not receive a friend view of
 Gameplay internals. Instead, one public opaque
 `I6DPrivateCrossLocatorBindingHandoffV1` capability crosses the project
 reference; it has no public constructor, fields, occurrence properties, or
-serialization surface and exposes only the validated safe-target operation
+serialization surface and exposes only the safe acceptance-lease and validated
+safe-target operations
 specified below. `FlatPromptProjectionResultV1`,
 `FlatPublicCandidateDescriptorV1`, and the public
 `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)` interface do not
@@ -201,13 +203,21 @@ private binding. If a binding is present for that path, its target must equal
 the exact token or the whole boundary fails. A non-equal locator form requires
 the private binding; missing it fails closed.
 
-### Exact I6D consumption interface
+### Exact I6D handoff and boundary-acceptance interface
 
-The private set is created before the accepted decision boundary and carried
-through one opaque capability. The conceptual cross-assembly interface is:
+The private set is created by `GameplayMirrorSessionV1` before the accepted
+decision boundary and carried through one opaque capability. The capability
+retains both revocable lifetime authorities and exposes two safe-only
+operations:
 
 ```text
 public opaque I6DPrivateCrossLocatorBindingHandoffV1
+    TryAcquireBoundaryAcceptanceLease(
+        accepted_public_frame,
+        accepted_public_projection,
+        out I6DBoundaryAcceptanceLeaseV1 lease,
+        out error)
+
     TryGetValidatedTarget(
         accepted_public_candidate,
         current_accepted_public_frame,
@@ -222,28 +232,28 @@ or duplicate lookup keys. The opaque capability is the only value that can
 cross from Gameplay to Model. It privately retains the revocable current
 `PrivateGameplayFrameAuthorityV1` and the revocable current prompt/binding
 lifetime authority. The prompt authority is owned by
-`FlatPromptSessionV1`/the current frame-bound binding. Its operation acquires
-the frame lifetime lease first, then the prompt lifetime lease, validates the
-accepted public candidate/frame, releases the leases in reverse order, and
-returns only an already validated safe target or a structured failure. The
-existing public
+`FlatPromptSessionV1`/the current frame-bound binding. Both operations acquire
+the frame lifetime lease first, then the prompt lifetime lease. The acceptance
+operation validates the complete public frame/projection and binding set
+before returning an `I6DBoundaryAcceptanceLeaseV1`; the target operation
+validates the accepted public candidate/frame while both leases are held,
+releases the leases in reverse order, and returns only an already validated
+safe target or a structured failure. The existing public
 `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)` remains the only
 public consumption interface; it consumes the capability through the accepted
 decision boundary's internal member. A caller cannot pass a second list after
-the boundary has been accepted. The existing two-argument producer path may
-construct an empty capability for exact-token-only candidates, but the bridge
-must reject any non-equal mapping that arrives without the complete internal
-set.
+the boundary has been accepted. Exact-token-only candidates may omit the
+handoff; any non-equal mapping requires the complete valid handoff.
 
 The internal Gameplay-side capability factory validates the set atomically
-against the complete projection before returning the opaque value. Before the
-accepted decision boundary is constructed, the Model producer atomically asks
-the capability to validate the accepted public frame/projection and complete
-binding set. A mismatch or stale frame/prompt therefore rejects before a
-boundary exists. The I6D bridge then uses the exact-token path where possible
-and otherwise calls the single safe-target operation before emitting the
-existing OCGForge descriptor. No private field is added to
-`FlatPromptProjectionResultV1` or to a public candidate type.
+against the complete projection before returning the opaque value. The Model
+producer holds the acceptance lease across construction of
+`OcgForgeAcceptedDecisionBoundaryV1` and the single `nextDecisionIndex`
+increment. If validation or lease acquisition fails, the boundary remains
+null and the decision index is unchanged. The I6D bridge then uses the
+exact-token path where possible and otherwise calls the safe-target operation
+before emitting the existing OCGForge descriptor. No private field is added
+to `FlatPromptProjectionResultV1` or to a public candidate type.
 
 ### Lookup, consumption, and lifecycle
 
