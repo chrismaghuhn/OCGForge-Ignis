@@ -96,6 +96,17 @@ accepted through a public-attribute-only match.
 
 ## One owner-guarded composition boundary
 
+The single I6D same-snapshot composition owner is
+`GameplayMirrorSessionV1`. It owns the current frame authority,
+`boundMatchContext`, `boundPrintedProvider`, and the I6C5 composition path.
+`FlatPromptSessionV1` remains the owner of the prompt/binding lifetime only;
+it is not the I6C5 composition owner.
+
+```text
+I6D_COMPOSITION_OWNER=GameplayMirrorSessionV1
+FLATPROMPT_SESSION_ROLE=PROMPT_LIFETIME_AUTHORITY_OWNER_ONLY
+```
+
 The future Gameplay-side producer is one owner-guarded operation over the
 current `PrivateGameplayFrameAuthorityV1` lease:
 
@@ -166,7 +177,23 @@ public opaque I6DPrivateCrossLocatorBindingHandoffV1
     no MirrorSnapshot, MirrorEntityIdV1, or raw loc_info exposure
 ```
 
-Its only public operation is safe-target retrieval:
+The opaque handoff has two public operations, both safe-only.
+
+First, boundary acceptance obtains an opaque acceptance lease:
+
+```text
+TryAcquireBoundaryAcceptanceLease(
+    accepted_public_frame,
+    accepted_public_projection,
+    out I6DBoundaryAcceptanceLeaseV1 lease,
+    out structured_error)
+```
+
+`I6DBoundaryAcceptanceLeaseV1` has no public data or lifecycle coordinates.
+While it is held, it keeps the stored FRAME and PROMPT lifetime authorities
+acquired. The Model producer must hold it across accepted boundary
+construction and `nextDecisionIndex` consumption, then release it. Second,
+target retrieval after a boundary exists is:
 
 ```text
 TryGetValidatedTarget(
@@ -178,15 +205,18 @@ TryGetValidatedTarget(
 
 The capability privately retains the exact revocable
 `PrivateGameplayFrameAuthorityV1` (or an explicitly derived equivalent) and
-a separate revocable prompt/binding lifetime capability. It acquires those
-authorities in one fixed order, validates the accepted public candidate and
-public frame while both leases are held, and returns no target if either
-authority is stale. `FrameInstanceOrdinal`, `PromptInstanceOrdinal`, and
-`ContinuationStep` are private diagnostic/cross-check values only; they are
-not caller-supplied proof. The operation returns no source occurrence,
-CardCode, sequence, MirrorEntityId, raw address, or sidecar storage. It is
-invalid after frame replacement, prompt/continuation mismatch, terminal
-selection, session disposal, or boundary failure.
+a separate revocable prompt/binding lifetime capability. Both operations
+acquire those authorities in the fixed order FRAME, then PROMPT. The
+acceptance operation validates the complete public frame/projection and
+binding set before returning its lease. Target retrieval validates the
+accepted public candidate/frame while both leases are held and returns no
+target if either authority is stale. `FrameInstanceOrdinal`,
+`PromptInstanceOrdinal`, and `ContinuationStep` are private
+diagnostic/cross-check values only; they are not caller-supplied proof. The
+operations return no source occurrence, CardCode, sequence, MirrorEntityId,
+raw address, or sidecar storage. The handoff is invalid after frame
+replacement, prompt/continuation mismatch, terminal selection, session
+disposal, or boundary failure.
 
 The existing `OcgForgeAcceptedDecisionBoundaryV1` remains the Model-side
 owner of the accepted decision. A later implementation may add one narrowly
@@ -211,6 +241,22 @@ bridge constructs descriptors only from OCGForge-safe fields; only the
 validated target locator may feed the existing reference mapping. There is no
 public lifecycle-coordinate argument, public binding-list argument, or broad
 `InternalsVisibleTo("OCGForge.Ignis.Model")`.
+
+The producer-side linearization is one guarded transaction:
+
+```text
+OcgForgeAcceptedDecisionBoundaryProducerV1 acceptanceGate
+    -> handoff.TryAcquireBoundaryAcceptanceLease(public frame, projection)
+    -> using acceptance lease:
+           construct OcgForgeAcceptedDecisionBoundaryV1
+           increment nextDecisionIndex exactly once
+    -> release PROMPT lease
+    -> release FRAME lease
+```
+
+If lease acquisition or validation fails, the boundary remains null and
+`nextDecisionIndex` is unchanged. Validation may not complete, release both
+authorities, and then construct the accepted boundary in a separate operation.
 
 The acceptance rule is therefore:
 
@@ -271,6 +317,9 @@ PUBLIC_SOURCE_HAS_NO_PRIVATE_MAP           = PASS
 CURRENT_I6D_HANDOFF_IS_ABSENT              = PASS
 CURRENT_MODEL_BOUNDARY_HAS_NO_HANDOFF      = PASS
 PUBLIC_CONSUMER_NEEDS_PRIVATE_COORDINATES  = PASS
+BOUNDARY_ACCEPTANCE_GUARD_INTERFACE        = PASS
+BOUNDARY_ACCEPTANCE_LEASE_LIFETIME         = PASS
+FAILED_ACCEPTANCE_CONSUMES_DECISION_INDEX  = NO
 PUBLICSTATE_BYTES_CHANGED                  = NO
 PUBLICSTATE_IDENTITY_CHANGED               = NO
 PRODUCTION_MAPPING_IMPLEMENTATION          = NO

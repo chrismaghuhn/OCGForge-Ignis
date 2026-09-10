@@ -99,10 +99,12 @@ and cross-assembly handoff remain unimplemented.
 
 ### Owner, acquisition seam, and visibility
 
-The semantic owner is the I6D `OcgForgePublicCandidateBridgeV1`. Source-proof
-acquisition belongs at the internal Gameplay/I4 correlation seam, while the
-normalized prompt occurrence and the same-snapshot I6C5 locator are both
-available. Concretely, the future handoff is created by the
+The semantic mapping consumer is the I6D
+`OcgForgePublicCandidateBridgeV1`, but the single same-snapshot composition
+owner is `GameplayMirrorSessionV1`. Source-proof acquisition belongs at the
+internal Gameplay/I4 correlation seam, while the normalized prompt occurrence
+and the same-snapshot I6C5 locator are both available. Concretely, the future
+handoff is created by the
 `FlatPromptProjectionV1` / `FlatPromptCardCorrelationV1` path after exact
 `ModernLocInfoV1` normalization and exact current-mirror resolution, but
 before `CompleteCorrelation` reduces the result to `AcceptedLocator` and
@@ -489,7 +491,7 @@ Gameplay owns:
   one public opaque I6DPrivateCrossLocatorBindingHandoffV1 capability
 
 Model may receive only:
-  the capability's validated accepted-target operation
+  the opaque capability and its safe acceptance/target operations
 
 Model may not receive:
   MirrorSnapshotV1
@@ -501,17 +503,23 @@ Model may not receive:
 
 The capability is the only controlled handoff. It has no public constructor,
 no public fields or occurrence properties, no serialization, and no method
-that returns private source data. It returns only an accepted safe target or
-a structured failure after validating the complete lifecycle and candidate
-coordinates. `InternalsVisibleTo("OCGForge.Ignis.Model")` is explicitly not
-part of this design; Model cannot read private Gameplay internals.
+that returns private source data. `InternalsVisibleTo("OCGForge.Ignis.Model")`
+is explicitly not part of this design; Model cannot read private Gameplay
+internals.
 
-The capability is obtained only from the current prompt session after the
-sidecar and complete prompt have been accepted:
+`GameplayMirrorSessionV1` is the single owner of complete same-snapshot I6D
+composition. It owns the current frame authority, bound I6C5 runtime inputs,
+the transient I6C3 `locatorById` map during composition, and construction of
+the complete private binding set. `FlatPromptSessionV1` owns only the
+revocable prompt/binding lifetime authority and supplies the accepted
+frame-owned prompt binding; it is not the I6C5 composition owner.
+
+The capability is created by the current Gameplay session after the sidecar
+and complete frame-owned prompt have been accepted:
 
 ```text
-FlatPromptSessionV1.TryCreateI6DPrivateBindingHandoff(
-    current_frame,
+GameplayMirrorSessionV1.TryCreateFrameOwnedI6DPrivateBindingHandoff(
+    accepted_frame_owned_prompt,
     accepted_public_projection,
     out handoff,
     out error)
@@ -522,7 +530,24 @@ capability argument. `FlatPromptProjectionResultV1` is not extended with
 private data, and callers cannot construct the capability or a second binding
 list independently.
 
-The only permitted operation across that seam is conceptually:
+The opaque handoff exposes two safe-only operations. First, boundary creation
+obtains a separate opaque acceptance lease:
+
+```text
+TryAcquireBoundaryAcceptanceLease(
+    accepted_public_frame,
+    accepted_public_projection,
+    out I6DBoundaryAcceptanceLeaseV1 lease,
+    out structured_error)
+```
+
+The Model producer holds that lease through construction of
+`OcgForgeAcceptedDecisionBoundaryV1` and the single `nextDecisionIndex`
+increment. It releases PROMPT and then FRAME in reverse order. Failure to
+acquire or validate leaves the boundary null and does not consume the
+decision index.
+
+Second, target retrieval after a boundary exists is conceptually:
 
 ```text
 public opaque TryGetValidatedTarget(
@@ -532,16 +557,15 @@ public opaque TryGetValidatedTarget(
     out error)
 ```
 
-The operation returns only the already accepted safe target or a structured
-failure. It does not require the Model caller to provide
-`FrameInstanceOrdinal`, `PromptInstanceOrdinal`, `ContinuationStep`, or a
-projection ID as authority. Those values remain private diagnostics and
-cross-checks inside the capability. It does not return the source occurrence,
-mirror snapshot, mirror ID, raw address, prompt CardCode, or sidecar storage.
-The Model bridge must not call any other Gameplay-internal member. If this
-opaque capability cannot be made non-forgeable with an internal-only
-constructor and safe-target-only operation, the implementation must stop and
-request a separate assembly design rather than adding a friend assembly.
+Both operations return no source occurrence, mirror snapshot, MirrorEntityId,
+raw address, prompt CardCode, or sidecar storage. The capability privately
+retains the revocable current frame authority and revocable current
+prompt/binding authority, acquires FRAME before PROMPT, and uses lifecycle
+coordinates only as private diagnostics/cross-checks. The Model bridge must
+not call any other Gameplay-internal member. If this opaque capability cannot
+be made non-forgeable with an internal-only constructor and safe-target-only
+operations, the implementation must stop and request a separate assembly
+design rather than adding a friend assembly.
 
 The public `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)`
 interface remains unchanged. Its accepted decision boundary stores the

@@ -174,23 +174,58 @@ no MirrorSnapshot / MirrorEntityId / ModernLocInfo exposure
 no private source-data operation
 ```
 
-The capability is obtained only from the current prompt session after the
-sidecar and complete prompt have been accepted:
+`GameplayMirrorSessionV1` is the single owner of complete same-snapshot I6D
+composition. It owns the current frame authority, bound I6C5 runtime inputs,
+the transient I6C3 `locatorById` map during composition, and construction of
+the complete private binding set. `FlatPromptSessionV1` owns only the
+revocable prompt/binding lifetime authority and supplies the accepted
+frame-owned prompt binding; it is not the I6C5 composition owner.
+
+The capability is created by the current Gameplay session after the sidecar
+and complete frame-owned prompt have been accepted:
 
 ```text
-FlatPromptSessionV1.TryCreateI6DPrivateBindingHandoff(
-    current_frame,
+GameplayMirrorSessionV1.TryCreateFrameOwnedI6DPrivateBindingHandoff(
+    accepted_frame_owned_prompt,
     accepted_public_projection,
     out handoff,
     out error)
 ```
+
+That operation holds the current FRAME lease, obtains the PROMPT/binding lease,
+composes I6C3/I6C5 from the immutable FRAME snapshot while the transient map
+is available, joins exact I4 occurrences, validates the complete binding set,
+and only then creates the opaque handoff. The transient map is never detached
+or returned to the Model assembly.
 
 The future I6D boundary producer receives that opaque value as a single
 trusted capability argument. `FlatPromptProjectionResultV1` is not extended
 with private data, and callers cannot construct the capability or a second
 binding list independently.
 
-Its only cross-assembly operation is:
+The opaque handoff exposes two safe-only operations. First, boundary creation
+obtains a separate opaque acceptance lease:
+
+```text
+TryAcquireBoundaryAcceptanceLease(
+    accepted_public_frame,
+    accepted_public_projection,
+    out I6DBoundaryAcceptanceLeaseV1 lease,
+    out structured_error)
+```
+
+The Model producer holds that lease through construction of
+`OcgForgeAcceptedDecisionBoundaryV1` and the single `nextDecisionIndex`
+increment. It releases PROMPT and then FRAME in reverse order. Failure to
+acquire or validate leaves the boundary null and does not consume the
+decision index.
+
+The producer's acceptance gate surrounds the lease acquisition, boundary
+construction, and decision-index increment as one linearizable transaction.
+It never validates the handoff, releases both authorities, and then creates an
+accepted boundary in a separate operation.
+
+Second, target retrieval after a boundary exists is:
 
 ```text
 TryGetValidatedTarget(
