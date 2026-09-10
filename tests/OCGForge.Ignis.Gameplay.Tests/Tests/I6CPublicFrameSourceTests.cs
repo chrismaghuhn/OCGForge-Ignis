@@ -2717,19 +2717,19 @@ internal static class I6CPublicFrameSourceTests
             CreateValidI6C5MatchContext();
         (GameplayMirrorSessionV1 session,
             GameplayHandoffConsumerV1 consumer,
-            _) = CreateI6C5Session(
+            TestTransport transport) = CreateI6C5Session(
                 0,
                 context,
                 CreatePrintedProviderForCodes(new[] { 1u }));
         try
         {
-            GameplayMessageDecoderV1 firstDecoder = CreateEstablishedDecoder(0);
-            GameplayMessageV1 firstMessage = DecodeMessage(
-                firstDecoder,
-                new byte[] { 40, 0 });
-            Equal((byte)0, firstMessage.NewTurn.Player);
-            MirrorApplyResult firstApply = session.Mirror.Apply(firstMessage);
+            GameplayMirrorPumpResult firstApply =
+                ApplyI6C4ThroughSession(
+                    session,
+                    transport,
+                    new byte[] { 40, 0 });
             True(firstApply.IsSuccess, firstApply.Error.ToString());
+            Equal((byte)0, firstApply.Message!.NewTurn.Player);
             PerspectiveSafeFrameSourceResultV1 first =
                 session.TryCreateI6C5Frame();
             True(first.IsSuccess, first.Error?.ToString() ?? "first frame rejected");
@@ -2737,10 +2737,12 @@ internal static class I6CPublicFrameSourceTests
             string firstMirror = session.Mirror.Snapshot.ToDeterministicString();
             string firstContext = MatchContextSignature(first.Frame!);
 
-            ApplyI6C4Success(
-                session.Mirror,
-                CreateEstablishedDecoder(0),
-                new byte[] { 40, 0 });
+            GameplayMirrorPumpResult secondApply =
+                ApplyI6C4ThroughSession(
+                    session,
+                    transport,
+                    new byte[] { 40, 0 });
+            True(secondApply.IsSuccess, secondApply.Error.ToString());
             PerspectiveSafeFrameSourceResultV1 second =
                 session.TryCreateI6C5Frame();
             True(second.IsSuccess, second.Error?.ToString() ?? "second frame rejected");
@@ -2778,26 +2780,26 @@ internal static class I6CPublicFrameSourceTests
             opponentDeck: new(known: false));
         (GameplayMirrorSessionV1 sessionA,
             GameplayHandoffConsumerV1 consumerA,
-            _) = CreateI6C5Session(
+            TestTransport transportA) = CreateI6C5Session(
                 0,
                 contextA,
                 CreatePrintedProviderForCodes(new[] { 1u }));
         (GameplayMirrorSessionV1 sessionB,
             GameplayHandoffConsumerV1 consumerB,
-            _) = CreateI6C5Session(
+            TestTransport transportB) = CreateI6C5Session(
                 0,
                 contextB,
                 CreatePrintedProviderForCodes(new[] { 1u }));
         try
         {
-            ApplyI6C4Success(
-                sessionA.Mirror,
-                CreateEstablishedDecoder(0),
-                new byte[] { 40, 0 });
-            ApplyI6C4Success(
-                sessionB.Mirror,
-                CreateEstablishedDecoder(0),
-                new byte[] { 40, 0 });
+            True(ApplyI6C4ThroughSession(
+                    sessionA,
+                    transportA,
+                    new byte[] { 40, 0 }).IsSuccess);
+            True(ApplyI6C4ThroughSession(
+                    sessionB,
+                    transportB,
+                    new byte[] { 40, 0 }).IsSuccess);
             PerspectiveSafeFrameSourceResultV1 frameA =
                 sessionA.TryCreateI6C5Frame();
             PerspectiveSafeFrameSourceResultV1 frameB =
@@ -2927,7 +2929,7 @@ internal static class I6CPublicFrameSourceTests
             opponentDeck: new(false));
         (GameplayMirrorSessionV1 session,
             GameplayHandoffConsumerV1 consumer,
-            _) = CreateI6C5Session(
+            TestTransport transport) = CreateI6C5Session(
                 0,
                 context,
                 CreatePrintedProviderForCodes(new[] { 1u }));
@@ -2935,10 +2937,10 @@ internal static class I6CPublicFrameSourceTests
         {
             mutableMain[0] = 999;
             mutableExtra[0] = 998;
-            ApplyI6C4Success(
-                session.Mirror,
-                CreateEstablishedDecoder(0),
-                new byte[] { 40, 0 });
+            True(ApplyI6C4ThroughSession(
+                    session,
+                    transport,
+                    new byte[] { 40, 0 }).IsSuccess);
             PerspectiveSafeFrameSourceResultV1 result =
                 session.TryCreateI6C5Frame();
             True(result.IsSuccess, result.Error?.ToString() ?? "owned context rejected");
@@ -3399,7 +3401,7 @@ internal static class I6CPublicFrameSourceTests
         (GameplaySessionV1 transportSession,
             PerspectiveStateMirrorV1 mirror,
             GameplayHandoffConsumerV1 consumer,
-            _) = CreateStartedSession(0);
+            TestTransport transport) = CreateStartedSession(0);
         GameplayMirrorSessionV1 session = new(
             transportSession,
             mirror,
@@ -3407,18 +3409,18 @@ internal static class I6CPublicFrameSourceTests
             providerResult.Provider);
         try
         {
-            ApplyI6C4Success(
-                mirror,
-                CreateEstablishedDecoder(0),
-                MoveMessage(
-                    1501,
-                    new ModernLocInfoV1(0, 0, 0, 0),
-                    new ModernLocInfoV1(0, 0x04, 0, 0x05),
-                    0));
-            ApplyI6C4Success(
-                mirror,
-                CreateEstablishedDecoder(0),
-                new byte[] { 40, 0 });
+            True(ApplyI6C4ThroughSession(
+                    session,
+                    transport,
+                    MoveMessage(
+                        1501,
+                        new ModernLocInfoV1(0, 0, 0, 0),
+                        new ModernLocInfoV1(0, 0x04, 0, 0x05),
+                        0)).IsSuccess);
+            True(ApplyI6C4ThroughSession(
+                    session,
+                    transport,
+                    new byte[] { 40, 0 }).IsSuccess);
             PerspectiveSafeFrameSourceResultV1 frame =
                 session.TryCreateI6C5Frame();
             True(frame.IsSuccess, frame.Error?.ToString() ?? "bound provider frame rejected");
@@ -3441,10 +3443,10 @@ internal static class I6CPublicFrameSourceTests
                 CreateValidI6C5MatchContext());
         try
         {
-            ApplyI6C4Success(
-                session.Mirror,
-                CreateEstablishedDecoder(0),
-                new byte[] { 40, 0 });
+            True(ApplyI6C4ThroughSession(
+                    session,
+                    transport,
+                    new byte[] { 40, 0 }).IsSuccess);
             string before = session.Mirror.Snapshot.ToDeterministicString();
             int readsBefore = transport.ReadCallCount;
             PerspectiveSafeFrameSourceResultV1 result =
@@ -5381,6 +5383,20 @@ internal static class I6CPublicFrameSourceTests
             properties.RightScale?.ToString() ?? "absent",
             properties.StatusFlags?.ToString() ?? "absent",
             string.Join(",", properties.Counters));
+    }
+
+    private static GameplayMirrorPumpResult ApplyI6C4ThroughSession(
+        GameplayMirrorSessionV1 session,
+        TestTransport transport,
+        byte[] bytes)
+    {
+        transport.Enqueue(
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.GameMsg,
+                bytes));
+        return session.PumpAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
     }
 
     private static void ApplyI6C4Success(

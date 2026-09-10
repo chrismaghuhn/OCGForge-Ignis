@@ -395,7 +395,46 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         }
     }
 
-    internal static void TestPostBindMirrorMutationEscapeIsCharacterized()
+    internal static void TestStandaloneMirrorApplyBeforeClaimIsUnchanged()
+    {
+        const uint cardCode = 0x11223344;
+        (PerspectiveStateMirrorV1 mirror,
+            GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0, deckCount0: 2, extraCount0: 1);
+        MirrorApplyResult applied = mirror.Apply(DecodeMessage(
+            decoder,
+            MoveMessage(
+                cardCode,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x02, 0, 0x08),
+                0)));
+        True(applied.IsSuccess, applied.Error.ToString());
+        True(mirror.Snapshot.Cards.Any(card =>
+            card.Zone == MirrorZoneV1.Hand &&
+            card.Sequence == 0));
+    }
+
+    internal static void TestMirrorClaimIsOneShotAndPermanent()
+    {
+        (PerspectiveStateMirrorV1 mirror,
+            GameplayMessageDecoderV1 decoder) =
+            CreateMirror(0, deckCount0: 2, extraCount0: 1);
+        MethodInfo? claimMethod = typeof(PerspectiveStateMirrorV1).GetMethod(
+            "TryClaimGameplaySessionOwnership",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        NotNull(claimMethod);
+        object?[] firstArguments = { null };
+        object? firstResult = claimMethod!.Invoke(mirror, firstArguments);
+        True(firstResult is bool && (bool)firstResult);
+        NotNull(firstArguments[0]);
+        object?[] secondArguments = { null };
+        object? secondResult = claimMethod.Invoke(mirror, secondArguments);
+        True(secondResult is bool && !(bool)secondResult);
+        Null(secondArguments[0]);
+        _ = decoder;
+    }
+
+    internal static void TestClaimedMirrorRejectsExternalApply()
     {
         const uint cardCode = 0x11223344;
         (GameplayMirrorSessionV1 session,
@@ -418,18 +457,20 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
                     new ModernLocInfoV1(0, 0x02, 0, 0x08),
                     0));
             MirrorApplyResult directApply = session.Mirror.Apply(directMessage);
-            True(directApply.IsSuccess, directApply.Error.ToString());
-            NotEqual(
-                authoritySnapshot,
-                session.Mirror.Snapshot.ToDeterministicString());
-
-            True(session.TryGetCurrentFrameAuthority(
-                out PrivateGameplayFrameAuthorityV1? afterDirectApply));
-            NotNull(afterDirectApply);
-            Equal(0ul, afterDirectApply!.FrameInstanceOrdinal);
+            False(directApply.IsSuccess);
+            Equal(GameplayErrorCode.InvalidState, directApply.Error);
             Equal(
                 authoritySnapshot,
-                afterDirectApply.MirrorSnapshot.ToDeterministicString());
+                session.Mirror.Snapshot.ToDeterministicString());
+            Equal(authoritySnapshot, initialAuthority.MirrorSnapshot.ToDeterministicString());
+
+            session.DisposeAsync().GetAwaiter().GetResult();
+            MirrorApplyResult postDisposeApply = session.Mirror.Apply(directMessage);
+            False(postDisposeApply.IsSuccess);
+            Equal(GameplayErrorCode.InvalidState, postDisposeApply.Error);
+            Equal(
+                authoritySnapshot,
+                session.Mirror.Snapshot.ToDeterministicString());
         }
         finally
         {
@@ -438,7 +479,7 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         }
     }
 
-    internal static void TestFrameBoundPromptBindingSurvivesFrameAdvance()
+    internal static void TestFrameBoundPromptBindingExpiresOnFrameAdvance()
     {
         const uint cardCode = 0x11223344;
         ModernLocInfoV1 empty = new(0, 0, 0, 0);
@@ -473,20 +514,47 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
                     new PublicStateProjectionContextV1(0),
                     frame.FrameInstanceOrdinal);
             True(projection.IsSuccess, projection.Error.ToString());
-            FlatPromptSessionV1 prompt = new();
-            FlatPromptProjectionResultV1 accepted =
-                prompt.TryAcceptFrameOwnedPrompt(
+            FlatPromptSessionV1 capturePrompt = new();
+            FlatPromptSessionV1 resolvePrompt = new();
+            FlatPromptSessionV1 applyPrompt = new();
+            FlatPromptProjectionResultV1 captureAccepted =
+                capturePrompt.TryAcceptFrameOwnedPrompt(
                     SingleOwnHandIdleMessage(cardCode),
                     frame,
                     projection);
-            True(accepted.IsSuccess, accepted.Error.ToString());
-            string key = accepted.Candidates![0].I4LocalCandidateKey;
-            True(prompt.TryCaptureSelection(
+            FlatPromptProjectionResultV1 resolveAccepted =
+                resolvePrompt.TryAcceptFrameOwnedPrompt(
+                    SingleOwnHandIdleMessage(cardCode),
+                    frame,
+                    projection);
+            FlatPromptProjectionResultV1 applyAccepted =
+                applyPrompt.TryAcceptFrameOwnedPrompt(
+                    SingleOwnHandIdleMessage(cardCode),
+                    frame,
+                    projection);
+            True(captureAccepted.IsSuccess, captureAccepted.Error.ToString());
+            True(resolveAccepted.IsSuccess, resolveAccepted.Error.ToString());
+            True(applyAccepted.IsSuccess, applyAccepted.Error.ToString());
+            string key = captureAccepted.Candidates![0].I4LocalCandidateKey;
+            True(capturePrompt.TryCaptureSelection(
                 key,
-                out FlatPromptSelectionHandleV1? oldHandle,
+                out _,
                 out FlatPromptErrorCodeV1 captureError),
                 captureError.ToString());
-            NotNull(oldHandle);
+            string resolveKey = resolveAccepted.Candidates![0].I4LocalCandidateKey;
+            True(resolvePrompt.TryCaptureSelection(
+                resolveKey,
+                out FlatPromptSelectionHandleV1? oldResolveHandle,
+                out FlatPromptErrorCodeV1 resolveCaptureError),
+                resolveCaptureError.ToString());
+            NotNull(oldResolveHandle);
+            string applyKey = applyAccepted.Candidates![0].I4LocalCandidateKey;
+            True(applyPrompt.TryCaptureSelection(
+                applyKey,
+                out FlatPromptSelectionHandleV1? oldApplyHandle,
+                out FlatPromptErrorCodeV1 applyCaptureError),
+                applyCaptureError.ToString());
+            NotNull(oldApplyHandle);
 
             GameplayMirrorPumpResult secondApply = session.PumpAsync(
                 CancellationToken.None).GetAwaiter().GetResult();
@@ -496,23 +564,27 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
             NotNull(nextFrame);
             Equal(2ul, nextFrame!.FrameInstanceOrdinal);
 
-            True(prompt.TryCaptureSelection(
+            False(capturePrompt.TryCaptureSelection(
                 key,
                 out _,
-                out FlatPromptErrorCodeV1 staleCaptureError),
-                staleCaptureError.ToString());
-            True(prompt.TryResolveSelection(
-                oldHandle,
+                out FlatPromptErrorCodeV1 staleCaptureError));
+            Equal(
+                FlatPromptErrorCodeV1.StalePromptBinding,
+                staleCaptureError);
+            False(resolvePrompt.TryResolveSelection(
+                oldResolveHandle,
                 out FlatPromptResponseResolutionV1 oldResponse,
-                out FlatPromptErrorCodeV1 staleResolveError),
-                staleResolveError.ToString());
+                out FlatPromptErrorCodeV1 staleResolveError));
+            Equal(FlatPromptErrorCodeV1.StalePromptBinding, staleResolveError);
             Equal(0, oldResponse.ResponseI32);
             FlatPromptContinuationStepResultV1 oldApply =
-                prompt.TryApplySelection(oldHandle);
+                applyPrompt.TryApplySelection(oldApplyHandle);
             False(oldApply.IsSuccess);
             Equal(
-                FlatPromptErrorCodeV1.InvalidContinuationAction,
+                FlatPromptErrorCodeV1.StalePromptBinding,
                 oldApply.Error);
+            Null(oldApply.Projection);
+            False(oldApply.IsTerminal);
         }
         finally
         {

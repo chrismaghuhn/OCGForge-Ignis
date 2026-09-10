@@ -3320,6 +3320,7 @@ internal sealed class CurrentFlatPromptBindingV1
     private readonly ReadOnlyCollection<string> localKeysView;
     private readonly Dictionary<string, int> responseByKey;
     private readonly Dictionary<string, byte[]> responseBodyByKey;
+    private readonly PrivateGameplayFrameAuthorityV1? frameAuthority;
 
     private CurrentFlatPromptBindingV1(
         ulong promptInstanceOrdinal,
@@ -3328,7 +3329,8 @@ internal sealed class CurrentFlatPromptBindingV1
         string[] localKeys,
         Dictionary<string, int> responseByKey,
         byte[][]? responseBodies,
-        FlatPromptContinuationStateV1? continuationState)
+        FlatPromptContinuationStateV1? continuationState,
+        PrivateGameplayFrameAuthorityV1? frameAuthority)
     {
         PromptInstanceOrdinal = promptInstanceOrdinal;
         Family = family;
@@ -3352,6 +3354,7 @@ internal sealed class CurrentFlatPromptBindingV1
         }
         ContinuationState = continuationState;
         ContinuationStep = continuationState?.Step ?? 0;
+        this.frameAuthority = frameAuthority;
     }
 
     internal ulong PromptInstanceOrdinal { get; }
@@ -3361,6 +3364,8 @@ internal sealed class CurrentFlatPromptBindingV1
     internal int ContinuationStep { get; }
 
     internal FlatPromptContinuationStateV1? ContinuationState { get; }
+
+    internal PrivateGameplayFrameAuthorityV1? FrameAuthority => frameAuthority;
 
     internal IReadOnlyList<FlatPublicCandidateDescriptorV1> Candidates =>
         candidatesView;
@@ -3427,7 +3432,8 @@ internal sealed class CurrentFlatPromptBindingV1
         out CurrentFlatPromptBindingV1? binding,
         out FlatPromptErrorCodeV1 error,
         byte[][]? responseBodies = null,
-        FlatPromptContinuationStateV1? continuationState = null)
+        FlatPromptContinuationStateV1? continuationState = null,
+        PrivateGameplayFrameAuthorityV1? frameAuthority = null)
     {
         binding = null;
         error = FlatPromptErrorCodeV1.None;
@@ -3504,7 +3510,8 @@ internal sealed class CurrentFlatPromptBindingV1
             localKeys,
             responseByKey,
             responseBodies,
-            continuationState);
+            continuationState,
+            frameAuthority);
         return true;
     }
 

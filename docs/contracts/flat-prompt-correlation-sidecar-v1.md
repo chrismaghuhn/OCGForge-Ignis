@@ -16,6 +16,8 @@ I4_PRIVATE_CORRELATION_SIDECAR_ACCEPTED=YES_FOR_DESIGN_ONLY
 I4_PRIVATE_CORRELATION_SIDECAR_IMPLEMENTED=YES_PROJECTION_AND_CORRELATION
 I4_PRIVATE_CORRELATION_ENABLEMENT=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
 I4_FRAME_AUTHORITY=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+I4_FRAME_BOUND_BINDING_LIFETIME=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+I4_MIRROR_CLAIM=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
 I5_SIDECAR_ENABLEMENT=NO
 I6B_BUNDLE_ENTRY=NO
 ```
@@ -49,6 +51,10 @@ public-state projection path remains unchanged and does not expose or consume
 a sidecar. The separately authorized correlation implementation consumes the
 sidecar only when the independently current session frame, its projection
 identity, and same-mirror re-projection all match.
+After acceptance, an I4 frame-bound prompt binding retains the same private
+frame-lifetime authority; its capture, response, and continuation consumers
+must acquire that authority lease before operating. I5 bindings remain
+frame-unbound.
 
 ## 2. Sidecar record
 

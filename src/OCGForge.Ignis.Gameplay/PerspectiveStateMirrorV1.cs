@@ -18,7 +18,9 @@ public sealed class PerspectiveStateMirrorV1
     private const uint MaximumMonsterSequence = 6;
     private const uint MaximumSpellTrapSequence = 7;
 
+    private readonly object ownershipGate = new();
     private MirrorState state;
+    private PrivateGameplayMirrorOwnershipV1? gameplaySessionOwnership;
 
     private PerspectiveStateMirrorV1(MirrorState state)
     {
@@ -81,9 +83,62 @@ public sealed class PerspectiveStateMirrorV1
         return MirrorCreateResult.Success(new PerspectiveStateMirrorV1(initial));
     }
 
+    internal bool TryClaimGameplaySessionOwnership(
+        out PrivateGameplayMirrorOwnershipV1? ownership)
+    {
+        lock (ownershipGate)
+        {
+            if (gameplaySessionOwnership is not null)
+            {
+                ownership = null;
+                return false;
+            }
+
+            ownership = PrivateGameplayMirrorOwnershipV1.Create(this);
+            gameplaySessionOwnership = ownership;
+            return true;
+        }
+    }
+
     public MirrorApplyResult Apply(GameplayMessageV1 message)
     {
         ArgumentNullException.ThrowIfNull(message);
+        lock (ownershipGate)
+        {
+            if (gameplaySessionOwnership is not null)
+            {
+                return MirrorApplyResult.Failure(
+                    GameplayErrorCode.InvalidState,
+                    CreateSnapshot(state));
+            }
+
+            return ApplyCore(message);
+        }
+    }
+
+    internal MirrorApplyResult ApplyOwned(
+        PrivateGameplayMirrorOwnershipV1 ownership,
+        GameplayMessageV1 message)
+    {
+        ArgumentNullException.ThrowIfNull(ownership);
+        ArgumentNullException.ThrowIfNull(message);
+        lock (ownershipGate)
+        {
+            if (gameplaySessionOwnership is null ||
+                !ReferenceEquals(gameplaySessionOwnership, ownership) ||
+                !ownership.BelongsTo(this))
+            {
+                return MirrorApplyResult.Failure(
+                    GameplayErrorCode.InvalidState,
+                    CreateSnapshot(state));
+            }
+
+            return ApplyCore(message);
+        }
+    }
+
+    private MirrorApplyResult ApplyCore(GameplayMessageV1 message)
+    {
         MirrorSnapshotV1 before = CreateSnapshot(state);
         if (state.Terminal.IsTerminal)
         {

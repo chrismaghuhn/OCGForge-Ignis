@@ -178,6 +178,12 @@ call sites may supply it until a separate authorization changes the I5
 contract. I5 must not gain duplicate-pile acceptance, sidecar-dependent
 locators, or changed continuation semantics from this design.
 
+An accepted frame-owned I4 binding retains the private frame-lifetime
+authority used to create it. `TryCaptureSelection`, `TryResolveSelection`,
+and `TryApplySelection` operate under that same authority lease through handle,
+response, or continuation creation. I5 bindings retain no frame authority and
+remain on the restored baseline path.
+
 ## Current non-effects and next gate
 
 ```text
@@ -186,6 +192,8 @@ I4_PUBLIC_CONTRACT_V1=UNCHANGED
 PUBLICSTATE_BYTES=UNCHANGED
 PUBLICSTATE_IDENTITY=UNCHANGED
 I4_FRAME_AUTHORITY_IMPLEMENTATION=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+I4_MIRROR_CLAIM_IMPLEMENTATION=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+I4_FRAME_BOUND_BINDING_LIFETIME=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
 I5_SCOPE_RESTORATION=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
 I6D_CHANGED=NO
 I6G_CAPTURE=NOT_RUN

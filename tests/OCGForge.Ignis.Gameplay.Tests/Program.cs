@@ -541,13 +541,21 @@ var tests = new (string Name, Action Body)[]
         I4FrameOwnedSidecarLifecycleReconciliationTests
             .TestFailedFrameOwnedPromptInvalidatesFrameAuthority),
 
-    ("I4 post-bind mirror mutation escape is characterized",
+    ("I4 standalone mirror apply before claim is unchanged",
         I4FrameOwnedSidecarLifecycleReconciliationTests
-            .TestPostBindMirrorMutationEscapeIsCharacterized),
+            .TestStandaloneMirrorApplyBeforeClaimIsUnchanged),
 
-    ("I4 frame-bound prompt binding survives frame advance",
+    ("I4 mirror claim is one-shot and permanent",
         I4FrameOwnedSidecarLifecycleReconciliationTests
-            .TestFrameBoundPromptBindingSurvivesFrameAdvance),
+            .TestMirrorClaimIsOneShotAndPermanent),
+
+    ("I4 claimed mirror rejects external apply",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestClaimedMirrorRejectsExternalApply),
+
+    ("I4 frame-bound prompt binding expires on frame advance",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestFrameBoundPromptBindingExpiresOnFrameAdvance),
 
     ("I4 frame authority has safe lifecycle",
         I4FrameOwnedSidecarLifecycleReconciliationTests

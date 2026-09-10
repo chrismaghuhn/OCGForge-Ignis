@@ -50,6 +50,7 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
     private readonly byte[] receiveBuffer = new byte[
         ProtocolContractV1.MaxPacketLength +
         ProtocolContractV1.LengthPrefixSize];
+    private readonly PrivateGameplayMirrorOwnershipV1 mirrorOwnership;
     private int receiveCount;
     private int presentationMessagesConsumed;
     private int terminal;
@@ -98,6 +99,15 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
                 nameof(matchContext));
         }
 
+        if (!mirror.TryClaimGameplaySessionOwnership(
+                out PrivateGameplayMirrorOwnershipV1? ownership) ||
+            ownership is null)
+        {
+            throw new InvalidOperationException(
+                "The gameplay mirror is already owned by another session.");
+        }
+
+        mirrorOwnership = ownership;
         boundMatchContext = matchContext;
         boundPrintedProvider = printedProvider;
         frameInstanceOrdinal = 0;
@@ -293,7 +303,9 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
                         MirrorApplyResult applied;
                         using (lease)
                         {
-                            applied = mirror.Apply(decoded.Message);
+                            applied = mirror.ApplyOwned(
+                                mirrorOwnership,
+                                decoded.Message);
                             if (!applied.IsSuccess)
                             {
                                 currentFrameAuthority.Invalidate();

@@ -213,7 +213,9 @@ public sealed class FlatPromptSessionV1
             return FailFrameOwned(currentFrame, projectionError);
         }
 
-        FlatPromptProjectionResultV1 committed = CommitProjection(projected);
+        FlatPromptProjectionResultV1 committed = CommitProjection(
+            projected,
+            currentFrame);
         return committed.IsSuccess
             ? committed
             : FailFrameOwned(currentFrame, committed.Error);
@@ -313,6 +315,31 @@ public sealed class FlatPromptSessionV1
     }
 
     internal FlatPromptContinuationStepResultV1 TryApplySelection(
+        FlatPromptSelectionHandleV1? handle)
+    {
+        PrivateGameplayFrameAuthorityV1? frameAuthority =
+            currentBinding?.FrameAuthority;
+        if (frameAuthority is null)
+        {
+            return TryApplySelectionCore(handle);
+        }
+
+        PrivateGameplayFrameAuthorityLeaseV1? lease =
+            frameAuthority.TryAcquire();
+        if (lease is null)
+        {
+            currentBinding = null;
+            return FlatPromptContinuationStepResultV1.Failure(
+                FlatPromptErrorCodeV1.StalePromptBinding);
+        }
+
+        using (lease)
+        {
+            return TryApplySelectionCore(handle);
+        }
+    }
+
+    private FlatPromptContinuationStepResultV1 TryApplySelectionCore(
         FlatPromptSelectionHandleV1? handle)
     {
         if (handle is null)
@@ -509,7 +536,8 @@ public sealed class FlatPromptSessionV1
                 out CurrentFlatPromptBindingV1? nextBinding,
                 out FlatPromptErrorCodeV1 bindingError,
                 nextDraft.CopyResponseBodies(),
-                nextDraft.ContinuationState) ||
+                nextDraft.ContinuationState,
+                frameAuthority: binding.FrameAuthority) ||
             nextBinding is null)
         {
             currentBinding = null;
@@ -684,7 +712,8 @@ public sealed class FlatPromptSessionV1
                 out CurrentFlatPromptBindingV1? nextBinding,
                 out FlatPromptErrorCodeV1 bindingError,
                 nextDraft.CopyResponseBodies(),
-                nextDraft.ContinuationState) ||
+                nextDraft.ContinuationState,
+                frameAuthority: currentBinding.FrameAuthority) ||
             nextBinding is null)
         {
             currentBinding = null;
@@ -700,7 +729,8 @@ public sealed class FlatPromptSessionV1
     }
 
     private FlatPromptProjectionResultV1 CommitProjection(
-        FlatPromptProjectionDraftV1 draft)
+        FlatPromptProjectionDraftV1 draft,
+        PrivateGameplayFrameAuthorityV1? frameAuthority = null)
     {
         ulong nextOrdinal;
         try
@@ -727,7 +757,8 @@ public sealed class FlatPromptSessionV1
                 out CurrentFlatPromptBindingV1? binding,
                 out FlatPromptErrorCodeV1 bindingError,
                 draft.CopyResponseBodies(),
-                draft.ContinuationState) ||
+                draft.ContinuationState,
+                frameAuthority: frameAuthority) ||
             binding is null)
         {
             currentBinding = null;
@@ -751,6 +782,40 @@ public sealed class FlatPromptSessionV1
     }
 
     internal bool TryCaptureSelection(
+        string? i4LocalCandidateKey,
+        out FlatPromptSelectionHandleV1? handle,
+        out FlatPromptErrorCodeV1 error)
+    {
+        PrivateGameplayFrameAuthorityV1? frameAuthority =
+            currentBinding?.FrameAuthority;
+        if (frameAuthority is null)
+        {
+            return TryCaptureSelectionCore(
+                i4LocalCandidateKey,
+                out handle,
+                out error);
+        }
+
+        PrivateGameplayFrameAuthorityLeaseV1? lease =
+            frameAuthority.TryAcquire();
+        if (lease is null)
+        {
+            currentBinding = null;
+            handle = null;
+            error = FlatPromptErrorCodeV1.StalePromptBinding;
+            return false;
+        }
+
+        using (lease)
+        {
+            return TryCaptureSelectionCore(
+                i4LocalCandidateKey,
+                out handle,
+                out error);
+        }
+    }
+
+    private bool TryCaptureSelectionCore(
         string? i4LocalCandidateKey,
         out FlatPromptSelectionHandleV1? handle,
         out FlatPromptErrorCodeV1 error)
@@ -784,6 +849,34 @@ public sealed class FlatPromptSessionV1
     }
 
     internal bool TryResolveSelection(
+        FlatPromptSelectionHandleV1? handle,
+        out FlatPromptResponseResolutionV1 response,
+        out FlatPromptErrorCodeV1 error)
+    {
+        PrivateGameplayFrameAuthorityV1? frameAuthority =
+            currentBinding?.FrameAuthority;
+        if (frameAuthority is null)
+        {
+            return TryResolveSelectionCore(handle, out response, out error);
+        }
+
+        PrivateGameplayFrameAuthorityLeaseV1? lease =
+            frameAuthority.TryAcquire();
+        if (lease is null)
+        {
+            currentBinding = null;
+            response = default;
+            error = FlatPromptErrorCodeV1.StalePromptBinding;
+            return false;
+        }
+
+        using (lease)
+        {
+            return TryResolveSelectionCore(handle, out response, out error);
+        }
+    }
+
+    private bool TryResolveSelectionCore(
         FlatPromptSelectionHandleV1? handle,
         out FlatPromptResponseResolutionV1 response,
         out FlatPromptErrorCodeV1 error)
