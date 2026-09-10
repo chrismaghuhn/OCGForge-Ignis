@@ -451,6 +451,10 @@ var tests = new (string Name, Action Body)[]
         I6GDeterministicEvidenceScenarioDriverTests
             .TestLocalRoutingKeyDoesNotChangePublicDomainDigest),
 
+    ("I6G I4/I6C5 locator parity characterizes cross-pile ordinal drift",
+        I6GLocatorParityCharacterizationTests
+            .TestI4AndI6C5CrossPileOrdinalDrift),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 
