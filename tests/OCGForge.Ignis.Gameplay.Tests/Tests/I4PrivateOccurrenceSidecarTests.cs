@@ -175,6 +175,44 @@ internal static class I4PrivateOccurrenceSidecarTests
         Equal(expectedSecondLocator, forwardEntries[1].AcceptedI4PublicLocator);
     }
 
+    internal static void TestMixedNullAndKnownPositionOrdering()
+    {
+        PublicStateProjectionResultV1 forward =
+            PublicStateProjectionV1.TryProject(
+                CreateDuplicateOwnHandSnapshot(
+                    reverseInsertionOrder: false,
+                    unknownSequence: 1),
+                new PublicStateProjectionContextV1(0),
+                frameInstanceOrdinal: 0);
+        PublicStateProjectionResultV1 reverse =
+            PublicStateProjectionV1.TryProject(
+                CreateDuplicateOwnHandSnapshot(
+                    reverseInsertionOrder: true,
+                    unknownSequence: 1),
+                new PublicStateProjectionContextV1(0),
+                frameInstanceOrdinal: 0);
+        True(forward.IsSuccess, forward.Error.ToString());
+        True(reverse.IsSuccess, reverse.Error.ToString());
+        BytesEqual(forward.CanonicalBytes.Span, reverse.CanonicalBytes.Span);
+        Equal(forward.PublicProjectionId, reverse.PublicProjectionId);
+        NotNull(forward.PrivateOccurrenceSidecar);
+        NotNull(reverse.PrivateOccurrenceSidecar);
+
+        string[] forwardMapping = forward.PrivateOccurrenceSidecar!.Entries
+            .OrderBy(entry => entry.SourceSequence)
+            .Select(entry => entry.SourceSequence + ":" +
+                entry.AcceptedI4PublicLocator.Value)
+            .ToArray();
+        string[] reverseMapping = reverse.PrivateOccurrenceSidecar!.Entries
+            .OrderBy(entry => entry.SourceSequence)
+            .Select(entry => entry.SourceSequence + ":" +
+                entry.AcceptedI4PublicLocator.Value)
+            .ToArray();
+        True(forwardMapping.SequenceEqual(reverseMapping));
+        True(forwardMapping[0].EndsWith(":1", StringComparison.Ordinal));
+        True(forwardMapping[1].EndsWith(":0", StringComparison.Ordinal));
+    }
+
     internal static void TestHiddenOpponentHandEmitsNoSidecarEntry()
     {
         (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
@@ -231,7 +269,8 @@ internal static class I4PrivateOccurrenceSidecarTests
 
     private static MirrorSnapshotV1 CreateDuplicateOwnHandSnapshot(
         bool reverseInsertionOrder,
-        bool unknownPositions = false)
+        bool unknownPositions = false,
+        uint? unknownSequence = null)
     {
         const uint duplicateCardCode = 0x11223344;
         (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
@@ -256,19 +295,24 @@ internal static class I4PrivateOccurrenceSidecarTests
 
         MirrorSnapshotV1 snapshot = mirror.Snapshot;
         IEnumerable<MirrorCardSnapshotV1> cards = snapshot.Cards;
-        if (unknownPositions)
+        if (unknownPositions || unknownSequence.HasValue)
         {
-            cards = cards.Select(card => new MirrorCardSnapshotV1(
-                card.EntityId,
-                card.Controller,
-                card.Owner,
-                card.Zone,
-                card.Sequence,
-                card.IsOverlay,
-                card.OverlayIndex,
-                MirrorValueV1.Unknown<uint>(),
-                card.CardCode,
-                card.QueryFields));
+            cards = cards.Select(card =>
+                unknownPositions ||
+                (card.Zone == MirrorZoneV1.Hand &&
+                 card.Sequence == unknownSequence)
+                    ? new MirrorCardSnapshotV1(
+                        card.EntityId,
+                        card.Controller,
+                        card.Owner,
+                        card.Zone,
+                        card.Sequence,
+                        card.IsOverlay,
+                        card.OverlayIndex,
+                        MirrorValueV1.Unknown<uint>(),
+                        card.CardCode,
+                        card.QueryFields)
+                    : card);
         }
 
         if (reverseInsertionOrder)
@@ -289,7 +333,7 @@ internal static class I4PrivateOccurrenceSidecarTests
                 snapshot.OverlayRelations,
                 snapshot.PendingChainSource);
         }
-        else if (unknownPositions)
+        else if (unknownPositions || unknownSequence.HasValue)
         {
             snapshot = new MirrorSnapshotV1(
                 snapshot.Perspective,

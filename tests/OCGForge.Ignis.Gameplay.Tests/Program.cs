@@ -485,6 +485,10 @@ var tests = new (string Name, Action Body)[]
         I4PrivateOccurrenceSidecarTests
             .TestNullPositionDuplicatePairingIsInsertionOrderIndependent),
 
+    ("I4 mixed null-known position ordering is deterministic",
+        I4PrivateOccurrenceSidecarTests
+            .TestMixedNullAndKnownPositionOrdering),
+
     ("I4 hidden opponent hand emits no sidecar entry",
         I4PrivateOccurrenceSidecarTests
             .TestHiddenOpponentHandEmitsNoSidecarEntry),
