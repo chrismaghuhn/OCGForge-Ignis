@@ -1,6 +1,6 @@
 # OCGForge-Ignis I4 Private Prompt Correlation Sidecar V1
 
-Status: `DESIGN_ONLY`; not accepted or implemented
+Status: `ACCEPTED_DESIGN_FREEZE`; implementation not authorized
 Contract ID: `ocgforge-ignis.flat-prompt-correlation-sidecar.v1`
 Parent public contract: `ocgforge-ignis.flat-prompt-projection.v1`
 Date: 2026-09-10
@@ -11,8 +11,8 @@ I4_PUBLICSTATE_BYTES=UNCHANGED
 I4_PUBLICSTATE_IDENTITY=UNCHANGED
 I4_AUTHORITATIVE_CONTRACT_RECONCILED=YES_BY_EXPLICIT_VERSION_TRANSITION
 I4_V1_IN_PLACE_AMENDMENT=FORBIDDEN
-I4_PRIVATE_CORRELATION_SIDECAR=DESIGN_ONLY
-I4_PRIVATE_CORRELATION_SIDECAR_ACCEPTED=NO
+I4_PRIVATE_CORRELATION_SIDECAR=ACCEPTED_DESIGN_FREEZE
+I4_PRIVATE_CORRELATION_SIDECAR_ACCEPTED=YES_FOR_DESIGN_ONLY
 I4_PRIVATE_CORRELATION_SIDECAR_IMPLEMENTED=NO
 I6B_BUNDLE_ENTRY=NO
 ```
@@ -221,9 +221,10 @@ frozen flat-prompt-projection.v1
     -> future I4/I6D implementation authorization
 ```
 
-Until this companion contract is independently accepted, duplicate same-code
-own-Hand prompts remain unsupported and fail closed. The transition changes
-neither public-state canonical bytes nor public-state identity:
+Until production implementation is separately authorized and verified,
+duplicate same-code own-Hand prompts remain unsupported and fail closed. The
+accepted design transition changes neither public-state canonical bytes nor
+public-state identity:
 
 ```text
 NEW_GAMEPLAY_SEMANTICS=NO

@@ -289,8 +289,14 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
             .I4SidecarUsesSequenceAsPublicLocator);
         False(I6DPrivateSourceOccurrenceBindingDesignV1
             .I4SidecarImplemented);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarAcceptedForDesignOnly);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarImplementationAuthorized);
         False(I6DPrivateSourceOccurrenceBindingDesignV1
             .I4ContractAmendmentImplemented);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I6DPrivateSourceOccurrenceBindingDesignFinal);
         True(I6DPrivateSourceOccurrenceBindingDesignV1
             .AssemblyHandoffIsSingleFacade);
         False(I6DPrivateSourceOccurrenceBindingDesignV1

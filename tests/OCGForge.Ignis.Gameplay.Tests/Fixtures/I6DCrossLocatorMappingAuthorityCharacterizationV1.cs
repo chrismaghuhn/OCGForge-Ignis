@@ -429,7 +429,13 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
 
     internal const bool I4SidecarImplemented = false;
 
+    internal const bool I4SidecarAcceptedForDesignOnly = true;
+
+    internal const bool I4SidecarImplementationAuthorized = false;
+
     internal const bool I4ContractAmendmentImplemented = false;
+
+    internal const bool I6DPrivateSourceOccurrenceBindingDesignFinal = true;
 
     internal const bool AssemblyHandoffExposesPrivateFields = false;
 
