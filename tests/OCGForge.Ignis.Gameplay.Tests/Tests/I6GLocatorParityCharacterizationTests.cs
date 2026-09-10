@@ -8,13 +8,13 @@ namespace OCGForge.Ignis.Gameplay.Tests;
 
 internal static class I6GLocatorParityCharacterizationTests
 {
-    internal static void TestI4AndI6C5CrossPileOrdinalParity()
+    internal static void TestI4AndI6C5CrossPileOrdinalDrift()
     {
         I6GLocatorParityObservationV1 first = CreateObservation();
         I6GLocatorParityObservationV1 second = CreateObservation();
 
         Equal(
-            I6GLocatorParityClassificationV1.ExactMatch,
+            I6GLocatorParityClassificationV1.OrdinalScopeDrift,
             first.Classification);
         Equal(0, first.CandidateIndex);
         Equal(FlatPromptChoiceKindV1.SpecialSummon, first.ChoiceKind);
@@ -22,7 +22,7 @@ internal static class I6GLocatorParityCharacterizationTests
         Equal(PublicSemanticZoneV1.ExtraDeck, first.PublicZone);
         True(first.I4PublicStateLocatorPresent);
         Equal(1, first.I4PublicStateLocatorMatchCount);
-        Equal(1, first.I6C5ExactLocatorMatchCount);
+        Equal(0, first.I6C5ExactLocatorMatchCount);
         Equal(1, first.I6C5SamePublicCardMatchCount);
         Equal(first, second);
     }
