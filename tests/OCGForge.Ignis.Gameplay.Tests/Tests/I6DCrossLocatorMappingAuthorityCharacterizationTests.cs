@@ -59,12 +59,7 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
         I6DCrossLocatorCaseV1 hiddenCase = HiddenOpponentHand();
         False(hiddenCase.PublicState.Cards.Any(card =>
             card.AbsolutePlayer == 1 &&
-            card.Zone == PublicSemanticZoneV1.Hand &&
-            card.CardCode.HasValue));
-        False(hiddenCase.PublicState.Cards.Any(card =>
-            card.AbsolutePlayer == 1 &&
-            card.Zone == PublicSemanticZoneV1.Hand &&
-            card.Locator.Value.Contains(":public:", StringComparison.Ordinal)));
+            card.Zone == PublicSemanticZoneV1.Hand));
         False(hiddenCase.I6C5Entities.Any(entity =>
             entity.Controller == 1 &&
             entity.Zone == PerspectiveSafeSemanticZoneV1.Hand &&
