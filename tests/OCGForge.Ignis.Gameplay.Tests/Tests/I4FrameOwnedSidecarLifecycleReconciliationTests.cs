@@ -593,6 +593,338 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         }
     }
 
+    internal static void TestPromptWinsAgainstConcurrentPump()
+    {
+        LifecycleRaceTransport transport = new(CreateMoveFrame());
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateBlockedGameplaySession(transport);
+        Task<GameplayMirrorPumpResult>? pumpTask = null;
+        try
+        {
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? frame));
+            NotNull(frame);
+            PublicStateProjectionResultV1 projection =
+                CreateFrameProjection(frame!);
+            FlatPromptSessionV1 promptSession = new();
+
+            pumpTask = StartPump(session);
+            transport.ReadStarted.GetAwaiter().GetResult();
+
+            Task<FlatPromptProjectionResultV1> promptTask = Task.Run(
+                () => promptSession.TryAcceptFrameOwnedPrompt(
+                    IdleTransitionOnly(),
+                    frame,
+                    projection));
+            FlatPromptProjectionResultV1 prompt =
+                promptTask.GetAwaiter().GetResult();
+            True(prompt.IsSuccess, prompt.Error.ToString());
+            Equal(0ul, frame!.FrameInstanceOrdinal);
+            True(frame.IsCurrent);
+
+            transport.Release();
+            GameplayMirrorPumpResult pump =
+                pumpTask.GetAwaiter().GetResult();
+            True(pump.IsSuccess, pump.Error.ToString());
+            False(frame!.IsCurrent);
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? nextFrame));
+            NotNull(nextFrame);
+            Equal(1ul, nextFrame!.FrameInstanceOrdinal);
+        }
+        finally
+        {
+            transport.Release();
+            if (pumpTask is not null)
+            {
+                _ = pumpTask.GetAwaiter().GetResult();
+            }
+
+            session.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestPumpWinsAgainstPrompt()
+    {
+        LifecycleRaceTransport transport = new(CreateMoveFrame());
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateBlockedGameplaySession(transport);
+        Task<GameplayMirrorPumpResult>? pumpTask = null;
+        try
+        {
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? frame));
+            NotNull(frame);
+            PublicStateProjectionResultV1 projection =
+                CreateFrameProjection(frame!);
+            FlatPromptSessionV1 promptSession = new();
+            pumpTask = StartPump(session);
+            transport.ReadStarted.GetAwaiter().GetResult();
+
+            Task<FlatPromptProjectionResultV1> promptTask = Task.Run(
+                () =>
+                {
+                    _ = pumpTask.GetAwaiter().GetResult();
+                    return promptSession.TryAcceptFrameOwnedPrompt(
+                        IdleTransitionOnly(),
+                        frame,
+                        projection);
+                });
+
+            transport.Release();
+            GameplayMirrorPumpResult pump =
+                pumpTask.GetAwaiter().GetResult();
+            True(pump.IsSuccess, pump.Error.ToString());
+            FlatPromptProjectionResultV1 prompt =
+                promptTask.GetAwaiter().GetResult();
+            False(prompt.IsSuccess);
+            Equal(FlatPromptErrorCodeV1.AuthorityMismatch, prompt.Error);
+            Null(prompt.Context);
+            Null(prompt.Candidates);
+            False(frame!.IsCurrent);
+        }
+        finally
+        {
+            transport.Release();
+            if (pumpTask is not null)
+            {
+                _ = pumpTask.GetAwaiter().GetResult();
+            }
+
+            session.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestResolveWinsAgainstConcurrentPump()
+    {
+        LifecycleRaceTransport transport = new(CreateMoveFrame());
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateBlockedGameplaySession(transport);
+        Task<GameplayMirrorPumpResult>? pumpTask = null;
+        try
+        {
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? frame));
+            NotNull(frame);
+            PublicStateProjectionResultV1 projection =
+                CreateFrameProjection(frame!);
+            (FlatPromptSessionV1 promptSession,
+                FlatPromptSelectionHandleV1 handle) =
+                CreateFrameBoundSelection(frame!, projection);
+
+            pumpTask = StartPump(session);
+            transport.ReadStarted.GetAwaiter().GetResult();
+            Task<(bool IsSuccess,
+                FlatPromptResponseResolutionV1 Response,
+                FlatPromptErrorCodeV1 Error)> resolveTask = Task.Run(
+                () =>
+                {
+                    bool resolved = promptSession.TryResolveSelection(
+                        handle,
+                        out FlatPromptResponseResolutionV1 response,
+                        out FlatPromptErrorCodeV1 error);
+                    return (resolved, response, error);
+                });
+            (bool resolved,
+                FlatPromptResponseResolutionV1 response,
+                FlatPromptErrorCodeV1 error) =
+                resolveTask.GetAwaiter().GetResult();
+            True(resolved);
+            Equal(FlatPromptErrorCodeV1.None, error);
+            Equal(7, response.ResponseI32);
+
+            transport.Release();
+            GameplayMirrorPumpResult pump =
+                pumpTask.GetAwaiter().GetResult();
+            True(pump.IsSuccess, pump.Error.ToString());
+            False(frame!.IsCurrent);
+        }
+        finally
+        {
+            transport.Release();
+            if (pumpTask is not null)
+            {
+                _ = pumpTask.GetAwaiter().GetResult();
+            }
+
+            session.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestPumpWinsAgainstResolve()
+    {
+        LifecycleRaceTransport transport = new(CreateMoveFrame());
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateBlockedGameplaySession(transport);
+        Task<GameplayMirrorPumpResult>? pumpTask = null;
+        try
+        {
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? frame));
+            NotNull(frame);
+            PublicStateProjectionResultV1 projection =
+                CreateFrameProjection(frame!);
+            (FlatPromptSessionV1 promptSession,
+                FlatPromptSelectionHandleV1 handle) =
+                CreateFrameBoundSelection(frame!, projection);
+
+            pumpTask = StartPump(session);
+            transport.ReadStarted.GetAwaiter().GetResult();
+            Task<(bool IsSuccess,
+                FlatPromptResponseResolutionV1 Response,
+                FlatPromptErrorCodeV1 Error)> resolveTask = Task.Run(
+                () =>
+                {
+                    _ = pumpTask.GetAwaiter().GetResult();
+                    bool resolved = promptSession.TryResolveSelection(
+                        handle,
+                        out FlatPromptResponseResolutionV1 response,
+                        out FlatPromptErrorCodeV1 error);
+                    return (resolved, response, error);
+                });
+
+            transport.Release();
+            GameplayMirrorPumpResult pump =
+                pumpTask.GetAwaiter().GetResult();
+            True(pump.IsSuccess, pump.Error.ToString());
+            (bool resolved,
+                FlatPromptResponseResolutionV1 response,
+                FlatPromptErrorCodeV1 error) =
+                resolveTask.GetAwaiter().GetResult();
+            False(resolved);
+            Equal(FlatPromptErrorCodeV1.StalePromptBinding, error);
+            Equal(0, response.ResponseI32);
+            False(frame!.IsCurrent);
+        }
+        finally
+        {
+            transport.Release();
+            if (pumpTask is not null)
+            {
+                _ = pumpTask.GetAwaiter().GetResult();
+            }
+
+            session.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestSessionDisposalStalesAllFrameBoundConsumers()
+    {
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateGameplaySession();
+        try
+        {
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? frame));
+            NotNull(frame);
+            PublicStateProjectionResultV1 projection =
+                CreateFrameProjection(frame!);
+            (FlatPromptSessionV1 capturePrompt,
+                FlatPromptSelectionHandleV1 captureHandle) =
+                CreateFrameBoundSelection(frame!, projection);
+            (FlatPromptSessionV1 resolvePrompt,
+                FlatPromptSelectionHandleV1 resolveHandle) =
+                CreateFrameBoundSelection(frame!, projection);
+            (FlatPromptSessionV1 applyPrompt,
+                FlatPromptSelectionHandleV1 applyHandle) =
+                CreateFrameBoundSelection(frame!, projection);
+
+            session.DisposeAsync().GetAwaiter().GetResult();
+
+            False(capturePrompt.TryCaptureSelection(
+                captureHandle.I4LocalCandidateKey,
+                out FlatPromptSelectionHandleV1? staleCapture,
+                out FlatPromptErrorCodeV1 captureError));
+            Null(staleCapture);
+            Equal(FlatPromptErrorCodeV1.StalePromptBinding, captureError);
+
+            False(resolvePrompt.TryResolveSelection(
+                resolveHandle,
+                out FlatPromptResponseResolutionV1 staleResponse,
+                out FlatPromptErrorCodeV1 resolveError));
+            Equal(FlatPromptErrorCodeV1.StalePromptBinding, resolveError);
+            Equal(0, staleResponse.ResponseI32);
+
+            FlatPromptContinuationStepResultV1 staleApply =
+                applyPrompt.TryApplySelection(applyHandle);
+            False(staleApply.IsSuccess);
+            Equal(FlatPromptErrorCodeV1.StalePromptBinding, staleApply.Error);
+            Null(staleApply.Projection);
+            False(staleApply.IsTerminal);
+        }
+        finally
+        {
+            session.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestFailedFrameBoundaryStalesAllFrameBoundConsumers()
+    {
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateGameplaySession();
+        try
+        {
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? frame));
+            NotNull(frame);
+            PublicStateProjectionResultV1 projection =
+                CreateFrameProjection(frame!);
+            (FlatPromptSessionV1 capturePrompt,
+                FlatPromptSelectionHandleV1 captureHandle) =
+                CreateFrameBoundSelection(frame!, projection);
+            (FlatPromptSessionV1 resolvePrompt,
+                FlatPromptSelectionHandleV1 resolveHandle) =
+                CreateFrameBoundSelection(frame!, projection);
+            (FlatPromptSessionV1 applyPrompt,
+                FlatPromptSelectionHandleV1 applyHandle) =
+                CreateFrameBoundSelection(frame!, projection);
+
+            PerspectiveSafeFrameSourceResultV1 failedProjection =
+                session.TryCreateI6C5Frame();
+            False(failedProjection.IsSuccess);
+            Equal(
+                PerspectiveSafeFrameSourceErrorCodeV1.MissingMatchContext,
+                failedProjection.Error!.Value.Code);
+
+            False(capturePrompt.TryCaptureSelection(
+                captureHandle.I4LocalCandidateKey,
+                out FlatPromptSelectionHandleV1? staleCapture,
+                out FlatPromptErrorCodeV1 captureError));
+            Null(staleCapture);
+            Equal(FlatPromptErrorCodeV1.StalePromptBinding, captureError);
+
+            False(resolvePrompt.TryResolveSelection(
+                resolveHandle,
+                out FlatPromptResponseResolutionV1 staleResponse,
+                out FlatPromptErrorCodeV1 resolveError));
+            Equal(FlatPromptErrorCodeV1.StalePromptBinding, resolveError);
+            Equal(0, staleResponse.ResponseI32);
+
+            FlatPromptContinuationStepResultV1 staleApply =
+                applyPrompt.TryApplySelection(applyHandle);
+            False(staleApply.IsSuccess);
+            Equal(FlatPromptErrorCodeV1.StalePromptBinding, staleApply.Error);
+            Null(staleApply.Projection);
+            False(staleApply.IsTerminal);
+        }
+        finally
+        {
+            session.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
     internal static void TestFrameAuthorityHasSafeLifecycle()
     {
         Equal(
@@ -640,6 +972,50 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
                 property.Name.Contains(
                     "FrameInstanceOrdinal",
                     StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static Task<GameplayMirrorPumpResult> StartPump(
+        GameplayMirrorSessionV1 session) =>
+        Task.Run(async () =>
+            await session.PumpAsync(CancellationToken.None));
+
+    private static PublicStateProjectionResultV1 CreateFrameProjection(
+        PrivateGameplayFrameAuthorityV1 frame)
+    {
+        PublicStateProjectionResultV1 projection =
+            PublicStateProjectionV1.TryProject(
+                frame.MirrorSnapshot,
+                new PublicStateProjectionContextV1(0),
+                frame.FrameInstanceOrdinal);
+        True(projection.IsSuccess, projection.Error.ToString());
+        NotNull(projection.PrivateOccurrenceSidecar);
+        return projection;
+    }
+
+    private static (
+        FlatPromptSessionV1 Prompt,
+        FlatPromptSelectionHandleV1 Handle)
+        CreateFrameBoundSelection(
+            PrivateGameplayFrameAuthorityV1 frame,
+            PublicStateProjectionResultV1 projection)
+    {
+        FlatPromptSessionV1 prompt = new();
+        FlatPromptProjectionResultV1 accepted =
+            prompt.TryAcceptFrameOwnedPrompt(
+                IdleTransitionOnly(),
+                frame,
+                projection);
+        True(accepted.IsSuccess, accepted.Error.ToString());
+        FlatPublicCandidateDescriptorV1 toEp = accepted.Candidates!
+            .Single(candidate =>
+                candidate.ChoiceKind == FlatPromptChoiceKindV1.ToEp);
+        True(prompt.TryCaptureSelection(
+            toEp.I4LocalCandidateKey,
+            out FlatPromptSelectionHandleV1? handle,
+            out FlatPromptErrorCodeV1 captureError),
+            captureError.ToString());
+        NotNull(handle);
+        return (prompt, handle!);
     }
 
     private static (
@@ -697,6 +1073,29 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
             U32(0),
             new byte[] { 0, 0, 0 });
 
+    private static byte[] IdleTransitionOnly()
+    {
+        byte[] bytes = new byte[29];
+        bytes[0] = 11;
+        bytes[1] = 0;
+        bytes[26] = 1;
+        bytes[27] = 1;
+        bytes[28] = 1;
+        return bytes;
+    }
+
+    private static byte[] CreateMoveFrame()
+    {
+        const uint cardCode = 0x11223344;
+        return WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            MoveMessage(
+                cardCode,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x02, 0, 0x08),
+                0));
+    }
+
     private static byte[] DuplicateOwnHandSelectCardMessage(uint cardCode) =>
         Join(
             new byte[] { 15, 0, 0 },
@@ -742,6 +1141,36 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         GameplayHandoffAcquireResult acquired =
             GameplayHandoffConsumerV1.TryCreate(
                 CreateHandoff(transport, Array.Empty<byte>()));
+        True(acquired.IsSuccess, acquired.Error.ToString());
+        GameplayHandoffConsumerV1 consumer = acquired.Consumer!;
+        GameplayPumpResult first = consumer.PumpAsync(
+            CancellationToken.None).GetAwaiter().GetResult();
+        True(first.IsSuccess, first.Error.ToString());
+        MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
+            first.Message!,
+            first.Perspective!);
+        True(created.IsSuccess, created.Error.ToString());
+        return (
+            new GameplayMirrorSessionV1(first.Session!, created.Mirror!),
+            consumer);
+    }
+
+    private static (
+        GameplayMirrorSessionV1 Session,
+        GameplayHandoffConsumerV1 Consumer)
+        CreateBlockedGameplaySession(LifecycleRaceTransport transport)
+    {
+        byte[] startFrame = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            CreateStartBytes(
+                0,
+                deckCount0: 2,
+                extraCount0: 1,
+                deckCount1: 0,
+                extraCount1: 0));
+        GameplayHandoffAcquireResult acquired =
+            GameplayHandoffConsumerV1.TryCreate(
+                CreateHandoff(transport, startFrame));
         True(acquired.IsSuccess, acquired.Error.ToString());
         GameplayHandoffConsumerV1 consumer = acquired.Consumer!;
         GameplayPumpResult first = consumer.PumpAsync(

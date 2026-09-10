@@ -557,6 +557,30 @@ var tests = new (string Name, Action Body)[]
         I4FrameOwnedSidecarLifecycleReconciliationTests
             .TestFrameBoundPromptBindingExpiresOnFrameAdvance),
 
+    ("I4 prompt acceptance wins against concurrent mirror pump",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestPromptWinsAgainstConcurrentPump),
+
+    ("I4 mirror pump wins against prompt acceptance",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestPumpWinsAgainstPrompt),
+
+    ("I4 response resolution wins against concurrent mirror pump",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestResolveWinsAgainstConcurrentPump),
+
+    ("I4 mirror pump wins against response resolution",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestPumpWinsAgainstResolve),
+
+    ("I4 session disposal stales frame-bound consumers",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestSessionDisposalStalesAllFrameBoundConsumers),
+
+    ("I4 failed frame boundary stales frame-bound consumers",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestFailedFrameBoundaryStalesAllFrameBoundConsumers),
+
     ("I4 frame authority has safe lifecycle",
         I4FrameOwnedSidecarLifecycleReconciliationTests
             .TestFrameAuthorityHasSafeLifecycle),
