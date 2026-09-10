@@ -92,9 +92,7 @@ internal static class FlatPromptCardCorrelationV1
         byte location,
         byte sequence,
         out FlatPromptCardCorrelationResultV1? result,
-        out FlatPromptErrorCodeV1 error,
-        PrivateI4OccurrencePublicLocatorSidecarV1?
-            privateOccurrenceSidecar = null)
+        out FlatPromptErrorCodeV1 error)
     {
         if ((location & 0x80) != 0)
         {
@@ -109,8 +107,7 @@ internal static class FlatPromptCardCorrelationV1
             sourceCardCode,
             new ModernLocInfoV1(controller, location, sequence, 0),
             out result,
-            out error,
-            privateOccurrenceSidecar);
+            out error);
     }
 
     internal static bool TryCorrelateSort(
@@ -121,9 +118,7 @@ internal static class FlatPromptCardCorrelationV1
         byte location,
         uint sequence,
         out FlatPromptCardCorrelationResultV1? result,
-        out FlatPromptErrorCodeV1 error,
-        PrivateI4OccurrencePublicLocatorSidecarV1?
-            privateOccurrenceSidecar = null)
+        out FlatPromptErrorCodeV1 error)
     {
         if ((location & 0x80) != 0)
         {
@@ -138,8 +133,7 @@ internal static class FlatPromptCardCorrelationV1
             sourceCardCode,
             new ModernLocInfoV1(controller, location, sequence, 0),
             out result,
-            out error,
-            privateOccurrenceSidecar);
+            out error);
     }
 
     private static bool TryCorrelateIndexed(

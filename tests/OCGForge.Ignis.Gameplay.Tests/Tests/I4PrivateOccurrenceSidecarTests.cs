@@ -219,11 +219,15 @@ internal static class I4PrivateOccurrenceSidecarTests
         (PerspectiveStateMirrorV1 mirror,
             PublicStateProjectionResultV1 projection) =
             CreateDuplicateOwnHandFrameAuthority(duplicateCardCode);
+        PrivateGameplayFrameAuthorityV1 currentFrame =
+            new(
+                projection.PrivateOccurrenceSidecar!.FrameInstanceOrdinal,
+                mirror.Snapshot);
 
         FlatPromptSessionV1 session = new();
-        FlatPromptProjectionResultV1 result = session.TryAcceptPrompt(
+        FlatPromptProjectionResultV1 result = session.TryAcceptFrameOwnedPrompt(
             DuplicateOwnHandIdleMessage(duplicateCardCode),
-            mirror,
+            currentFrame,
             projection);
 
         True(result.IsSuccess, result.Error.ToString());
@@ -252,9 +256,9 @@ internal static class I4PrivateOccurrenceSidecarTests
             firstResolveError.ToString());
         Equal(0, firstResponse.ResponseI32);
 
-        True(session.TryAcceptPrompt(
+        True(session.TryAcceptFrameOwnedPrompt(
             DuplicateOwnHandIdleMessage(duplicateCardCode),
-            mirror,
+            currentFrame,
             projection).IsSuccess);
         True(session.TryCaptureSelection(
             candidates[1].I4LocalCandidateKey,

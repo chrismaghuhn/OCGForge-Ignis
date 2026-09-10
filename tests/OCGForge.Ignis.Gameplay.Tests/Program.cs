@@ -505,25 +505,37 @@ var tests = new (string Name, Action Body)[]
         I4PrivateOccurrenceSidecarTests
             .TestSidecarOccurrenceAndTargetValidationFailClosed),
 
-    ("I4 existing frame authority is absent",
+    ("I4 frame authority is session owned",
         I4FrameOwnedSidecarLifecycleReconciliationTests
-            .TestExistingFrameAuthorityIsAbsent),
+            .TestFrameAuthorityIsSessionOwned),
 
-    ("I4 current sidecar frame ordinal is self-authenticated",
+    ("I4 sidecar frame ordinal requires independent authority",
         I4FrameOwnedSidecarLifecycleReconciliationTests
-            .TestCurrentSidecarFrameOrdinalIsSelfAuthenticated),
+            .TestSidecarFrameOrdinalRequiresIndependentAuthority),
 
     ("I4 initial frame binds existing initialized mirror",
         I4FrameOwnedSidecarLifecycleReconciliationTests
             .TestInitialFrameBindsExistingInitializedMirror),
 
-    ("I4 current I5 sidecar enablement is out of scope",
+    ("I5 sidecar enablement is restored to baseline",
         I4FrameOwnedSidecarLifecycleReconciliationTests
-            .TestCurrentI5SidecarEnablementIsOutOfScope),
+            .TestI5SidecarEnablementIsRestoredToBaseline),
 
-    ("I4 proposed frame authority has safe lifecycle",
+    ("I4 gameplay session has independent frame authority",
         I4FrameOwnedSidecarLifecycleReconciliationTests
-            .TestProposedFrameAuthorityHasSafeLifecycle),
+            .TestGameplaySessionHasIndependentFrameAuthority),
+
+    ("I4 gameplay session frame authority lifecycle",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestGameplaySessionFrameAuthorityLifecycle),
+
+    ("I4 failed mirror apply does not advance frame ordinal",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestFailedApplyDoesNotAdvanceFrameOrdinal),
+
+    ("I4 frame authority has safe lifecycle",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestFrameAuthorityHasSafeLifecycle),
 
     ("I4 hidden opponent hand emits no sidecar entry",
         I4PrivateOccurrenceSidecarTests

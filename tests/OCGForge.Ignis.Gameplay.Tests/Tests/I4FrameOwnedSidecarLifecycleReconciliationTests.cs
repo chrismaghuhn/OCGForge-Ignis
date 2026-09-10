@@ -5,32 +5,33 @@ using OCGForge.Ignis.Gameplay.Tests.Fixtures;
 using static OCGForge.Ignis.Gameplay.Tests.GameplayMessageFixtures;
 using static OCGForge.Ignis.Gameplay.Tests.MirrorFixtures;
 using static OCGForge.Ignis.Gameplay.Tests.TestAssert;
+using static OCGForge.Ignis.Gameplay.Tests.TransportFixtures;
 
 namespace OCGForge.Ignis.Gameplay.Tests;
 
 internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
 {
-    internal static void TestExistingFrameAuthorityIsAbsent()
+    internal static void TestFrameAuthorityIsSessionOwned()
     {
         Equal(
-            "GameplayMirrorSessionV1 owns Mirror only",
+            "GameplayMirrorSessionV1 owns current Mirror and FrameInstanceOrdinal",
             I4FrameOwnedSidecarLifecycleReconciliationV1.ExistingFrameOwner);
         Equal(
-            "ABSENT",
+            "SESSION_OWNED",
             I4FrameOwnedSidecarLifecycleReconciliationV1
                 .ExistingFrameOrdinalAuthority);
         Equal(
-            "caller-supplied PublicStateProjectionV1.TryProject(..., ulong)",
+            "GameplayMirrorSessionV1 current authority supplies PublicStateProjectionV1.TryProject(..., ulong)",
             I4FrameOwnedSidecarLifecycleReconciliationV1
                 .ExistingProjectionOrdinalSource);
 
-        Type[] currentFrameConsumers =
+        True(HasNamedFrameCoordinate(typeof(GameplayMirrorSessionV1)));
+        Type[] publicFrameConsumers =
         {
-            typeof(GameplayMirrorSessionV1),
             typeof(FlatPromptSessionV1),
             typeof(PerspectiveSafeFrameV1)
         };
-        foreach (Type type in currentFrameConsumers)
+        foreach (Type type in publicFrameConsumers)
         {
             False(HasNamedFrameCoordinate(type));
         }
@@ -55,7 +56,7 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         NotNull(sidecarFrameOrdinal);
     }
 
-    internal static void TestCurrentSidecarFrameOrdinalIsSelfAuthenticated()
+    internal static void TestSidecarFrameOrdinalRequiresIndependentAuthority()
     {
         const uint cardCode = 0x11223344;
         (PerspectiveStateMirrorV1 mirror,
@@ -63,36 +64,48 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
             CreateOwnHandFrameAuthority(cardCode, frameInstanceOrdinal: 41);
         PrivateI4OccurrencePublicLocatorSidecarV1 originalSidecar =
             projection.PrivateOccurrenceSidecar!;
-        True(PrivateI4OccurrencePublicLocatorSidecarV1.TryCreate(
-                99,
-                projection.PublicProjectionId,
-                originalSidecar.Entries,
-                out PrivateI4OccurrencePublicLocatorSidecarV1? alternateSidecar));
-
-        PublicStateProjectionResultV1 alternateProjection =
-            PublicStateProjectionResultV1.Success(
-                projection.Snapshot!,
-                projection.CanonicalBytes.ToArray(),
-                projection.Sha256!,
-                alternateSidecar!);
+        PublicStateProjectionResultV1 futureProjection =
+            RebindSidecar(projection, 99);
         FlatPromptProjectionResultV1 result = new FlatPromptSessionV1()
             .TryAcceptPrompt(
                 SingleOwnHandIdleMessage(cardCode),
                 mirror,
-                alternateProjection);
+                futureProjection);
 
-        True(result.IsSuccess, result.Error.ToString());
+        False(result.IsSuccess);
+        Equal(FlatPromptErrorCodeV1.AuthorityMismatch, result.Error);
+        PrivateGameplayFrameAuthorityV1 currentFrame =
+            new(41, mirror.Snapshot);
+        Null(result.Context);
+        Null(result.Candidates);
+
+        foreach (ulong mismatchedOrdinal in new[] { 40ul, 42ul })
+        {
+            PublicStateProjectionResultV1 mismatchedProjection =
+                RebindSidecar(projection, mismatchedOrdinal);
+            FlatPromptProjectionResultV1 currentFrameResult =
+                new FlatPromptSessionV1().TryAcceptFrameOwnedPrompt(
+                    SingleOwnHandIdleMessage(cardCode),
+                    currentFrame,
+                    mismatchedProjection);
+            False(currentFrameResult.IsSuccess);
+            Equal(
+                FlatPromptErrorCodeV1.AuthorityMismatch,
+                currentFrameResult.Error);
+            Null(currentFrameResult.Context);
+            Null(currentFrameResult.Candidates);
+        }
+
+        currentFrame.Invalidate();
+        FlatPromptProjectionResultV1 invalidatedFrameResult =
+            new FlatPromptSessionV1().TryAcceptFrameOwnedPrompt(
+                SingleOwnHandIdleMessage(cardCode),
+                currentFrame,
+                projection);
+        False(invalidatedFrameResult.IsSuccess);
         Equal(
-            "sidecar.FrameInstanceOrdinal -> same ordinal re-projection",
-            I4FrameOwnedSidecarLifecycleReconciliationV1
-                .ExistingConsumerCheck);
-        Equal(
-            "NOT_PROVEN",
-            I4FrameOwnedSidecarLifecycleReconciliationV1.CurrentFrameMatch);
-        Equal(
-            "NOT_PROVEN",
-            I4FrameOwnedSidecarLifecycleReconciliationV1
-                .StaleFrameRejection);
+            FlatPromptErrorCodeV1.AuthorityMismatch,
+            invalidatedFrameResult.Error);
     }
 
     internal static void TestInitialFrameBindsExistingInitializedMirror()
@@ -127,10 +140,10 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         Equal(
             "PerspectiveStateMirrorV1.TryCreate(MSG_START) -> GameplayMirrorSessionV1 binds existing mirror -> FRAME_0",
             I4FrameOwnedSidecarLifecycleReconciliationV1
-                .ProposedCreationBoundary);
+                .ImplementedCreationBoundary);
     }
 
-    internal static void TestCurrentI5SidecarEnablementIsOutOfScope()
+    internal static void TestI5SidecarEnablementIsRestoredToBaseline()
     {
         const uint cardCode = 0x11223344;
         (PerspectiveStateMirrorV1 mirror,
@@ -148,6 +161,10 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         True(result.IsSuccess, result.Error.ToString());
         NotNull(result.Candidates);
         Equal(2, result.Candidates!.Count);
+        True(result.Candidates.All(candidate =>
+            candidate is FlatPromptCardSelectionPromptCodeCandidateV1));
+        False(result.Candidates.Any(candidate =>
+            candidate is FlatPromptCardSelectionLocatorPromptCodeCandidateV1));
         Equal(
             "OUT_OF_SCOPE",
             I4FrameOwnedSidecarLifecycleReconciliationV1
@@ -157,30 +174,182 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
             I4FrameOwnedSidecarLifecycleReconciliationV1.I5Baseline);
     }
 
-    internal static void TestProposedFrameAuthorityHasSafeLifecycle()
+    internal static void TestGameplaySessionHasIndependentFrameAuthority()
+    {
+        Type sessionType = typeof(GameplayMirrorSessionV1);
+        BindingFlags instanceFlags = BindingFlags.Instance |
+            BindingFlags.NonPublic;
+        True(sessionType.GetFields(instanceFlags).Any(field =>
+            field.Name == "frameInstanceOrdinal" &&
+            field.FieldType == typeof(ulong)));
+        MethodInfo? authorityMethod = sessionType.GetMethod(
+            "TryGetCurrentFrameAuthority",
+            instanceFlags);
+        NotNull(authorityMethod);
+        Equal(typeof(bool), authorityMethod!.ReturnType);
+        Equal(
+            "SESSION_OWNED",
+            I4FrameOwnedSidecarLifecycleReconciliationV1
+                .ExistingFrameOrdinalAuthority);
+        False(typeof(PrivateGameplayFrameAuthorityV1).IsPublic);
+        BindingFlags authorityFlags = BindingFlags.Instance |
+            BindingFlags.Public |
+            BindingFlags.NonPublic;
+        False(typeof(PrivateGameplayFrameAuthorityV1).GetProperties(
+                authorityFlags)
+            .Any(property => property.GetMethod?.IsPublic == true));
+    }
+
+    internal static void TestGameplaySessionFrameAuthorityLifecycle()
+    {
+        const uint cardCode = 0x11223344;
+        byte[] timeLimit = WireFrameCodec.EncodeStoc(
+            StocPacketType.TimeLimit,
+            PacketPayloadCodec.EncodeStocTimeLimit(
+                new StocTimeLimitPayload(0, 120)));
+        byte[] hint = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            Join(new byte[] { 2, 1, 0 }, U64(0x0102030405060708)));
+        byte[] move = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            MoveMessage(
+                cardCode,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x02, 0, 0x08),
+                0));
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateGameplaySession(timeLimit, hint, move);
+        bool disposed = false;
+        try
+        {
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? initialFrame));
+            NotNull(initialFrame);
+            Equal(0ul, initialFrame!.FrameInstanceOrdinal);
+
+            _ = session.TryCreateI6C5Frame();
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? afterProjection));
+            NotNull(afterProjection);
+            Equal(0ul, afterProjection!.FrameInstanceOrdinal);
+
+            GameplayMirrorPumpResult applied = session.PumpAsync(
+                CancellationToken.None).GetAwaiter().GetResult();
+            True(applied.IsSuccess, applied.Error.ToString());
+            Equal(GameplayMessageKindV1.Move, applied.Message!.Kind);
+            Equal(1, session.PresentationMessagesConsumed);
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? afterApply));
+            NotNull(afterApply);
+            Equal(1ul, afterApply!.FrameInstanceOrdinal);
+            False(initialFrame!.IsCurrent);
+
+            PublicStateProjectionResultV1 projection =
+                PublicStateProjectionV1.TryProject(
+                    afterApply.MirrorSnapshot,
+                    new PublicStateProjectionContextV1(0),
+                    afterApply.FrameInstanceOrdinal);
+            True(projection.IsSuccess, projection.Error.ToString());
+            FlatPromptProjectionResultV1 prompt = new FlatPromptSessionV1()
+                .TryAcceptFrameOwnedPrompt(
+                    SingleOwnHandIdleMessage(cardCode),
+                    afterApply,
+                    projection);
+            True(prompt.IsSuccess, prompt.Error.ToString());
+
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? afterPrompt));
+            NotNull(afterPrompt);
+            Equal(1ul, afterPrompt!.FrameInstanceOrdinal);
+            Equal(
+                afterApply.MirrorSnapshot.ToDeterministicString(),
+                afterPrompt.MirrorSnapshot.ToDeterministicString());
+
+            session.DisposeAsync().GetAwaiter().GetResult();
+            disposed = true;
+            False(afterApply.IsCurrent);
+            False(session.TryGetCurrentFrameAuthority(out _));
+        }
+        finally
+        {
+            if (!disposed)
+            {
+                session.DisposeAsync().GetAwaiter().GetResult();
+            }
+
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestFailedApplyDoesNotAdvanceFrameOrdinal()
+    {
+        const uint cardCode = 0x11223344;
+        byte[] move = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            MoveMessage(
+                cardCode,
+                new ModernLocInfoV1(0, 0, 0, 0),
+                new ModernLocInfoV1(0, 0x02, 0, 0x08),
+                0));
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateGameplaySession(move, move);
+        try
+        {
+            GameplayMirrorPumpResult first = session.PumpAsync(
+                CancellationToken.None).GetAwaiter().GetResult();
+            True(first.IsSuccess, first.Error.ToString());
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? afterFirst));
+            NotNull(afterFirst);
+            Equal(1ul, afterFirst!.FrameInstanceOrdinal);
+
+            GameplayMirrorPumpResult failed = session.PumpAsync(
+                CancellationToken.None).GetAwaiter().GetResult();
+            False(failed.IsSuccess);
+            Equal(
+                GameplayErrorCode.ConflictingSlotOccupancy,
+                failed.Error);
+            False(afterFirst!.IsCurrent);
+            FieldInfo frameOrdinalField = typeof(GameplayMirrorSessionV1)
+                .GetField(
+                    "frameInstanceOrdinal",
+                    BindingFlags.Instance | BindingFlags.NonPublic)!;
+            Equal(1ul, frameOrdinalField.GetValue(session));
+            False(session.TryGetCurrentFrameAuthority(out _));
+        }
+        finally
+        {
+            session.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestFrameAuthorityHasSafeLifecycle()
     {
         Equal(
             "GameplayMirrorSessionV1",
-            I4FrameOwnedSidecarLifecycleReconciliationV1.ProposedOwner);
+            I4FrameOwnedSidecarLifecycleReconciliationV1.ImplementedOwner);
         Equal(
             "PrivateGameplayFrameAuthorityV1",
             I4FrameOwnedSidecarLifecycleReconciliationV1
-                .ProposedAuthorityType);
+                .ImplementedAuthorityType);
         Equal(
             "ulong FrameInstanceOrdinal",
-            I4FrameOwnedSidecarLifecycleReconciliationV1.ProposedCoordinate);
+            I4FrameOwnedSidecarLifecycleReconciliationV1.ImplementedCoordinate);
         Equal(
             "PerspectiveStateMirrorV1.TryCreate(MSG_START) -> GameplayMirrorSessionV1 binds existing mirror -> FRAME_0",
             I4FrameOwnedSidecarLifecycleReconciliationV1
-                .ProposedCreationBoundary);
+                .ImplementedCreationBoundary);
         Equal(
             "presentation packet, failed apply, projection read, prompt acceptance",
             I4FrameOwnedSidecarLifecycleReconciliationV1
-                .ProposedNonCreationEvents);
+                .ImplementedNonCreationEvents);
         Equal(
             "next committed mirror frame, failed boundary, session disposal",
             I4FrameOwnedSidecarLifecycleReconciliationV1
-                .ProposedInvalidation);
+                .ImplementedInvalidation);
         True(I4FrameOwnedSidecarLifecycleReconciliationV1
             .PrivateAuthorityIsNotPublicIdentity);
         True(I4FrameOwnedSidecarLifecycleReconciliationV1
@@ -199,11 +368,11 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         return type.GetFields(flags).Any(field =>
                    field.Name.Contains(
                        "FrameInstanceOrdinal",
-                       StringComparison.Ordinal)) ||
+                       StringComparison.OrdinalIgnoreCase)) ||
             type.GetProperties(flags).Any(property =>
                 property.Name.Contains(
                     "FrameInstanceOrdinal",
-                    StringComparison.Ordinal));
+                    StringComparison.OrdinalIgnoreCase));
     }
 
     private static (
@@ -271,4 +440,52 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
             LocInfo(0, 0x02, 0, 0x08),
             U32(cardCode),
             LocInfo(0, 0x02, 1, 0x08));
+
+    private static PublicStateProjectionResultV1 RebindSidecar(
+        PublicStateProjectionResultV1 projection,
+        ulong frameInstanceOrdinal)
+    {
+        PrivateI4OccurrencePublicLocatorSidecarV1 originalSidecar =
+            projection.PrivateOccurrenceSidecar!;
+        True(PrivateI4OccurrencePublicLocatorSidecarV1.TryCreate(
+                frameInstanceOrdinal,
+                projection.PublicProjectionId,
+                originalSidecar.Entries,
+                out PrivateI4OccurrencePublicLocatorSidecarV1? sidecar));
+        NotNull(sidecar);
+        return PublicStateProjectionResultV1.Success(
+            projection.Snapshot!,
+            projection.CanonicalBytes.ToArray(),
+            projection.Sha256!,
+            sidecar!);
+    }
+
+    private static (
+        GameplayMirrorSessionV1 Session,
+        GameplayHandoffConsumerV1 Consumer)
+        CreateGameplaySession(params byte[][] gameplayFrames)
+    {
+        byte[] startFrame = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            CreateStartBytes(0, deckCount0: 2, extraCount0: 1,
+                deckCount1: 0, extraCount1: 0));
+        byte[] transcript = Join(
+            new[] { startFrame }.Concat(gameplayFrames).ToArray());
+        TestTransport transport = new(new[] { transcript });
+        GameplayHandoffAcquireResult acquired =
+            GameplayHandoffConsumerV1.TryCreate(
+                CreateHandoff(transport, Array.Empty<byte>()));
+        True(acquired.IsSuccess, acquired.Error.ToString());
+        GameplayHandoffConsumerV1 consumer = acquired.Consumer!;
+        GameplayPumpResult first = consumer.PumpAsync(
+            CancellationToken.None).GetAwaiter().GetResult();
+        True(first.IsSuccess, first.Error.ToString());
+        MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
+            first.Message!,
+            first.Perspective!);
+        True(created.IsSuccess, created.Error.ToString());
+        return (
+            new GameplayMirrorSessionV1(first.Session!, created.Mirror!),
+            consumer);
+    }
 }

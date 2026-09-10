@@ -1294,8 +1294,7 @@ internal static class I6GRealI4PromptBoundaryV1
         PublicStateProjectionResultV1 publicProjection =
             PublicStateProjectionV1.TryProject(
                 mirror.Snapshot,
-                new PublicStateProjectionContextV1(duelFlags),
-                frameInstanceOrdinal: ordinal);
+                new PublicStateProjectionContextV1(duelFlags));
         if (!publicProjection.IsSuccess || publicProjection.Snapshot is null)
         {
             return Failure(

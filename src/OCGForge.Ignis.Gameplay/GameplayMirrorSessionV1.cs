@@ -53,6 +53,8 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
     private int receiveCount;
     private int presentationMessagesConsumed;
     private int terminal;
+    private ulong frameInstanceOrdinal;
+    private PrivateGameplayFrameAuthorityV1 currentFrameAuthority;
 
     public GameplayMirrorSessionV1(
         GameplaySessionV1 transportSession,
@@ -98,6 +100,10 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
 
         boundMatchContext = matchContext;
         boundPrintedProvider = printedProvider;
+        frameInstanceOrdinal = 0;
+        currentFrameAuthority = new PrivateGameplayFrameAuthorityV1(
+            frameInstanceOrdinal,
+            mirror.Snapshot);
         decoder = new GameplayMessageDecoderV1(transportSession.Perspective);
     }
 
@@ -105,6 +111,27 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
 
     public int PresentationMessagesConsumed =>
         Volatile.Read(ref presentationMessagesConsumed);
+
+    internal bool TryGetCurrentFrameAuthority(
+        out PrivateGameplayFrameAuthorityV1? authority)
+    {
+        operationGate.Wait();
+        try
+        {
+            authority = null;
+            if (Volatile.Read(ref terminal) != 0)
+            {
+                return false;
+            }
+
+            authority = currentFrameAuthority;
+            return true;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
 
     public PerspectiveSafeFrameSourceResultV1 TryCreateI6C5Frame()
     {
@@ -214,12 +241,26 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
                                 .ConfigureAwait(false);
                         }
 
+                        if (frameInstanceOrdinal == ulong.MaxValue)
+                        {
+                            return await FailAsync(
+                                    GameplayErrorCode.ArithmeticFailure)
+                                .ConfigureAwait(false);
+                        }
+
                         MirrorApplyResult applied = mirror.Apply(decoded.Message);
                         if (!applied.IsSuccess)
                         {
                             return await FailAsync(applied.Error)
                                 .ConfigureAwait(false);
                         }
+
+                        currentFrameAuthority.Invalidate();
+                        frameInstanceOrdinal++;
+                        currentFrameAuthority =
+                            new PrivateGameplayFrameAuthorityV1(
+                                frameInstanceOrdinal,
+                                applied.Snapshot);
 
                         return GameplayMirrorPumpResult.Success(
                             decoded.Message,
@@ -284,6 +325,7 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
         await operationGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
+            currentFrameAuthority.Invalidate();
             if (Interlocked.Exchange(ref terminal, 2) == 0)
             {
                 await transportSession.DisposeAsync().ConfigureAwait(false);
@@ -298,6 +340,7 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
     private async ValueTask<GameplayMirrorPumpResult> FailAsync(
         GameplayErrorCode error)
     {
+        currentFrameAuthority.Invalidate();
         if (Interlocked.Exchange(ref terminal, 2) == 0)
         {
             await transportSession.DisposeAsync().ConfigureAwait(false);

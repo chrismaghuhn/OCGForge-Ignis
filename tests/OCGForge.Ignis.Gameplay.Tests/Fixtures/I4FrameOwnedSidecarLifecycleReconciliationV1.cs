@@ -3,34 +3,34 @@ namespace OCGForge.Ignis.Gameplay.Tests.Fixtures;
 internal static class I4FrameOwnedSidecarLifecycleReconciliationV1
 {
     internal const string ExistingFrameOwner =
-        "GameplayMirrorSessionV1 owns Mirror only";
+        "GameplayMirrorSessionV1 owns current Mirror and FrameInstanceOrdinal";
 
-    internal const string ExistingFrameOrdinalAuthority = "ABSENT";
+    internal const string ExistingFrameOrdinalAuthority = "SESSION_OWNED";
 
     internal const string ExistingProjectionOrdinalSource =
-        "caller-supplied PublicStateProjectionV1.TryProject(..., ulong)";
+        "GameplayMirrorSessionV1 current authority supplies PublicStateProjectionV1.TryProject(..., ulong)";
 
     internal const string ExistingConsumerCheck =
-        "sidecar.FrameInstanceOrdinal -> same ordinal re-projection";
+        "current frame authority independently matches sidecar";
 
-    internal const string CurrentFrameMatch = "NOT_PROVEN";
+    internal const string CurrentFrameMatch = "PASS";
 
-    internal const string StaleFrameRejection = "NOT_PROVEN";
+    internal const string StaleFrameRejection = "PASS";
 
-    internal const string ProposedOwner = "GameplayMirrorSessionV1";
+    internal const string ImplementedOwner = "GameplayMirrorSessionV1";
 
-    internal const string ProposedAuthorityType =
+    internal const string ImplementedAuthorityType =
         "PrivateGameplayFrameAuthorityV1";
 
-    internal const string ProposedCoordinate = "ulong FrameInstanceOrdinal";
+    internal const string ImplementedCoordinate = "ulong FrameInstanceOrdinal";
 
-    internal const string ProposedCreationBoundary =
+    internal const string ImplementedCreationBoundary =
         "PerspectiveStateMirrorV1.TryCreate(MSG_START) -> GameplayMirrorSessionV1 binds existing mirror -> FRAME_0";
 
-    internal const string ProposedNonCreationEvents =
+    internal const string ImplementedNonCreationEvents =
         "presentation packet, failed apply, projection read, prompt acceptance";
 
-    internal const string ProposedInvalidation =
+    internal const string ImplementedInvalidation =
         "next committed mirror frame, failed boundary, session disposal";
 
     internal const string I5SidecarEnablement = "OUT_OF_SCOPE";

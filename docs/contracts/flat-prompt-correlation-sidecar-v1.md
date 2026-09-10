@@ -15,6 +15,8 @@ I4_PRIVATE_CORRELATION_SIDECAR=IMPLEMENTED_PROJECTION_AND_CORRELATION_PENDING_RE
 I4_PRIVATE_CORRELATION_SIDECAR_ACCEPTED=YES_FOR_DESIGN_ONLY
 I4_PRIVATE_CORRELATION_SIDECAR_IMPLEMENTED=YES_PROJECTION_AND_CORRELATION
 I4_PRIVATE_CORRELATION_ENABLEMENT=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+I4_FRAME_AUTHORITY=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+I5_SIDECAR_ENABLEMENT=NO
 I6B_BUNDLE_ENTRY=NO
 ```
 
@@ -45,7 +47,8 @@ The sidecar is built only through an internal frame-owned projection path that
 receives the session's `FrameInstanceOrdinal`. The existing two-argument
 public-state projection path remains unchanged and does not expose or consume
 a sidecar. The separately authorized correlation implementation consumes the
-sidecar only when its projection identity and same-mirror re-projection match.
+sidecar only when the independently current session frame, its projection
+identity, and same-mirror re-projection all match.
 
 ## 2. Sidecar record
 
@@ -244,8 +247,10 @@ neither public-state canonical bytes nor public-state identity:
 NEW_GAMEPLAY_SEMANTICS=NO
 NEW_LEGALITY_SEMANTICS=NO
 NEW_OBSERVATION_SEMANTICS=NO
-NEW_CANDIDATE_SEMANTICS=NO
 NEW_MODEL_SEMANTICS=NO
+PUBLIC_CANDIDATE_SCHEMA_CHANGED=NO
+PUBLIC_CANDIDATE_IDENTITY_SEMANTICS_CHANGED=NO
+I4_CORRELATION_CAPABILITY_CHANGED=YES
 PUBLICSTATE_BYTES_CHANGED=NO
 PUBLICSTATE_IDENTITY_CHANGED=NO
 ```

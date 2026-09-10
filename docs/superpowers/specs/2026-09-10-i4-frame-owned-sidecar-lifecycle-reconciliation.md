@@ -1,22 +1,21 @@
 # I4 Frame-Owned Sidecar Lifecycle Reconciliation
 
-Status: `DESIGN_ONLY`; characterization accepted pending independent review
+Status: `IMPLEMENTATION_PENDING_INDEPENDENT_REVIEW`
 Date: 2026-09-10
 Base: `65d059e5b7dc618704b02ac16389baf682bbe145`
 
-This document characterizes the missing frame-lifecycle authority exposed by
-the I4 private occurrence sidecar implementation. It does not change
-production code, the public-state contract, I5, I6D, or I6G runtime
-acceptance.
+This document records the frame-lifecycle authority added for the I4 private
+occurrence sidecar. It does not change the public-state contract, I5's
+contract, I6D, or I6G runtime acceptance.
 
-## Current characterization
+## Pre-implementation characterization
 
-The current modules have these responsibilities:
+Before this implementation, the modules had these responsibilities:
 
 ```text
 GameplayMirrorSessionV1
-    owns and mutates the current Mirror
-    owns no FrameInstanceOrdinal
+    owned and mutated the current Mirror
+    owned no FrameInstanceOrdinal
 
 FlatPromptSessionV1
     owns prompt ordinals and prompt bindings
@@ -34,10 +33,10 @@ PrivateI4OccurrencePublicLocatorSidecarV1
     stores FrameInstanceOrdinal from its caller
 ```
 
-The existing frame authority is therefore:
+The pre-implementation characterization was:
 
 ```text
-EXISTING_FRAME_AUTHORITY=ABSENT
+EXISTING_FRAME_AUTHORITY=ABSENT_AT_BASE_65d059e
 GAMEPLAY_MIRROR_SESSION_OWNS_CURRENT_MIRROR=YES
 GAMEPLAY_MIRROR_SESSION_OWNS_FRAME_ORDINAL=NO
 FLAT_PROMPT_SESSION_OWNS_FRAME_ORDINAL=NO
@@ -47,16 +46,15 @@ CURRENT_FRAME_INSTANCE_MATCH=NOT_PROVEN
 STALE_FRAME_REJECTION=NOT_PROVEN
 ```
 
-The executable characterization also demonstrates the current weakness: a
+The executable characterization at the base demonstrated the weakness: a
 sidecar with the same public projection and entries but a different ordinal
-is accepted when the consumer reads that ordinal back and uses it for its own
-re-projection. This proves that projection identity and same-mirror
-re-projection are not an independent current-frame check.
+was accepted when the consumer read that ordinal back and used it for its own
+re-projection. The implementation now rejects that input unless an
+independently session-owned current authority matches it.
 
-## Minimal future private frame authority
+## Implemented private frame authority
 
-The next implementation should introduce one narrow, internal Gameplay seam;
-the following is a design contract, not an implemented type:
+The implementation introduces one narrow, internal Gameplay seam:
 
 ```text
 PrivateGameplayFrameAuthorityV1
@@ -86,17 +84,18 @@ response writes do not create a new frame. Overflow or any failed boundary
 rejects the operation and does not reuse an ordinal.
 
 The frame authority is immutable and is valid only until the next successful
-mirror commit, a failed gameplay/projection boundary, or session disposal.
-It is never derived from wall time, PID, process order, object identity,
+mirror commit, a failed gameplay/projection boundary, or session disposal; the
+previous in-memory authority token is explicitly invalidated at each such
+boundary. It is never derived from wall time, PID, process order, object identity,
 allocation order, TCP chunking, dictionary iteration, or a random UUID.
 
-## Required consumer seam
+## Implemented consumer seam
 
 The frame owner must pass the current frame authority independently of the
-sidecar. A future frame-owned prompt entry point should conceptually be:
+sidecar. The frame-owned prompt entry point is:
 
 ```text
-FlatPromptSessionV1.TryAcceptPrompt(
+FlatPromptSessionV1.TryAcceptFrameOwnedPrompt(
     complete_inner_game_message,
     current_frame_authority,
     accepted_public_projection)
@@ -118,10 +117,10 @@ recomputed sidecar
     == the accepted frame-owned sidecar
 ```
 
-The first comparison is the missing independent check. The sidecar must never
-be allowed to supply the expected current ordinal. If a caller provides only a
-mirror, public projection, or sidecar without the current frame authority,
-the duplicate-occurrence path fails closed.
+The first comparison is the independent current-frame check. The sidecar is
+never allowed to supply the expected current ordinal. The legacy prompt entry
+point rejects a sidecar projection without the current authority, while the
+frame-owned entry point rejects stale or future ordinals.
 
 The frame owner and prompt session remain in Gameplay. No broad
 `InternalsVisibleTo("OCGForge.Ignis.Model")` is introduced. Any later I6D
@@ -131,7 +130,7 @@ occurrence fields.
 
 ## Lifecycle acceptance matrix
 
-The future implementation must prove:
+The implementation must prove:
 
 ```text
 INITIALIZED_MIRROR_BOUND_AT_SESSION_CONSTRUCTION=FRAME_0
@@ -144,9 +143,9 @@ PROMPT_ACCEPTANCE_DOES_NOT_ADVANCE=PASS
 NEXT_FRAME_INVALIDATES_PREVIOUS=PASS
 SESSION_DISPOSAL_INVALIDATES_CURRENT=PASS
 
-STALE_FRAME_ORDINAL=FAIL_CLOSED
-FUTURE_FRAME_ORDINAL=FAIL_CLOSED
-SAME_PUBLIC_BYTES_DIFFERENT_FRAME=FAIL_CLOSED
+STALE_FRAME_ORDINAL=PASS
+FUTURE_FRAME_ORDINAL=PASS
+SAME_PUBLIC_BYTES_DIFFERENT_FRAME=PASS
 SIDECAR_CANNOT_SELF_AUTHENTICATE_FRAME=PASS
 ```
 
@@ -156,16 +155,15 @@ Task7 materialization.
 
 ## I5 isolation finding
 
-The current implementation commit also passes the sidecar through I5 prompt
-projection paths. That behavior is outside this authorization and must be
-removed by the next implementation remediation:
+The prior implementation commit passed the sidecar through I5 prompt
+projection paths. That out-of-scope behavior is removed by this implementation:
 
 ```text
 I4_SIDECAR_ENABLEMENT=AUTHORIZED
-I5_SIDECAR_ENABLEMENT=OUT_OF_SCOPE
-I5_BEHAVIOR_MUST_BE_RESTORED_TO=65ccf707c802f42a942423e4e6fd0939fd6d342a
-I5_PUBLIC_DOMAIN_BYTES_BEFORE_AFTER=EXACT_REQUIRED
-I5_SIDE_CAR_ENABLEMENT=NO_REQUIRED
+I5_SIDECAR_ENABLEMENT=NO
+I5_BEHAVIOR_RESTORED_TO=65ccf707c802f42a942423e4e6fd0939fd6d342a
+I5_PUBLIC_DOMAIN_BYTES_BEFORE_AFTER=EXACT
+I5_SIDE_CAR_ENABLEMENT=NO
 ```
 
 The I4 sidecar correlation path may remain available internally, but only I4
@@ -176,17 +174,17 @@ locators, or changed continuation semantics from this design.
 ## Current non-effects and next gate
 
 ```text
-PRODUCTION_CODE_CHANGED=NO
+PRODUCTION_CODE_CHANGED=YES
 I4_PUBLIC_CONTRACT_V1=UNCHANGED
 PUBLICSTATE_BYTES=UNCHANGED
 PUBLICSTATE_IDENTITY=UNCHANGED
-I5_IMPLEMENTATION_REMEDIATION=NOT_DONE
+I4_FRAME_AUTHORITY_IMPLEMENTATION=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+I5_SCOPE_RESTORATION=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
 I6D_CHANGED=NO
 I6G_CAPTURE=NOT_RUN
 FRESH_PROCESS_A_B=NOT_RUN
 ```
 
-The next production implementation is not authorized by this document. It
-must first receive the independent frame authority described above, then
-restore I5 behavior and re-prove duplicate I4 correlation without permitting
-the sidecar to authenticate its own frame coordinate.
+The production implementation is present pending independent review. It must
+be independently reviewed before Counter/Link capture or fresh-process A/B;
+those later gates remain outside this slice.
