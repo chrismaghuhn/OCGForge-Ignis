@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using OCGForge.Ignis.Gameplay;
 using OCGForge.Ignis.Gameplay.Tests.Fixtures;
 using static OCGForge.Ignis.Gameplay.Tests.GameplayMessageFixtures;
@@ -140,14 +141,14 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
             "accepted decision boundary -> OcgForgePublicCandidateBridgeV1.TryCreate",
             I6DPrivateSourceOccurrenceBindingDesignV1.ConsumptionSeam);
         Equal(
-            "internal TryAccept(frame, completeProjection, completeBindings, out boundary, out error)",
+            "internal boundary stores opaque I6D handoff; public bridge consumes acceptedDecision",
             I6DPrivateSourceOccurrenceBindingDesignV1
                 .BoundaryConstructionSeam);
         Equal(
             "PrivateCrossLocatorBindingSetV1",
             I6DPrivateSourceOccurrenceBindingDesignV1.BindingSetName);
         Equal(
-            "internal immutable Gameplay-to-Model handoff",
+            "internal carrier + public opaque capability",
             I6DPrivateSourceOccurrenceBindingDesignV1.CarrierVisibility);
         Equal(
             "private prompt-correlation provenance only",
@@ -177,17 +178,36 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
             "REJECTED_FOR_COMPLETE_DOMAIN",
             I6DPrivateSourceOccurrenceBindingDesignV1.OptionCStatus);
         Equal(
+            "ocgforge-ignis.flat-prompt-correlation-sidecar.v1",
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .I4CorrelationSidecarContractId);
+        Equal(
+            "explicit versioned private companion contract",
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .I4ContractReconciliation);
+        Equal(
+            "position_presence/value, absolute_controller, normalized_zone, source_sequence, is_overlay, overlay_index",
+            I6DPrivateSourceOccurrenceBindingDesignV1.I4SidecarTieBreakRule);
+        Equal(
             "I6DPrivateCrossLocatorBindingHandoffV1",
             I6DPrivateSourceOccurrenceBindingDesignV1.AssemblyHandoffType);
         Equal(
-            "OCGForge.Ignis.Model",
+            "NONE",
             I6DPrivateSourceOccurrenceBindingDesignV1.AssemblyFriendTarget);
         Equal(
             "TryGetValidatedTarget",
             I6DPrivateSourceOccurrenceBindingDesignV1
                 .AssemblyHandoffOperation);
         Equal(
-            "internal TryGetValidatedTarget(prompt_instance, continuation_step, frame_instance, projection_id, local_key, source_section, source_ordinal, current_frame, out target, out error)",
+            "FlatPromptSessionV1.TryCreateI6DPrivateBindingHandoff(current_frame, accepted_public_projection, out handoff, out error)",
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .AssemblyHandoffCreationOperation);
+        Equal(
+            "one opaque capability argument",
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .AssemblyBoundaryHandoffArgument);
+        Equal(
+            "public opaque TryGetValidatedTarget(prompt_instance, continuation_step, frame_instance, projection_id, local_key, source_section, source_ordinal, current_frame, out safe_target, out error)",
             I6DPrivateSourceOccurrenceBindingDesignV1
                 .AssemblyHandoffSignature);
         string[] expectedSidecarFields =
@@ -226,10 +246,37 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
                     "SidecarTargetMissing",
                     "SidecarTargetCollision"
                 }));
+        True(I6DPrivateSourceOccurrenceBindingDesignV1.I4SidecarTieBreakFields
+            .SequenceEqual(
+                new[]
+                {
+                    "PositionPresenceAndValue",
+                    "AbsoluteController",
+                    "NormalizedZone",
+                    "SourceSequence",
+                    "IsOverlay",
+                    "OverlayIndex"
+                }));
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarTieBreakIsTotal);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarTieBreakUsesSourceOccurrence);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarTieBreakUsesInsertionOrder);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarTieBreakUsesCollectionOrder);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarTieBreakUsesCardCode);
         True(I6DPrivateSourceOccurrenceBindingDesignV1
             .PublicStateBytesUnchanged);
         True(I6DPrivateSourceOccurrenceBindingDesignV1
             .PublicStateIdentityUnchanged);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4V1InPlaceAmendmentForbidden);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4AuthoritativeContractReconciledByTransition);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarIsVersionedCompanion);
         True(I6DPrivateSourceOccurrenceBindingDesignV1
             .I4SidecarUsesMirrorEntityIdOnlyTransiently);
         False(I6DPrivateSourceOccurrenceBindingDesignV1
@@ -246,14 +293,28 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
             .I4ContractAmendmentImplemented);
         True(I6DPrivateSourceOccurrenceBindingDesignV1
             .AssemblyHandoffIsSingleFacade);
-        True(I6DPrivateSourceOccurrenceBindingDesignV1
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
             .AssemblyHandoffHasSingleFriendTarget);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .AssemblyHandoffIsPublicOpaqueCapability);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .BroadInternalsVisibleTo);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .ModelCanReadPrivateGameplayInternals);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .SafeTargetOnlyHandoff);
         False(I6DPrivateSourceOccurrenceBindingDesignV1
             .AssemblyHandoffExposesPrivateFields);
         False(I6DPrivateSourceOccurrenceBindingDesignV1
             .AssemblyHandoffAllowsDirectGameplayInternals);
         False(I6DPrivateSourceOccurrenceBindingDesignV1
             .AssemblyFriendTargetsTestsOrApplication);
+        False(typeof(CurrentFlatPromptBindingV1).Assembly
+            .GetCustomAttributes<InternalsVisibleToAttribute>()
+            .Any(attribute => string.Equals(
+                attribute.AssemblyName,
+                "OCGForge.Ignis.Model",
+                StringComparison.Ordinal)));
 
         string[] expectedFields =
         {
@@ -359,6 +420,36 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
             .HandSequenceIsPublicSubstitute);
         False(I6DPrivateSourceOccurrenceBindingDesignV1
             .PromptCardCodeIsPublicSubstitute);
+
+        I6DPrivateI4PairingOccurrenceV1[] samePositionOccurrences =
+        {
+            new(0, MirrorZoneV1.Hand, 1, false, null, 5),
+            new(0, MirrorZoneV1.Hand, 0, false, null, 5)
+        };
+        True(
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .TryAssignExistingPublicOrdinals(
+                    samePositionOccurrences,
+                    out IReadOnlyList<I6DPrivateI4PairingAssignmentV1>
+                        firstAssignments));
+        True(
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .TryAssignExistingPublicOrdinals(
+                    samePositionOccurrences.Reverse().ToArray(),
+                    out IReadOnlyList<I6DPrivateI4PairingAssignmentV1>
+                        reversedAssignments));
+        True(firstAssignments.SequenceEqual(reversedAssignments));
+        True(firstAssignments.SequenceEqual(
+            new[]
+            {
+                new I6DPrivateI4PairingAssignmentV1(0, 0),
+                new I6DPrivateI4PairingAssignmentV1(1, 1)
+            }));
+        False(
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .TryAssignExistingPublicOrdinals(
+                    new[] { samePositionOccurrences[0], samePositionOccurrences[0] },
+                    out _));
 
         string[] forbiddenCarrierData =
         {
@@ -509,6 +600,16 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
             promptResult.Error);
         Null(promptResult.Context);
         Null(promptResult.Candidates);
+
+        PublicStateProjectionResultV1 reprojection =
+            PublicStateProjectionV1.TryProject(
+                mirror.Snapshot,
+                new PublicStateProjectionContextV1(0));
+        True(reprojection.IsSuccess, reprojection.Error.ToString());
+        BytesEqual(
+            acceptedProjection.CanonicalBytes.Span,
+            reprojection.CanonicalBytes.Span);
+        Equal(acceptedProjection.PublicProjectionId, reprojection.PublicProjectionId);
     }
 
     private static byte[] DuplicateOwnHandIdleMessage(uint cardCode)

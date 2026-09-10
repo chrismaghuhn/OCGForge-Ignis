@@ -38,12 +38,13 @@ Register `TestDuplicateOwnHandI4StopsBeforeI6DBoundary` in the Gameplay test run
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-09-10-i6d-cross-locator-mapping-authority-characterization.md`
+- Create: `docs/contracts/flat-prompt-correlation-sidecar-v1.md`
 - Modify: `tests/OCGForge.Ignis.Gameplay.Tests/Fixtures/I6DCrossLocatorMappingAuthorityCharacterizationV1.cs`
 - Modify: `tests/OCGForge.Ignis.Gameplay.Tests/Tests/I6DCrossLocatorMappingAuthorityCharacterizationTests.cs`
 
 - [x] **Step 1: Document the explicit I4 contract amendment**
 
-State that the amendment is private prompt-correlation provenance only: `public-state-projection.v1` canonical bytes, public locators, and identity remain unchanged. During the same I3D projection, an internal immutable sidecar records exact normalized source occurrence to the already assigned I4 public ordinal. It may use `MirrorEntityIdV1` only as a transient same-snapshot join and never stores or publishes it.
+Keep the frozen `docs/contracts/flat-prompt-projection-v1.md` unchanged and add the explicit design-only companion contract `ocgforge-ignis.flat-prompt-correlation-sidecar.v1`. State that the amendment is private prompt-correlation provenance only: `public-state-projection.v1` canonical bytes, public locators, and identity remain unchanged. During the same I3D projection, an internal immutable sidecar records exact normalized source occurrence to the already assigned I4 public ordinal. It may use `MirrorEntityIdV1` only as a transient same-snapshot join and never stores or publishes it.
 
 - [x] **Step 2: Freeze sidecar lookup and lifecycle**
 
@@ -51,12 +52,12 @@ Require the sidecar to be scoped by accepted projection/frame, source occurrence
 
 - [x] **Step 3: Freeze the controlled assembly handoff**
 
-Document the exact current-graph mechanism: Gameplay owns the internal immutable sidecar and `PrivateCrossLocatorBindingV1`; a single internal I6D handoff facade is the only Gameplay-to-Model crossing, with the Model assembly as the sole explicit friend target if C# accessibility requires it. The facade exposes only validated binding lookup/accepted safe target retrieval; Model does not access mirror snapshots, raw loc_info, or private occurrence fields. The public bridge still consumes only `OcgForgeAcceptedDecisionBoundaryV1`, whose private binding set is complete and non-detached.
+Document the exact current-graph mechanism: Gameplay owns the internal immutable sidecar and `PrivateCrossLocatorBindingV1`; `FlatPromptSessionV1.TryCreateI6DPrivateBindingHandoff(...)` returns one public opaque capability as the only Gameplay-to-Model crossing. It has no public constructor or private data surface and exposes only validated safe-target retrieval. No `InternalsVisibleTo("OCGForge.Ignis.Model")` is added, and Model does not access mirror snapshots, raw loc_info, or private occurrence fields. The public bridge still consumes only `OcgForgeAcceptedDecisionBoundaryV1`, whose private capability is complete and non-detached.
 
 The only cross-assembly operation is the following internal shape:
 
 ```text
-TryGetValidatedTarget(
+public opaque TryGetValidatedTarget(
     prompt_instance,
     continuation_step,
     frame_instance,
@@ -105,7 +106,7 @@ Run `git diff --check`, inspect staged names, and reject any `src/` file in the 
 - [x] **Step 4: Commit and push**
 
 ```powershell
-git add docs/superpowers/plans/2026-09-10-i6d-private-source-occurrence-binding-remediation-02-plan.md docs/superpowers/specs/2026-09-10-i6d-cross-locator-mapping-authority-characterization.md tests/OCGForge.Ignis.Gameplay.Tests/Fixtures/I6DCrossLocatorMappingAuthorityCharacterizationV1.cs tests/OCGForge.Ignis.Gameplay.Tests/Tests/I6DCrossLocatorMappingAuthorityCharacterizationTests.cs tests/OCGForge.Ignis.Gameplay.Tests/Program.cs
+git add docs/superpowers/plans/2026-09-10-i6d-private-source-occurrence-binding-remediation-02-plan.md docs/contracts/flat-prompt-correlation-sidecar-v1.md docs/superpowers/specs/2026-09-10-i6d-cross-locator-mapping-authority-characterization.md tests/OCGForge.Ignis.Gameplay.Tests/Fixtures/I6DCrossLocatorMappingAuthorityCharacterizationV1.cs tests/OCGForge.Ignis.Gameplay.Tests/Tests/I6DCrossLocatorMappingAuthorityCharacterizationTests.cs tests/OCGForge.Ignis.Gameplay.Tests/Program.cs
 git commit -m "test: characterize duplicate hand binding boundary"
 git push origin chris/i6g-final-cross-oracle-acceptance
 ```

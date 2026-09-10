@@ -1,0 +1,239 @@
+# OCGForge-Ignis I4 Private Prompt Correlation Sidecar V1
+
+Status: `DESIGN_ONLY`; not accepted or implemented
+Contract ID: `ocgforge-ignis.flat-prompt-correlation-sidecar.v1`
+Parent public contract: `ocgforge-ignis.flat-prompt-projection.v1`
+Date: 2026-09-10
+
+```text
+I4_PUBLIC_CONTRACT_V1=FROZEN
+I4_PUBLICSTATE_BYTES=UNCHANGED
+I4_PUBLICSTATE_IDENTITY=UNCHANGED
+I4_AUTHORITATIVE_CONTRACT_RECONCILED=YES_BY_EXPLICIT_VERSION_TRANSITION
+I4_V1_IN_PLACE_AMENDMENT=FORBIDDEN
+I4_PRIVATE_CORRELATION_SIDECAR=DESIGN_ONLY
+I4_PRIVATE_CORRELATION_SIDECAR_ACCEPTED=NO
+I4_PRIVATE_CORRELATION_SIDECAR_IMPLEMENTED=NO
+I6B_BUNDLE_ENTRY=NO
+```
+
+This document defines the required version transition for the duplicate
+own-Hand correlation problem. It must not be read as an in-place amendment to
+`docs/contracts/flat-prompt-projection-v1.md`. That V1 public contract remains
+the authority for public context, candidate descriptors, public locators,
+canonical bytes, and public identity.
+
+## 1. Purpose and narrow scope
+
+The current V1 prompt path can resolve a current mirror card but cannot choose
+one public ordinal when a known public Hand/Extra-Deck group contains multiple
+cards with the same CardCode. The current fail-closed result is therefore
+correct for the frozen V1 correlation rule, but it prevents a complete legal
+domain from reaching I6D.
+
+This companion contract authorizes only a private proof carrier for prompt
+correlation. It does not add a public field, a public locator grammar, a
+public-state row, an I6B contract entry, or a model input value.
+
+The sidecar is limited to a current, known-public Hand/Extra-Deck occurrence
+for which the same accepted public projection has already emitted the public
+ordinal. Main Deck, hidden opponent Hand, unknown CardCode, and any source
+occurrence without an exact current mirror resolution remain fail-closed.
+
+## 2. Sidecar record
+
+The future internal immutable record
+`PrivateI4OccurrencePublicLocatorSidecarV1` has exactly these fields:
+
+```text
+FrameInstanceOrdinal
+AcceptedPublicProjectionId
+AbsoluteController
+NormalizedZone
+SourceSequence
+IsOverlay
+OverlayIndex                 # present exactly when IsOverlay=true
+AcceptedI4PublicLocator
+```
+
+Its exact lookup key is:
+
+```text
+(FrameInstanceOrdinal,
+ AcceptedPublicProjectionId,
+ AbsoluteController,
+ NormalizedZone,
+ SourceSequence,
+ IsOverlay,
+ OverlayIndex)
+```
+
+`MirrorEntityIdV1` may be used only as a transient same-snapshot join while
+the sidecar is built. It is not a sidecar field, public proof, serialized
+value, digest input, replay identity, or fallback. The sidecar contains no
+prompt CardCode; existing I4 CardCode safety checks still apply independently.
+
+## 3. Creation authority
+
+The sidecar is created at the same I3D projection operation that assigns the
+existing public pile ordinal. The builder retains a private association from
+the exact current mirror occurrence to the public `PublicCardStateV1.Locator`
+that it has already emitted. It never reconstructs the public locator later.
+
+The public pile order remains the existing `KnownPileCard.Compare` order:
+
+```text
+absent position before present position
+present numeric position ascending
+```
+
+For equal public sort keys, the private total tie-break is exactly:
+
+```text
+(position_presence_and_value,
+ absolute_controller,
+ normalized_zone,
+ source_sequence,
+ is_overlay,
+ overlay_index)
+```
+
+The first element uses the existing null-before-known rule. Remaining values
+use ordinal numeric comparison; `OverlayIndex` is present only for overlay
+occurrences. An equal complete key is a collision and rejects the complete
+projection/prompt. Insertion order, dictionary iteration, allocation order,
+CardCode re-search, and first-match behavior are not permitted.
+
+The private tie-break only chooses which exact source occurrence corresponds
+to an already indistinguishable public ordinal. It is never added to
+`PublicCardStateV1`, public canonical bytes, or public identity. Equal
+same-code/same-position duplicate groups therefore have deterministic private
+pairing while retaining byte-identical public projection output.
+
+Sidecar creation is transactional. If any occurrence has no exact source
+resolution, more than one resolution, an invalid overlay shape, a duplicate
+full key, or no unique emitted public target, no sidecar or prompt candidate
+domain is accepted.
+
+## 4. I4 prompt-correlation use
+
+When a prompt supplies an exact current occurrence, the future
+`FlatPromptCardCorrelationV1` pile path may consume the sidecar entry and
+return its existing accepted I4 public locator. It must also preserve the
+existing accepted-snapshot CardCode/provenance checks. The sidecar does not
+make a new locator and does not make a hidden card public.
+
+```text
+exact sidecar key -> exactly one existing I4 public locator -> candidate
+missing/ambiguous/stale/colliding sidecar -> whole prompt fails closed
+```
+
+Existing exact public-token cases remain unchanged. A sidecar is not created
+for a hidden opponent-Hand card, and no CardCode-only or public-attribute-only
+fallback is allowed for a duplicate group.
+
+## 5. Controlled assembly handoff
+
+The actual project dependency is `OCGForge.Ignis.Model ->
+OCGForge.Ignis.Gameplay`. No reverse project reference and no broad
+`InternalsVisibleTo("OCGForge.Ignis.Model")` is permitted.
+
+Gameplay owns the private sidecar and the internal
+`PrivateCrossLocatorBindingV1`. If the I6D target must cross the project
+reference, it crosses only as the opaque
+`I6DPrivateCrossLocatorBindingHandoffV1` capability. The capability has:
+
+```text
+no public constructor
+no public fields or occurrence properties
+no serialization
+no MirrorSnapshot / MirrorEntityId / ModernLocInfo exposure
+no private source-data operation
+```
+
+The capability is obtained only from the current prompt session after the
+sidecar and complete prompt have been accepted:
+
+```text
+FlatPromptSessionV1.TryCreateI6DPrivateBindingHandoff(
+    current_frame,
+    accepted_public_projection,
+    out handoff,
+    out error)
+```
+
+The future I6D boundary producer receives that opaque value as a single
+trusted capability argument. `FlatPromptProjectionResultV1` is not extended
+with private data, and callers cannot construct the capability or a second
+binding list independently.
+
+Its only cross-assembly operation is:
+
+```text
+TryGetValidatedTarget(
+    prompt_instance,
+    continuation_step,
+    frame_instance,
+    accepted_public_projection_id,
+    i4_local_candidate_key,
+    source_section,
+    source_ordinal,
+    current_accepted_frame,
+    out accepted_i6c5_target_locator,
+    out structured_error)
+```
+
+The operation returns only the safe target locator or a structured failure.
+The public `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)`
+entry remains unchanged and receives no detached mapping list.
+
+## 6. Lifecycle and rejection
+
+The sidecar and opaque capability are in-memory, immutable, and scoped to one
+accepted frame and prompt instance. They are discarded on prompt replacement,
+continuation-step transition, frame replacement, terminal selection, session
+disposal, or any boundary failure. A new continuation step requires a new
+sidecar/binding set from the new accepted frame.
+
+The complete candidate boundary rejects on:
+
+```text
+missing sidecar entry
+ambiguous sidecar entry
+stale frame/projection/prompt/continuation coordinates
+source section or source ordinal mismatch
+duplicate lookup key
+duplicate source-occurrence key
+two distinct source occurrences mapping to one target locator
+target missing or non-unique in the current I6C5 frame
+```
+
+No candidate is dropped, substituted, sorted by policy, or repaired after a
+sidecar failure.
+
+## 7. Explicit transition and non-effects
+
+The required transition is:
+
+```text
+frozen flat-prompt-projection.v1
+    + explicit private flat-prompt-correlation-sidecar.v1
+    -> future I4/I6D implementation authorization
+```
+
+Until this companion contract is independently accepted, duplicate same-code
+own-Hand prompts remain unsupported and fail closed. The transition changes
+neither public-state canonical bytes nor public-state identity:
+
+```text
+NEW_GAMEPLAY_SEMANTICS=NO
+NEW_LEGALITY_SEMANTICS=NO
+NEW_OBSERVATION_SEMANTICS=NO
+NEW_CANDIDATE_SEMANTICS=NO
+NEW_MODEL_SEMANTICS=NO
+PUBLICSTATE_BYTES_CHANGED=NO
+PUBLICSTATE_IDENTITY_CHANGED=NO
+```
+
+This design does not authorize the sidecar implementation, I6D mapping
+implementation, Counter retry, Link capture, or fresh-process A/B.

@@ -16,6 +16,9 @@ Ignis I6A mapping boundary:
 
 OCGForge source binding:
   f929de0b4d4157327dba003067d2e21e42f7ad75
+
+Required private correlation transition:
+  docs/contracts/flat-prompt-correlation-sidecar-v1.md
 ```
 
 The pinned OCGForge implementation is the executable authority for its
@@ -98,10 +101,13 @@ before `CompleteCorrelation` reduces the result to `AcceptedLocator` and
 `SafeCardCode`.
 
 The carrier is an internal immutable `PrivateCrossLocatorBindingV1` value,
-owned by the Gameplay-to-Model handoff and never exposed as a public I4 or
-I6D member. Because the semantic consumer is in the Model assembly, the
-implementation must use one narrow internal friend/handoff seam rather than
-making the occurrence fields public. `FlatPromptProjectionResultV1`,
+owned by the Gameplay-side source-proof implementation and never exposed as a
+public I4 or I6D member. The Model assembly does not receive a friend view of
+Gameplay internals. Instead, one public opaque
+`I6DPrivateCrossLocatorBindingHandoffV1` capability crosses the project
+reference; it has no public constructor, fields, occurrence properties, or
+serialization surface and exposes only the validated safe-target operation
+specified below. `FlatPromptProjectionResultV1`,
 `FlatPublicCandidateDescriptorV1`, and the public
 `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)` interface do not
 gain private occurrence fields or a detached binding-list argument.
@@ -187,34 +193,43 @@ the private binding; missing it fails closed.
 ### Exact I6D consumption interface
 
 The private set is created before the accepted decision boundary and carried
-through one internal producer overload. The conceptual construction seam is:
+through one opaque capability. The conceptual cross-assembly interface is:
 
 ```text
-internal TryAccept(
-    frame,
-    completeProjection,
-    PrivateCrossLocatorBindingSetV1 completeBindings,
-    out OcgForgeAcceptedDecisionBoundaryV1 boundary,
-    out error)
+public opaque I6DPrivateCrossLocatorBindingHandoffV1
+    TryGetValidatedTarget(
+        prompt_instance,
+        continuation_step,
+        frame_instance,
+        projection_id,
+        local_key,
+        source_section,
+        source_ordinal,
+        current_frame,
+        out safe_target,
+        out error)
 ```
 
-`PrivateCrossLocatorBindingSetV1` is an internal immutable set, not a public
-list. It contains exactly one binding for every candidate that needs a
+`PrivateCrossLocatorBindingSetV1` remains an internal immutable set, not a
+public list. It contains exactly one binding for every candidate that needs a
 non-equal locator mapping, no binding for non-card candidates, and no unknown
-or duplicate lookup keys. The existing public
+or duplicate lookup keys. The opaque capability is the only value that can
+cross from Gameplay to Model; its operation returns only an already validated
+safe target or a structured failure. The existing public
 `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)` remains the only
-public consumption interface; it reads the set from the accepted decision
-boundary's internal member. A caller cannot pass a second list after the
-boundary has been accepted. The existing two-argument producer path may
-construct an empty set for exact-token-only candidates, but the bridge must
-reject any non-equal mapping that arrives without the complete internal set.
+public consumption interface; it consumes the capability through the accepted
+decision boundary's internal member. A caller cannot pass a second list after
+the boundary has been accepted. The existing two-argument producer path may
+construct an empty capability for exact-token-only candidates, but the bridge
+must reject any non-equal mapping that arrives without the complete internal
+set.
 
-The internal producer overload must validate the set atomically against the
-complete projection before constructing the boundary. The I6D bridge then
-uses the exact-token path where possible and otherwise resolves by the
-primary binding key, checks the frame/projection coordinates and candidate
-cross-checks, verifies the target in the current frame, and only then emits
-the existing OCGForge descriptor. No private field is added to
+The internal Gameplay-side capability factory validates the set atomically
+against the complete projection before returning the opaque value. The I6D
+bridge then uses the exact-token path where possible and otherwise calls the
+single safe-target operation, checks the frame/projection coordinates and
+candidate cross-checks, verifies the target in the current frame, and only
+then emits the existing OCGForge descriptor. No private field is added to
 `FlatPromptProjectionResultV1` or to a public candidate type.
 
 ### Lookup, consumption, and lifecycle
@@ -381,6 +396,38 @@ Its exact lookup key is:
  OverlayIndex)
 ```
 
+### Deterministic duplicate pairing rule
+
+The sidecar does not inherit the iteration order of a mirror collection. When
+one public pile group contains multiple occurrences with the same known
+CardCode, the existing I3D `KnownPileCard.Compare` position ordering is
+retained first: an absent position sorts before a present position, then the
+numeric position sorts ascending. Equal public sort keys are resolved by this
+complete private scalar tie-break, in exactly this order:
+
+```text
+(position_presence_and_value,
+ absolute_controller,
+ normalized_zone,
+ source_sequence,
+ is_overlay,
+ overlay_index)
+```
+
+`position_presence_and_value` uses the existing null-before-known rule. The
+remaining values use ordinal numeric comparison; `OverlayIndex` is present
+only for an overlay. The full key must be unique. A duplicate full key is a
+collision and rejects the whole projection/prompt; insertion order, dictionary
+iteration, allocation order, CardCode re-search, and first-match behavior are
+never tie-breakers.
+
+This rule determines only the private association between a current source
+occurrence and the already emitted public ordinal. It does not add the private
+tie-break values to `PublicCardStateV1`, canonical bytes, or public identity.
+For the same-code/same-position own-Hand fixture, source sequence order is
+therefore deterministic in both input orders while the public projection
+remains byte-identical.
+
 The sidecar is populated at the same point at which the I3D projection
 assigns the public ordinal, so duplicate own-hand occurrences are paired with
 the actual public ordinals produced by the accepted projection. A transient
@@ -409,17 +456,18 @@ COLLECTION_ORDER_HEURISTIC          = NO
 
 ### Controlled Gameplay-to-Model assembly handoff
 
-The current project dependency direction is Gameplay -> Model. The
-cross-assembly decision is therefore deliberately narrow:
+The actual project dependency direction is Model -> Gameplay. The
+cross-assembly decision therefore avoids a reverse project reference and
+avoids granting Model access to Gameplay internals:
 
 ```text
 Gameplay owns:
   internal immutable PrivateI4OccurrencePublicLocatorSidecarV1
   internal immutable PrivateCrossLocatorBindingV1
-  one internal I6DPrivateCrossLocatorBindingHandoffV1 facade
+  one public opaque I6DPrivateCrossLocatorBindingHandoffV1 capability
 
 Model may receive only:
-  the facade's validated accepted-target operation
+  the capability's validated accepted-target operation
 
 Model may not receive:
   MirrorSnapshotV1
@@ -429,15 +477,33 @@ Model may not receive:
   private occurrence fields
 ```
 
-The implementation may grant exactly one explicit friend target,
-`OCGForge.Ignis.Model`, if C# accessibility requires it. The friend access is
-restricted by the single typed facade; no direct Gameplay-internal access is
-part of the design, and no tests or application assembly becomes a friend.
+The capability is the only controlled handoff. It has no public constructor,
+no public fields or occurrence properties, no serialization, and no method
+that returns private source data. It returns only an accepted safe target or
+a structured failure after validating the complete lifecycle and candidate
+coordinates. `InternalsVisibleTo("OCGForge.Ignis.Model")` is explicitly not
+part of this design; Model cannot read private Gameplay internals.
+
+The capability is obtained only from the current prompt session after the
+sidecar and complete prompt have been accepted:
+
+```text
+FlatPromptSessionV1.TryCreateI6DPrivateBindingHandoff(
+    current_frame,
+    accepted_public_projection,
+    out handoff,
+    out error)
+```
+
+The future I6D boundary producer receives this opaque value as one trusted
+capability argument. `FlatPromptProjectionResultV1` is not extended with
+private data, and callers cannot construct the capability or a second binding
+list independently.
 
 The only permitted operation across that seam is conceptually:
 
 ```text
-internal TryGetValidatedTarget(
+public opaque TryGetValidatedTarget(
     prompt_instance_ordinal,
     continuation_step,
     frame_instance_ordinal,
@@ -453,9 +519,10 @@ internal TryGetValidatedTarget(
 The operation returns only the already accepted safe target or a structured
 failure. It does not return the source occurrence, mirror snapshot, mirror
 ID, raw address, prompt CardCode, or sidecar storage. The Model bridge must
-not call any other Gameplay-internal member. If the implementation cannot
-enforce this narrow operation with the existing assembly graph, it must stop
-and request a separate assembly design rather than widening the handoff.
+not call any other Gameplay-internal member. If this opaque capability cannot
+be made non-forgeable with an internal-only constructor and safe-target-only
+operation, the implementation must stop and request a separate assembly
+design rather than adding a friend assembly.
 
 The public `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)`
 interface remains unchanged. Its accepted decision boundary stores the
@@ -551,8 +618,17 @@ CURRENT_PRIVATE_OCCURRENCE_SEAM=ABSENT
 REAL_DUPLICATE_OWN_HAND_I4_FAILURE=CHARACTERIZED
 I4_FAILURE_STAGE=TryCorrelatePile/CompleteCorrelation
 I6D_BOUNDARY_REACHED=NO
+I4_AUTHORITATIVE_CONTRACT_RECONCILED=YES_BY_EXPLICIT_VERSION_TRANSITION
+I4_V1_IN_PLACE_AMENDMENT=FORBIDDEN
+I4_PRIVATE_SIDECAR_CONTRACT=ocgforge-ignis.flat-prompt-correlation-sidecar.v1
 I4_PRIVATE_SIDECAR_AMENDMENT=DESIGNED_PENDING_IMPLEMENTATION
 OPTION_A_PRIVATE_OCCURRENCE_TO_I4_LOCATOR=SELECTED
+PRIVATE_OCCURRENCE_ORDINAL_RULE=EXACTLY_DEFINED
+DUPLICATE_ASSIGNMENT_INSERTION_ORDER_INDEPENDENT=CHARACTERIZED
+ACTUAL_DEPENDENCY_DIRECTION=MODEL_TO_GAMEPLAY
+BROAD_INTERNALS_VISIBLE_TO=NO
+MODEL_CAN_READ_PRIVATE_GAMEPLAY_INTERNALS=NO
+SAFE_TARGET_ONLY_HANDOFF=DESIGNED
 
 HIDDEN_IDENTITY_USED=NO
 MIRROR_ENTITY_ID_USED_AS_PUBLIC_PROOF=NO
@@ -573,7 +649,8 @@ acceptance evidence.
 ```text
 DESIGNED_OWNING_LAYER=I6D OcgForgePublicCandidateBridgeV1
 DESIGNED_SOURCE_PROOF_ACQUISITION=Gameplay/I4 correlation seam before CompleteCorrelation
-DESIGNED_FRAME_LOCAL_BINDING=internal immutable set carried by accepted decision boundary
+DESIGNED_FRAME_LOCAL_BINDING=internal immutable set behind opaque safe-target capability
+DESIGNED_ASSEMBLY_HANDOFF=public opaque capability; no Model friend assembly
 PUBLIC_IDENTITY_IMPLICATIONS=private occurrence data must stay outside public identity
 REPLAY_DETERMINISM_IMPLICATIONS=bind only current accepted frame/prompt, reject stale or ambiguous mappings
 

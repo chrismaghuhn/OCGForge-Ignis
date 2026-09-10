@@ -70,6 +70,18 @@ internal readonly record struct I6DPrivateBindingPrivacyProjectionV1(
     string AcceptedTargetLocator,
     string PublicDescriptor);
 
+internal readonly record struct I6DPrivateI4PairingOccurrenceV1(
+    byte AbsoluteController,
+    MirrorZoneV1 NormalizedZone,
+    uint SourceSequence,
+    bool IsOverlay,
+    uint? OverlayIndex,
+    uint? Position);
+
+internal readonly record struct I6DPrivateI4PairingAssignmentV1(
+    uint SourceSequence,
+    uint PublicOrdinal);
+
 internal static class I6DPrivateSourceOccurrenceBindingDesignV1
 {
     private static readonly IReadOnlyList<I6DPrivateBindingFieldSpecV1>
@@ -281,6 +293,18 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
                 "SidecarTargetCollision"
             });
 
+    private static readonly IReadOnlyList<string> i4SidecarTieBreakFields =
+        Array.AsReadOnly(
+            new[]
+            {
+                "PositionPresenceAndValue",
+                "AbsoluteController",
+                "NormalizedZone",
+                "SourceSequence",
+                "IsOverlay",
+                "OverlayIndex"
+            });
+
     internal const string CarrierName = "PrivateCrossLocatorBindingV1";
 
     internal const string SemanticOwner =
@@ -293,7 +317,7 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
         "accepted decision boundary -> OcgForgePublicCandidateBridgeV1.TryCreate";
 
     internal const string BoundaryConstructionSeam =
-        "internal TryAccept(frame, completeProjection, completeBindings, out boundary, out error)";
+        "internal boundary stores opaque I6D handoff; public bridge consumes acceptedDecision";
 
     internal const string BindingSetName =
         "PrivateCrossLocatorBindingSetV1";
@@ -306,6 +330,15 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
 
     internal const string I4SidecarConsumptionSeam =
         "FlatPromptCardCorrelationV1.TryCorrelatePile exact occurrence lookup";
+
+    internal const string I4CorrelationSidecarContractId =
+        "ocgforge-ignis.flat-prompt-correlation-sidecar.v1";
+
+    internal const string I4ContractReconciliation =
+        "explicit versioned private companion contract";
+
+    internal const string I4SidecarTieBreakRule =
+        "position_presence/value, absolute_controller, normalized_zone, source_sequence, is_overlay, overlay_index";
 
     internal const string I4DuplicateOwnHandFailureStage =
         "TryCorrelatePile/CompleteCorrelation";
@@ -325,16 +358,22 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
         "I6DPrivateCrossLocatorBindingHandoffV1";
 
     internal const string AssemblyFriendTarget =
-        "OCGForge.Ignis.Model";
+        "NONE";
 
     internal const string AssemblyHandoffOperation =
         "TryGetValidatedTarget";
 
+    internal const string AssemblyHandoffCreationOperation =
+        "FlatPromptSessionV1.TryCreateI6DPrivateBindingHandoff(current_frame, accepted_public_projection, out handoff, out error)";
+
+    internal const string AssemblyBoundaryHandoffArgument =
+        "one opaque capability argument";
+
     internal const string AssemblyHandoffSignature =
-        "internal TryGetValidatedTarget(prompt_instance, continuation_step, frame_instance, projection_id, local_key, source_section, source_ordinal, current_frame, out target, out error)";
+        "public opaque TryGetValidatedTarget(prompt_instance, continuation_step, frame_instance, projection_id, local_key, source_section, source_ordinal, current_frame, out safe_target, out error)";
 
     internal const string CarrierVisibility =
-        "internal immutable Gameplay-to-Model handoff";
+        "internal carrier + public opaque capability";
 
     internal const bool FrameInstanceOrdinalIsSessionOwned = true;
 
@@ -372,19 +411,43 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
 
     internal const bool I4SidecarUsesSequenceAsPublicLocator = false;
 
+    internal const bool I4V1InPlaceAmendmentForbidden = true;
+
+    internal const bool I4AuthoritativeContractReconciledByTransition = true;
+
+    internal const bool I4SidecarIsVersionedCompanion = true;
+
+    internal const bool I4SidecarTieBreakIsTotal = true;
+
+    internal const bool I4SidecarTieBreakUsesSourceOccurrence = true;
+
+    internal const bool I4SidecarTieBreakUsesInsertionOrder = false;
+
+    internal const bool I4SidecarTieBreakUsesCollectionOrder = false;
+
+    internal const bool I4SidecarTieBreakUsesCardCode = false;
+
     internal const bool I4SidecarImplemented = false;
 
     internal const bool I4ContractAmendmentImplemented = false;
 
     internal const bool AssemblyHandoffExposesPrivateFields = false;
 
-    internal const bool AssemblyHandoffHasSingleFriendTarget = true;
+    internal const bool AssemblyHandoffHasSingleFriendTarget = false;
 
     internal const bool AssemblyHandoffIsSingleFacade = true;
 
     internal const bool AssemblyHandoffAllowsDirectGameplayInternals = false;
 
     internal const bool AssemblyFriendTargetsTestsOrApplication = false;
+
+    internal const bool AssemblyHandoffIsPublicOpaqueCapability = true;
+
+    internal const bool BroadInternalsVisibleTo = false;
+
+    internal const bool ModelCanReadPrivateGameplayInternals = false;
+
+    internal const bool SafeTargetOnlyHandoff = true;
 
     internal const bool CompleteBindingSetIsAcceptedAtomically = true;
 
@@ -422,6 +485,9 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
     internal static IReadOnlyList<string> I4SidecarInvalidations =>
         i4SidecarInvalidations;
 
+    internal static IReadOnlyList<string> I4SidecarTieBreakFields =>
+        i4SidecarTieBreakFields;
+
     internal static IReadOnlyList<string> InvalidationRules =>
         invalidationRules;
 
@@ -429,6 +495,37 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
         forbiddenCarrierData;
 
     internal static IReadOnlyList<I6DPrivateBindingCaseV1> Cases => cases;
+
+    internal static bool TryAssignExistingPublicOrdinals(
+        IReadOnlyList<I6DPrivateI4PairingOccurrenceV1>? occurrences,
+        out IReadOnlyList<I6DPrivateI4PairingAssignmentV1> assignments)
+    {
+        assignments = Array.Empty<I6DPrivateI4PairingAssignmentV1>();
+        if (occurrences is null || occurrences.Count == 0 ||
+            occurrences.Any(occurrence =>
+                occurrence.IsOverlay != occurrence.OverlayIndex.HasValue) ||
+            occurrences.Distinct().Count() != occurrences.Count)
+        {
+            return false;
+        }
+
+        I6DPrivateI4PairingOccurrenceV1[] ordered = occurrences
+            .OrderBy(occurrence => occurrence.Position.HasValue ? 1 : 0)
+            .ThenBy(occurrence => occurrence.Position ?? 0)
+            .ThenBy(occurrence => occurrence.AbsoluteController)
+            .ThenBy(occurrence => (byte)occurrence.NormalizedZone)
+            .ThenBy(occurrence => occurrence.SourceSequence)
+            .ThenBy(occurrence => occurrence.IsOverlay ? 1 : 0)
+            .ThenBy(occurrence => occurrence.OverlayIndex ?? 0)
+            .ToArray();
+        assignments = ordered
+            .Select((occurrence, index) =>
+                new I6DPrivateI4PairingAssignmentV1(
+                    occurrence.SourceSequence,
+                    checked((uint)index)))
+            .ToArray();
+        return true;
+    }
 }
 
 internal static class I6DCrossLocatorMappingAuthorityCharacterizationV1
