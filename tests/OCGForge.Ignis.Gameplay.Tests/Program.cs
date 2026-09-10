@@ -459,6 +459,10 @@ var tests = new (string Name, Action Body)[]
         I6DCrossLocatorMappingAuthorityCharacterizationTests
             .TestCrossLocatorAuthorityCases),
 
+    ("I6D existing prompt binding has no occurrence provenance seam",
+        I6DCrossLocatorMappingAuthorityCharacterizationTests
+            .TestExistingPromptBindingHasNoPrivateOccurrenceSeam),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 

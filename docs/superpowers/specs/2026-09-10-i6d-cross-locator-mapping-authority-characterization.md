@@ -64,6 +64,22 @@ or card identity. The duplicate row
 proves that `(player, zone, known public code)` is not sufficient to identify
 an own-hand occurrence when multiplicity is greater than one.
 
+## Existing private seam inventory
+
+The current I4 binding is intentionally recorded as a negative capability
+finding. `CurrentFlatPromptBindingV1` retains the prompt instance/family,
+public candidate values, local routing keys, continuation state, and response
+bindings. `FlatPromptCardCorrelationResultV1` retains the accepted I4 public
+locator and safe public-code result. Neither current type carries a private
+source occurrence, `MirrorEntityIdV1`, `ModernLocInfoV1`, or raw address.
+
+The gameplay projection does temporarily possess the wire occurrence and the
+exact mirror correlation while constructing a public candidate, but that
+proof is not currently transported into the I4 binding or across the I6D
+interface. This is an observed seam gap, not permission to expose those
+values. A later implementation must define the smallest private frame-local
+carrier and its lifecycle before using it for cross-locator mapping.
+
 ## Boundary implications
 
 The current `OcgForgePublicCandidateBridgeV1` exact-token check remains
@@ -124,6 +140,7 @@ AMBIGUOUS_MAPPING_REJECTION_REQUIREMENT=CHARACTERIZED
 MISSING_MAPPING_REJECTION_REQUIREMENT=CHARACTERIZED
 STALE_MAPPING_REJECTION_REQUIREMENT=CHARACTERIZED
 UNIQUE_MATCH_IS_MAPPING_AUTHORITY=NO
+CURRENT_PRIVATE_OCCURRENCE_SEAM=ABSENT
 
 HIDDEN_IDENTITY_USED=NO
 MIRROR_ENTITY_ID_USED_AS_PUBLIC_PROOF=NO

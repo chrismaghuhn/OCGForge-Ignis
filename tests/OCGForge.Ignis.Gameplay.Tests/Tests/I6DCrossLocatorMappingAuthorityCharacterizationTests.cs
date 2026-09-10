@@ -1,3 +1,4 @@
+using System.Reflection;
 using OCGForge.Ignis.Gameplay;
 using OCGForge.Ignis.Gameplay.Tests.Fixtures;
 using static OCGForge.Ignis.Gameplay.Tests.GameplayMessageFixtures;
@@ -86,6 +87,59 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
         I6DCrossLocatorMappingObservationV1 repeat =
             Analyze(OwnHandUnique(), 0);
         Equal(ownUnique, repeat);
+    }
+
+    internal static void TestExistingPromptBindingHasNoPrivateOccurrenceSeam()
+    {
+        Type[] bindingTypes =
+        {
+            typeof(CurrentFlatPromptBindingV1),
+            typeof(FlatPromptCardCorrelationResultV1)
+        };
+        Type[] forbiddenOccurrenceTypes =
+        {
+            typeof(MirrorEntityIdV1),
+            typeof(MirrorCardSnapshotV1),
+            typeof(ModernLocInfoV1),
+            typeof(MirrorAddressNormalizationV1)
+        };
+
+        foreach (Type type in bindingTypes)
+        {
+            FieldInfo[] fields = type.GetFields(
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            False(fields.Any(field =>
+                ContainsType(field.FieldType, forbiddenOccurrenceTypes)));
+
+            PropertyInfo[] properties = type.GetProperties(
+                BindingFlags.Instance |
+                BindingFlags.Public |
+                BindingFlags.NonPublic);
+            False(properties.Any(property =>
+                property.Name is
+                    "SourceOccurrence" or
+                    "SourceLocation" or
+                    "MirrorEntity" or
+                    "MirrorEntityId" or
+                    "RawLocInfo"));
+        }
+    }
+
+    private static bool ContainsType(Type value, IReadOnlyList<Type> forbidden)
+    {
+        if (forbidden.Contains(value))
+        {
+            return true;
+        }
+
+        if (value.IsArray)
+        {
+            return ContainsType(value.GetElementType()!, forbidden);
+        }
+
+        return value.IsGenericType &&
+            value.GetGenericArguments().Any(argument =>
+                ContainsType(argument, forbidden));
     }
 
     private static I6DCrossLocatorMappingObservationV1 Analyze(
