@@ -10,6 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\OCGForge.Ignis.Gameplay\OCGForge.Ignis.Gameplay.csproj" />
+    <ProjectReference Include="..\..\src\OCGForge.Ignis.Model\OCGForge.Ignis.Model.csproj" />
     <ProjectReference Include="..\..\src\OCGForge.Ignis.Client\OCGForge.Ignis.Client.csproj" />
     <ProjectReference Include="..\..\src\OCGForge.Ignis.Protocol\OCGForge.Ignis.Protocol.csproj" />
   </ItemGroup>

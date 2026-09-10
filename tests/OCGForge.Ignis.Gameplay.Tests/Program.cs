@@ -423,6 +423,34 @@ var tests = new (string Name, Action Body)[]
     ("I6G ToEp response uses existing I4 binding",
         I6GSingleResponseProofTests.TestToEpResponseUsesExistingI4Binding),
 
+    ("I6G scenario scripts bind only accepted scenarios",
+        I6GDeterministicEvidenceScenarioDriverTests
+            .TestScenarioScriptsBindOnlyAcceptedScenarios),
+
+    ("I6G complete domain binds exact I4 selection",
+        I6GDeterministicEvidenceScenarioDriverTests
+            .TestCompleteDomainBindsExactI4Selection),
+
+    ("I6G unplanned prompt or domain fails before selection",
+        I6GDeterministicEvidenceScenarioDriverTests
+            .TestUnplannedPromptOrDomainFailsBeforeSelection),
+
+    ("I6G expected local key must be a domain member",
+        I6GDeterministicEvidenceScenarioDriverTests
+            .TestExpectedLocalKeyMustBeOneCompleteDomainMember),
+
+    ("I6G terminal selection cannot be reused as next prompt",
+        I6GDeterministicEvidenceScenarioDriverTests
+            .TestTerminalSelectionCannotBeReusedAsNextPrompt),
+
+    ("I6G continuation steps remain scenario and domain bound",
+        I6GDeterministicEvidenceScenarioDriverTests
+            .TestContinuationStepsRemainScenarioAndDomainBound),
+
+    ("I6G local routing key does not change public domain digest",
+        I6GDeterministicEvidenceScenarioDriverTests
+            .TestLocalRoutingKeyDoesNotChangePublicDomainDigest),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 
