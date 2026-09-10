@@ -1,7 +1,7 @@
 # I6D Cross-Locator Mapping Authority Characterization
 
-Status: design/characterization-only; I4 frame-owned sidecar/correlation is
-accepted, but no I6D mapping implementation is authorized by this document.
+Status: I6D mapping implementation present; focused implementation acceptance is
+pending independent review. I4 frame-owned sidecar/correlation is accepted.
 
 The frame-owned integration reconciliation for the accepted I4 lifecycle is
 recorded separately in:
@@ -79,23 +79,22 @@ candidate values, local routing keys, continuation state, and response
 bindings. `FlatPromptCardCorrelationResultV1` retains the accepted I4 public
 locator and safe public-code result. Neither current prompt-binding type
 carries a private source occurrence, `MirrorEntityIdV1`, `ModernLocInfoV1`, or
-raw address. Implementation 01 now stores the projection-scoped occurrence
-sidecar separately; the accepted frame-owned I4 prompt-correlation path now
-consumes it, while I6D consumption still does not.
+raw address. Implementation 01 stores the projection-scoped occurrence sidecar
+separately; the accepted frame-owned I4 prompt-correlation path consumes it, and
+the I6D implementation consumes the same occurrence proof only through its
+opaque handoff.
 
 The gameplay projection does temporarily possess the wire occurrence and the
 exact mirror correlation while constructing a public candidate, but that
-proof is not currently transported into the I4 binding or across the I6D
-interface. This is an observed seam gap, not permission to expose those
-values. The I4-to-I6D binding seam remains absent; the following design
-freezes the smallest permitted carrier and lifecycle before that enablement
-is authorized.
+proof is not exposed as public I4 data or across the I6D interface. The
+I4-to-I6D binding seam is implemented as the Gameplay-owned opaque handoff
+below; its focused production acceptance remains separately reviewable.
 
 ## Frozen private source-occurrence binding design
 
-This section is the accepted design contract. The projection-scoped sidecar
-and the authorized I4 correlation implementation now exist; the I6D mapping
-and cross-assembly handoff remain unimplemented.
+This section is the accepted design contract. The projection-scoped sidecar,
+authorized I4 correlation, and I6D cross-assembly handoff implementation now
+exist; focused implementation acceptance is recorded by the current tests.
 
 ### Owner, acquisition seam, and visibility
 
@@ -270,7 +269,7 @@ The primary lookup key is exactly:
 
 `SourceSection` and `SourceOrdinal` must equal the accepted candidate and are
 cross-checks, never a fallback search key. Candidate-array index is not a
-binding authority. The future I6D bridge consumes the binding through the
+binding authority. The I6D bridge consumes the binding through the
 internal member of `OcgForgeAcceptedDecisionBoundaryV1`; it does not accept a
 detached caller-supplied list.
 
@@ -533,15 +532,14 @@ The capability is created by the current Gameplay session after the sidecar
 and complete frame-owned prompt have been accepted:
 
 ```text
-GameplayMirrorSessionV1.TryCreateFrameOwnedI6DPrivateBindingHandoff(
-    accepted_frame_owned_prompt,
-    accepted_public_projection,
-    out handoff,
-    out error)
+GameplayMirrorSessionV1.TryCreateI6DFrameOwnedComposition(
+    prompt_session,
+    accepted_prompt_projection,
+    accepted_i4_projection)
 ```
 
-The future I6D boundary producer receives this opaque value as one trusted
-capability argument. `FlatPromptProjectionResultV1` is not extended with
+The I6D boundary producer receives this opaque value as one trusted capability
+argument. `FlatPromptProjectionResultV1` is not extended with
 private data, and callers cannot construct the capability or a second binding
 list independently.
 
@@ -599,8 +597,8 @@ same committed mirror/frame
     -> public OCGForge descriptor/key sees only its accepted safe target
 ```
 
-The following future production requirements remain requirements rather than
-current capabilities:
+The following production requirements remain explicit acceptance gates and are
+enforced by the implementation:
 
 ```text
 I4_DUPLICATE_OWN_HAND_COMPLETE_DOMAIN = REQUIRED
@@ -608,7 +606,7 @@ SIDECAR_MISSING_REJECT                = REQUIRED
 SIDECAR_AMBIGUOUS_REJECT              = REQUIRED
 SIDECAR_STALE_REJECT                   = REQUIRED
 SIDECAR_COLLISION_REJECT               = REQUIRED
-I6D_BINDING_IMPLEMENTATION             = NOT_IMPLEMENTED
+I6D_BINDING_IMPLEMENTATION             = PRESENT_PENDING_REVIEW
 ```
 
 ## Boundary implications
@@ -617,8 +615,8 @@ The current `OcgForgePublicCandidateBridgeV1` exact-token check remains
 correct for its current API. It must not silently reinterpret an Ignis
 locator as an OCGForge locator.
 
-Any future mapping must be an explicit I6D-owned, frame-local, deterministic
-proof boundary. A permissible proof would have to be one of:
+Any alternate mapping must remain an explicit I6D-owned, frame-local,
+deterministic proof boundary. A permissible proof is one of:
 
 ```text
 1. exact equality with the current I6C5/OCGForge public locator; or
@@ -629,9 +627,8 @@ proof boundary. A permissible proof would have to be one of:
    private data never enters the public descriptor, public key, or model input.
 ```
 
-The current characterization establishes the required I4-sidecar design but
-does not establish an existing I6D same-snapshot target handoff. In
-particular, it does not authorize using:
+The implementation establishes the required I6D same-snapshot target handoff.
+It still does not authorize any alternate mapping path, in particular:
 
 ```text
 MirrorEntityIdV1
@@ -655,6 +652,10 @@ tests/OCGForge.Ignis.Gameplay.Tests/
   Tests/I6DCrossLocatorMappingAuthorityCharacterizationTests.cs
 ```
 
+The focused implementation acceptance companion is exercised by the I6C5
+frame-source tests, including same-snapshot handoff, stale-authority,
+fail-closed target, public-identity, and lease-contention cases.
+
 It proves:
 
 ```text
@@ -672,7 +673,7 @@ AMBIGUOUS_MAPPING_REJECTION_REQUIREMENT=CHARACTERIZED
 MISSING_MAPPING_REJECTION_REQUIREMENT=CHARACTERIZED
 STALE_MAPPING_REJECTION_REQUIREMENT=CHARACTERIZED
 UNIQUE_MATCH_IS_MAPPING_AUTHORITY=NO
-CURRENT_PRIVATE_OCCURRENCE_SEAM=ABSENT
+CURRENT_PRIVATE_OCCURRENCE_SEAM=GAMEPLAY_OWNED_OPAQUE_HANDOFF
 
 HISTORICAL_REAL_DUPLICATE_OWN_HAND_I4_FAILURE=CHARACTERIZED
 I4_FAILURE_STAGE=TryCorrelatePile/CompleteCorrelation
@@ -701,8 +702,8 @@ read-only; their generated build output is not Ignis acceptance evidence.
 
 ## Non-goals and current result
 
-This characterization does not change I4, I6C5, I6D, the locator codec, the
-public-state codec, runtime behavior, or the OCGForge contract. It does not
+This implementation does not change I4 public bytes, I6C5 public semantics,
+the locator codec, the public-state codec, or the OCGForge contract. It does not
 run the Counter scenario, send a response, or admit the result as I6G runtime
 acceptance evidence.
 
@@ -714,7 +715,7 @@ DESIGNED_ASSEMBLY_HANDOFF=public opaque capability; no Model friend assembly
 PUBLIC_IDENTITY_IMPLICATIONS=private occurrence data must stay outside public identity
 REPLAY_DETERMINISM_IMPLICATIONS=bind only current accepted frame/prompt, reject stale or ambiguous mappings
 
-I6D_CROSS_LOCATOR_MAPPING_IMPLEMENTATION=NOT_IMPLEMENTED
+I6D_CROSS_LOCATOR_MAPPING_IMPLEMENTATION=PRESENT_PENDING_REVIEW
 I6D_PRIVATE_SOURCE_OCCURRENCE_BINDING_DESIGN=ACCEPTED_DESIGN_FREEZE
 I6D_PRIVATE_SOURCE_OCCURRENCE_BINDING_DESIGN_FINAL=YES
 I6D_PRIVATE_SOURCE_OCCURRENCE_BINDING_REMEDIATION_02=ACCEPTED_DESIGN_FREEZE

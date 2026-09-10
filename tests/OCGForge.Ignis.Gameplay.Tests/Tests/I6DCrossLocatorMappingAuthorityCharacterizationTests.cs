@@ -195,11 +195,11 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
             "NONE",
             I6DPrivateSourceOccurrenceBindingDesignV1.AssemblyFriendTarget);
         Equal(
-            "TryGetValidatedTarget",
+            "TryAcquireBoundaryAcceptanceLease(...) + TryGetValidatedTarget(...)",
             I6DPrivateSourceOccurrenceBindingDesignV1
                 .AssemblyHandoffOperation);
         Equal(
-            "FlatPromptSessionV1.TryCreateI6DPrivateBindingHandoff(current_frame, accepted_public_projection, out handoff, out error)",
+            "GameplayMirrorSessionV1.TryCreateI6DFrameOwnedComposition(prompt_session, accepted_prompt_projection, accepted_i4_projection)",
             I6DPrivateSourceOccurrenceBindingDesignV1
                 .AssemblyHandoffCreationOperation);
         Equal(
@@ -207,7 +207,7 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
             I6DPrivateSourceOccurrenceBindingDesignV1
                 .AssemblyBoundaryHandoffArgument);
         Equal(
-            "public opaque TryGetValidatedTarget(accepted_public_candidate, current_accepted_public_frame, out safe_target, out error)",
+            "public opaque TryAcquireBoundaryAcceptanceLease(...) + TryGetValidatedTarget(accepted_public_candidate, current_accepted_public_frame, out safe_target, out error)",
             I6DPrivateSourceOccurrenceBindingDesignV1
                 .AssemblyHandoffSignature);
         string[] expectedSidecarFields =
@@ -521,19 +521,18 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
         Equal(privacyA.AcceptedTargetLocator, privacyB.AcceptedTargetLocator);
         Equal(privacyA.PublicDescriptor, privacyB.PublicDescriptor);
 
-        string[] futureProductionTypes =
-        {
-            "OCGForge.Ignis.Gameplay.PrivateCrossLocatorBindingV1",
-            "OCGForge.Ignis.Gameplay.I6DPrivateCrossLocatorBindingHandoffV1"
-        };
-        foreach (string futureProductionType in futureProductionTypes)
-        {
-            Type? accidentalProductionType =
-                typeof(CurrentFlatPromptBindingV1).Assembly.GetType(
-                    futureProductionType,
-                    throwOnError: false);
-            Null(accidentalProductionType);
-        }
+        Type? productionHandoffType =
+            typeof(CurrentFlatPromptBindingV1).Assembly.GetType(
+                "OCGForge.Ignis.Gameplay.I6DPrivateCrossLocatorBindingHandoffV1",
+                throwOnError: false);
+        NotNull(productionHandoffType);
+        True(productionHandoffType!.IsPublic);
+        Type? productionBindingType =
+            typeof(CurrentFlatPromptBindingV1).Assembly.GetType(
+                "OCGForge.Ignis.Gameplay.PrivateCrossLocatorBindingV1",
+                throwOnError: false);
+        NotNull(productionBindingType);
+        False(productionBindingType!.IsPublic);
 
         False(typeof(PrivateI4OccurrencePublicLocatorSidecarV1).IsPublic);
         False(typeof(PrivateI4OccurrencePublicLocatorSidecarEntryV1).IsPublic);

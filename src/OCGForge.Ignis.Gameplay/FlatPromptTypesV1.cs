@@ -3321,6 +3321,9 @@ internal sealed class CurrentFlatPromptBindingV1
     private readonly Dictionary<string, int> responseByKey;
     private readonly Dictionary<string, byte[]> responseBodyByKey;
     private readonly PrivateGameplayFrameAuthorityV1? frameAuthority;
+    private readonly PrivateFlatPromptBindingLifetimeAuthorityV1?
+        promptLifetimeAuthority;
+    private readonly FlatPromptProjectionResultV1? acceptedProjection;
 
     private CurrentFlatPromptBindingV1(
         ulong promptInstanceOrdinal,
@@ -3330,7 +3333,9 @@ internal sealed class CurrentFlatPromptBindingV1
         Dictionary<string, int> responseByKey,
         byte[][]? responseBodies,
         FlatPromptContinuationStateV1? continuationState,
-        PrivateGameplayFrameAuthorityV1? frameAuthority)
+        PrivateGameplayFrameAuthorityV1? frameAuthority,
+        PrivateFlatPromptBindingLifetimeAuthorityV1? promptLifetimeAuthority,
+        FlatPromptProjectionResultV1? acceptedProjection)
     {
         PromptInstanceOrdinal = promptInstanceOrdinal;
         Family = family;
@@ -3355,6 +3360,8 @@ internal sealed class CurrentFlatPromptBindingV1
         ContinuationState = continuationState;
         ContinuationStep = continuationState?.Step ?? 0;
         this.frameAuthority = frameAuthority;
+        this.promptLifetimeAuthority = promptLifetimeAuthority;
+        this.acceptedProjection = acceptedProjection;
     }
 
     internal ulong PromptInstanceOrdinal { get; }
@@ -3367,10 +3374,42 @@ internal sealed class CurrentFlatPromptBindingV1
 
     internal PrivateGameplayFrameAuthorityV1? FrameAuthority => frameAuthority;
 
+    internal PrivateFlatPromptBindingLifetimeAuthorityV1?
+        PromptLifetimeAuthority => promptLifetimeAuthority;
+
     internal IReadOnlyList<FlatPublicCandidateDescriptorV1> Candidates =>
         candidatesView;
 
     internal IReadOnlyList<string> LocalKeys => localKeysView;
+
+    internal bool MatchesPublicProjection(
+        FlatPromptProjectionResultV1 projection)
+    {
+        if (acceptedProjection is not null &&
+            !ReferenceEquals(acceptedProjection, projection))
+        {
+            return false;
+        }
+
+        if (!projection.IsSuccess ||
+            projection.Context is null ||
+            projection.Candidates is null ||
+            projection.Context.PromptFamily != Family ||
+            projection.Candidates.Count != candidates.Length)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < candidates.Length; index++)
+        {
+            if (!candidates[index].Equals(projection.Candidates[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     internal bool TryGetResponse(string? key, out int response)
     {
@@ -3433,10 +3472,24 @@ internal sealed class CurrentFlatPromptBindingV1
         out FlatPromptErrorCodeV1 error,
         byte[][]? responseBodies = null,
         FlatPromptContinuationStateV1? continuationState = null,
-        PrivateGameplayFrameAuthorityV1? frameAuthority = null)
+        PrivateGameplayFrameAuthorityV1? frameAuthority = null,
+        PrivateFlatPromptBindingLifetimeAuthorityV1? promptLifetimeAuthority = null,
+        FlatPromptProjectionResultV1? acceptedProjection = null)
     {
         binding = null;
         error = FlatPromptErrorCodeV1.None;
+        if (frameAuthority is null && promptLifetimeAuthority is not null)
+        {
+            error = FlatPromptErrorCodeV1.InvalidResponseBinding;
+            return false;
+        }
+
+        if (frameAuthority is not null && promptLifetimeAuthority is null)
+        {
+            promptLifetimeAuthority =
+                new PrivateFlatPromptBindingLifetimeAuthorityV1();
+        }
+
         if (candidates is null || localKeys is null || responses is null ||
             candidates.Length == 0 ||
             candidates.Length != localKeys.Length ||
@@ -3511,7 +3564,9 @@ internal sealed class CurrentFlatPromptBindingV1
             responseByKey,
             responseBodies,
             continuationState,
-            frameAuthority);
+            frameAuthority,
+            promptLifetimeAuthority,
+            acceptedProjection);
         return true;
     }
 

@@ -119,7 +119,45 @@ public static class PerspectiveSafePublicFrameSourceV1
         PerspectiveStateMirrorV1? mirror,
         PerspectiveSafeMatchContextV1? matchContext,
         PerspectiveSafePrintedProviderV1? printedProvider)
+        => TryCreateI6C5Core(
+            mirror,
+            matchContext,
+            printedProvider,
+            out _);
+
+    /// <summary>
+    /// Composes the public I6C5 frame and retains the exact transient I6C3
+    /// locator map for the Gameplay-owned I6D handoff. The map is never part
+    /// of the returned public frame.
+    /// </summary>
+    internal static PrivateI6DFrameCompositionResultV1 TryCreateI6DFrame(
+        PerspectiveStateMirrorV1? mirror,
+        PerspectiveSafeMatchContextV1? matchContext,
+        PerspectiveSafePrintedProviderV1? printedProvider)
     {
+        PerspectiveSafeFrameSourceResultV1 frameResult =
+            TryCreateI6C5Core(
+                mirror,
+                matchContext,
+                printedProvider,
+                out PrivateI6C3LocatorMapV1? locatorMap);
+        if (!frameResult.IsSuccess || locatorMap is null)
+        {
+            return PrivateI6DFrameCompositionResultV1.Failure(frameResult);
+        }
+
+        return PrivateI6DFrameCompositionResultV1.Success(
+            frameResult,
+            locatorMap);
+    }
+
+    private static PerspectiveSafeFrameSourceResultV1 TryCreateI6C5Core(
+        PerspectiveStateMirrorV1? mirror,
+        PerspectiveSafeMatchContextV1? matchContext,
+        PerspectiveSafePrintedProviderV1? printedProvider,
+        out PrivateI6C3LocatorMapV1? locatorMap)
+    {
+        locatorMap = null;
         if (mirror is null)
         {
             return Failure(
@@ -152,7 +190,8 @@ public static class PerspectiveSafePublicFrameSourceV1
 
         PerspectiveSafeI6C3SourceResultV1 stateResult = TryCreateI6C3(
             mirror,
-            matchContext.DuelFlags);
+            matchContext.DuelFlags,
+            out Dictionary<MirrorEntityIdV1, string>? rawLocatorMap);
         if (!stateResult.IsSuccess)
         {
             return PerspectiveSafeFrameSourceResultV1.Failure(
@@ -206,7 +245,18 @@ public static class PerspectiveSafePublicFrameSourceV1
             state.Chain,
             mirror.VisibleEvents,
             matchContext);
-        return TryCreate(input);
+        PerspectiveSafeFrameSourceResultV1 frameResult = TryCreate(input);
+        if (frameResult.IsSuccess &&
+            !PrivateI6C3LocatorMapV1.TryCreate(
+                rawLocatorMap,
+                out locatorMap))
+        {
+            return Failure(
+                PerspectiveSafeFrameSourceErrorCodeV1.InvalidLocator,
+                PerspectiveSafeSourceSectionV1.Entities);
+        }
+
+        return frameResult;
     }
 
     /// <summary>
@@ -276,13 +326,18 @@ public static class PerspectiveSafePublicFrameSourceV1
     public static PerspectiveSafeI6C3SourceResultV1 TryCreateI6C3(
         PerspectiveStateMirrorV1? mirror)
     {
-        return TryCreateI6C3(mirror, duelFlags: null);
+        return TryCreateI6C3(
+            mirror,
+            duelFlags: null,
+            out _);
     }
 
     private static PerspectiveSafeI6C3SourceResultV1 TryCreateI6C3(
         PerspectiveStateMirrorV1? mirror,
-        ulong? duelFlags)
+        ulong? duelFlags,
+        out Dictionary<MirrorEntityIdV1, string>? locatorMap)
     {
+        locatorMap = null;
         if (mirror is null)
         {
             return PerspectiveSafeI6C3SourceResultV1.Failure(
@@ -363,6 +418,7 @@ public static class PerspectiveSafePublicFrameSourceV1
                 relationships,
                 chain,
                 statuses);
+        locatorMap = locatorById;
         return PerspectiveSafeI6C3SourceResultV1.Success(source);
     }
 

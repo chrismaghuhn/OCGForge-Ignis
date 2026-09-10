@@ -1,7 +1,7 @@
 # I6D Frame-Owned Cross-Locator Integration Reconciliation
 
-Status: design/characterization-only; no I6D mapping implementation is
-authorized by this document.
+Status: I6D mapping implementation present; focused implementation acceptance is
+pending independent review.
 Base: `6ffc68dbdd5c2619daffbb4d0d9fa35ede5f3c71`
 Task: `I6D_FRAME_OWNED_CROSS_LOCATOR_INTEGRATION_RECONCILIATION_01`
 
@@ -63,7 +63,7 @@ The current boundary finding is:
 I6C3_TRANSIENT_OCCURRENCE_TO_LOCATOR_MAP = PRESENT_IN_BUILDER
 I6C3_MAP_RETAINED_BY_PUBLIC_SOURCE       = NO
 I6C5_MAP_RETAINED_BY_PUBLIC_FRAME        = NO
-I6D_PRIVATE_HANDOFF                       = ABSENT
+I6D_PRIVATE_HANDOFF                       = GAMEPLAY_OWNED_OPAQUE_HANDOFF
 ```
 
 The absence is intentional at the public source boundary. It is not
@@ -72,9 +72,9 @@ order, or a second locator factory.
 
 ## Required frame-owned target proof
 
-The future implementation must consume the builder-local map before it is
-discarded and produce only the already accepted safe target in the private I6D
-binding. The exact private join is:
+The implementation consumes the builder-local map before it is discarded and
+produces only the already accepted safe target in the private I6D binding. The
+exact private join is:
 
 ```text
 current frame-owned I4 source occurrence
@@ -107,7 +107,7 @@ I6D_COMPOSITION_OWNER=GameplayMirrorSessionV1
 FLATPROMPT_SESSION_ROLE=PROMPT_LIFETIME_AUTHORITY_OWNER_ONLY
 ```
 
-The future Gameplay-side producer is one owner-guarded operation over the
+The Gameplay-side producer is one owner-guarded operation over the
 current `PrivateGameplayFrameAuthorityV1` lease:
 
 ```text
@@ -167,7 +167,7 @@ The project dependency remains:
 OCGForge.Ignis.Model -> OCGForge.Ignis.Gameplay
 ```
 
-The future crossing is one public opaque value created by Gameplay:
+The crossing is one public opaque value created by Gameplay:
 
 ```text
 public opaque I6DPrivateCrossLocatorBindingHandoffV1
@@ -219,8 +219,8 @@ replacement, prompt/continuation mismatch, terminal selection, session
 disposal, or boundary failure.
 
 The existing `OcgForgeAcceptedDecisionBoundaryV1` remains the Model-side
-owner of the accepted decision. A later implementation may add one narrowly
-bound producer overload that accepts this one opaque capability and stores it
+owner of the accepted decision. The implementation adds one narrowly bound
+producer overload that accepts this one opaque capability and stores it
 privately in the boundary:
 
 ```text
@@ -305,32 +305,33 @@ other public semantics are equal. If frozen OCGForge public semantics make
 the safe target itself different, the public result may differ; private source
 data still may not become an additional public identity field.
 
-## Characterization evidence and deferred implementation
+## Implementation evidence and acceptance boundary
 
-The focused design-only tests characterize the current seam:
+The focused tests characterize and exercise the implemented seam:
 
 ```text
 FRAME_ORDINAL_IS_SESSION_OWNED            = PASS
 I6C5_PROJECTION_DOES_NOT_CREATE_FRAME     = PASS
 I6C3_MAP_IS_TRANSIENT                      = PASS
 PUBLIC_SOURCE_HAS_NO_PRIVATE_MAP           = PASS
-CURRENT_I6D_HANDOFF_IS_ABSENT              = PASS
-CURRENT_MODEL_BOUNDARY_HAS_NO_HANDOFF      = PASS
-PUBLIC_CONSUMER_NEEDS_PRIVATE_COORDINATES  = PASS
+CURRENT_I6D_HANDOFF_IS_PRESENT             = PASS
+CURRENT_MODEL_BOUNDARY_HAS_OPAQUE_HANDOFF  = PASS
+PUBLIC_CONSUMER_NEEDS_PRIVATE_COORDINATES  = NO
 BOUNDARY_ACCEPTANCE_GUARD_INTERFACE        = PASS
 BOUNDARY_ACCEPTANCE_LEASE_LIFETIME         = PASS
 FAILED_ACCEPTANCE_CONSUMES_DECISION_INDEX  = NO
 PUBLICSTATE_BYTES_CHANGED                  = NO
 PUBLICSTATE_IDENTITY_CHANGED               = NO
-PRODUCTION_MAPPING_IMPLEMENTATION          = NO
+PRODUCTION_MAPPING_IMPLEMENTATION          = PRESENT_PENDING_REVIEW
 ```
 
-The tests do not create an I6D capability, alter the Model boundary, rerun
-Counter or Link capture, send a response, or authorize fresh-process A/B.
+The implementation tests exercise the I6D capability and Model boundary. They
+do not rerun Counter or Link capture, send a response, or authorize
+fresh-process A/B.
 
 ```text
-I6D_FRAME_OWNED_CROSS_LOCATOR_RECONCILIATION = DESIGN_ONLY_PENDING_REVIEW
-I6D_MAPPING_IMPLEMENTATION                   = NOT_IMPLEMENTED
+I6D_FRAME_OWNED_CROSS_LOCATOR_RECONCILIATION = IMPLEMENTED_PENDING_REVIEW
+I6D_MAPPING_IMPLEMENTATION                   = PRESENT_PENDING_REVIEW
 I6G_COUNTER_CAPTURE                           = NOT_AUTHORIZED
 I6G_LINK_CAPTURE                              = NOT_AUTHORIZED
 I6G_FRESH_PROCESS_A_B                         = NOT_AUTHORIZED

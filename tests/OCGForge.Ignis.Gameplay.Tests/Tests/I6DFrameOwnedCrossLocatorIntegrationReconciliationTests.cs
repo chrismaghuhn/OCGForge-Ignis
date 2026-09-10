@@ -26,7 +26,7 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
             "I6D_FRAME_OWNED_CROSS_LOCATOR_INTEGRATION_RECONCILIATION_01",
             I6DFrameOwnedCrossLocatorIntegrationReconciliationV1.Task);
         Equal(
-            "DESIGN_AND_CHARACTERIZATION_ONLY",
+            "IMPLEMENTATION_PRESENT_ACCEPTANCE_PENDING_REVIEW",
             I6DFrameOwnedCrossLocatorIntegrationReconciliationV1.Status);
         Equal(
             "GameplayMirrorSessionV1 bind initialized mirror -> FRAME_0; successful owner Apply -> FRAME_N+1",
@@ -214,9 +214,9 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
             .ExactTokenPathMayOmitHandoff);
         True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
             .NonEqualLocatorRequiresHandoff);
-        False(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+        True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
             .I6DImplementationPresent);
-        False(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+        True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
             .I6DImplementationAuthorized);
     }
 
@@ -257,28 +257,69 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
         False(HasPrivateOccurrenceMapSurface(typeof(PerspectiveSafeEntityV1)));
 
         Assembly gameplayAssembly = typeof(PerspectiveSafeFrameV1).Assembly;
-        Null(gameplayAssembly.GetType(
+        NotNull(gameplayAssembly.GetType(
             "OCGForge.Ignis.Gameplay.I6DPrivateCrossLocatorBindingHandoffV1",
             throwOnError: false));
-        Null(gameplayAssembly.GetType(
+        NotNull(gameplayAssembly.GetType(
             "OCGForge.Ignis.Gameplay.PrivateCrossLocatorBindingV1",
             throwOnError: false));
+
+        Type handoffType = typeof(I6DPrivateCrossLocatorBindingHandoffV1);
+        BindingFlags flags = BindingFlags.Instance |
+            BindingFlags.Static |
+            BindingFlags.Public |
+            BindingFlags.NonPublic;
+        False(handoffType.GetConstructors(BindingFlags.Public).Any());
+        False(handoffType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Any());
+        False(HasPrivateOccurrenceMapSurface(handoffType));
+        False(handoffType.GetFields(flags).Any(field => field.Name is
+            "CardCode" or "PromptLocalCardCode" or "RawLocInfo" or "Pointer"));
+        string[] publicHandoffOperations = handoffType
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Where(method => method.DeclaringType == handoffType)
+            .Select(method => method.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        True(publicHandoffOperations.SequenceEqual(
+            new[]
+            {
+                "TryAcquireBoundaryAcceptanceLease",
+                "TryGetValidatedTarget"
+            }));
+        MethodInfo acceptanceMethod = handoffType.GetMethod(
+            "TryAcquireBoundaryAcceptanceLease",
+            BindingFlags.Public | BindingFlags.Instance)!;
+        Equal(4, acceptanceMethod.GetParameters().Length);
+        Equal(typeof(PerspectiveSafeFrameV1),
+            acceptanceMethod.GetParameters()[0].ParameterType);
+        Equal(typeof(FlatPromptProjectionResultV1),
+            acceptanceMethod.GetParameters()[1].ParameterType);
+        MethodInfo targetMethod = handoffType.GetMethod(
+            "TryGetValidatedTarget",
+            BindingFlags.Public | BindingFlags.Instance)!;
+        Equal(4, targetMethod.GetParameters().Length);
+        Equal(typeof(FlatPublicCandidateDescriptorV1),
+            targetMethod.GetParameters()[0].ParameterType);
+        Equal(typeof(PerspectiveSafeFrameV1),
+            targetMethod.GetParameters()[1].ParameterType);
     }
 
-    internal static void TestI6DModelBoundaryHasNoCurrentPrivateHandoff()
+    internal static void TestI6DModelBoundaryStoresOpaqueHandoffOnly()
     {
         Type boundaryType = typeof(OcgForgeAcceptedDecisionBoundaryV1);
         BindingFlags flags = BindingFlags.Instance |
             BindingFlags.Static |
             BindingFlags.Public |
             BindingFlags.NonPublic;
-        False(boundaryType.GetFields(flags).Any(field =>
-            ContainsI6DPrivateHandoffName(field.Name) ||
-            ContainsI6DPrivateHandoffName(field.FieldType.Name)));
-        False(boundaryType.GetProperties(flags).Any(property =>
+        True(boundaryType.GetFields(flags).Any(field =>
+            field.FieldType == typeof(I6DPrivateCrossLocatorBindingHandoffV1)));
+        False(boundaryType.GetProperties(
+                BindingFlags.Instance | BindingFlags.Public)
+            .Any(property =>
             ContainsI6DPrivateHandoffName(property.Name) ||
             ContainsI6DPrivateHandoffName(property.PropertyType.Name)));
-        False(boundaryType.GetConstructors(
+        True(boundaryType.GetConstructors(
                 BindingFlags.Instance |
                 BindingFlags.Public |
                 BindingFlags.NonPublic)
@@ -296,7 +337,7 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
                 "ContinuationStep"));
 
         Type producerType = typeof(OcgForgeAcceptedDecisionBoundaryProducerV1);
-        False(producerType.GetMethods(
+        True(producerType.GetMethods(
                 BindingFlags.Instance |
                 BindingFlags.Public |
                 BindingFlags.NonPublic)

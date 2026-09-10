@@ -5,6 +5,47 @@ public sealed class FlatPromptSessionV1
     private ulong nextPromptOrdinal;
     private CurrentFlatPromptBindingV1? currentBinding;
 
+    private void ClearCurrentBinding()
+    {
+        CurrentFlatPromptBindingV1? previous = currentBinding;
+        previous?.PromptLifetimeAuthority?.Invalidate();
+        currentBinding = null;
+    }
+
+    private void ReplaceCurrentBinding(CurrentFlatPromptBindingV1? binding)
+    {
+        if (ReferenceEquals(currentBinding, binding))
+        {
+            return;
+        }
+
+        CurrentFlatPromptBindingV1? previous = currentBinding;
+        previous?.PromptLifetimeAuthority?.Invalidate();
+        currentBinding = binding;
+    }
+
+    internal bool TryGetCurrentFrameOwnedBinding(
+        PrivateGameplayFrameAuthorityV1 frame,
+        FlatPromptProjectionResultV1 acceptedProjection,
+        out CurrentFlatPromptBindingV1? binding)
+    {
+        binding = currentBinding;
+        if (binding is null ||
+            !ReferenceEquals(binding.FrameAuthority, frame) ||
+            binding.PromptLifetimeAuthority is null ||
+            !acceptedProjection.IsSuccess ||
+            acceptedProjection.Context is null ||
+            acceptedProjection.Candidates is null ||
+            binding.Family != acceptedProjection.Context.PromptFamily ||
+            !DomainsEqual(binding.Candidates, acceptedProjection.Candidates))
+        {
+            binding = null;
+            return false;
+        }
+
+        return true;
+    }
+
     public FlatPromptProjectionResultV1 TryAcceptPrompt(
         ReadOnlySpan<byte> completeInnerGameMessage)
     {
@@ -14,7 +55,7 @@ public sealed class FlatPromptSessionV1
                 out FlatPromptErrorCodeV1 projectionError) ||
             draft is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(projectionError);
         }
 
@@ -32,7 +73,7 @@ public sealed class FlatPromptSessionV1
                 out FlatPromptErrorCodeV1 parseError) ||
             wireDraft is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(parseError);
         }
 
@@ -41,14 +82,14 @@ public sealed class FlatPromptSessionV1
             acceptedProjection.Snapshot is null ||
             mirror is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(
                 FlatPromptErrorCodeV1.UnprovenPublicReference);
         }
 
         if (acceptedProjection.PrivateOccurrenceSidecar is not null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(
                 FlatPromptErrorCodeV1.AuthorityMismatch);
         }
@@ -77,7 +118,7 @@ public sealed class FlatPromptSessionV1
                 acceptedProjection.PublicProjectionId,
                 StringComparison.Ordinal))
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(
                 FlatPromptErrorCodeV1.AuthorityMismatch);
         }
@@ -91,7 +132,7 @@ public sealed class FlatPromptSessionV1
                 out FlatPromptErrorCodeV1 projectionError) ||
             projected is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(projectionError);
         }
 
@@ -105,7 +146,7 @@ public sealed class FlatPromptSessionV1
     {
         if (currentFrame is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(
                 FlatPromptErrorCodeV1.UnprovenPublicReference);
         }
@@ -114,7 +155,7 @@ public sealed class FlatPromptSessionV1
             currentFrame.TryAcquire();
         if (lease is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(
                 FlatPromptErrorCodeV1.AuthorityMismatch);
         }
@@ -230,7 +271,7 @@ public sealed class FlatPromptSessionV1
                 out FlatPromptErrorCodeV1 parseError) ||
             wireDraft is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(parseError);
         }
 
@@ -241,7 +282,7 @@ public sealed class FlatPromptSessionV1
                 out FlatPromptErrorCodeV1 projectionError) ||
             projected is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(projectionError);
         }
 
@@ -259,7 +300,7 @@ public sealed class FlatPromptSessionV1
                 out FlatPromptErrorCodeV1 parseError) ||
             wireDraft is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(parseError);
         }
 
@@ -268,7 +309,7 @@ public sealed class FlatPromptSessionV1
             acceptedProjection.Snapshot is null ||
             mirror is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(
                 FlatPromptErrorCodeV1.UnprovenPublicReference);
         }
@@ -293,7 +334,7 @@ public sealed class FlatPromptSessionV1
                 acceptedProjection.PublicProjectionId,
                 StringComparison.Ordinal))
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(
                 FlatPromptErrorCodeV1.AuthorityMismatch);
         }
@@ -307,7 +348,7 @@ public sealed class FlatPromptSessionV1
                 out FlatPromptErrorCodeV1 projectionError) ||
             projected is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(projectionError);
         }
 
@@ -324,18 +365,32 @@ public sealed class FlatPromptSessionV1
             return TryApplySelectionCore(handle);
         }
 
+        PrivateFlatPromptBindingLifetimeAuthorityV1? promptAuthority =
+            currentBinding?.PromptLifetimeAuthority;
         PrivateGameplayFrameAuthorityLeaseV1? lease =
             frameAuthority.TryAcquire();
         if (lease is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Failure(
                 FlatPromptErrorCodeV1.StalePromptBinding);
         }
 
         using (lease)
         {
-            return TryApplySelectionCore(handle);
+            PrivateFlatPromptBindingLifetimeLeaseV1? promptLease =
+                promptAuthority?.TryAcquire();
+            if (promptLease is null)
+            {
+                ClearCurrentBinding();
+                return FlatPromptContinuationStepResultV1.Failure(
+                    FlatPromptErrorCodeV1.StalePromptBinding);
+            }
+
+            using (promptLease)
+            {
+                return TryApplySelectionCore(handle);
+            }
         }
     }
 
@@ -373,7 +428,7 @@ public sealed class FlatPromptSessionV1
                 out FlatPublicCandidateDescriptorV1? candidate) ||
             candidate is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Failure(
                 FlatPromptErrorCodeV1.InvalidI4LocalCandidateKey);
         }
@@ -384,12 +439,12 @@ public sealed class FlatPromptSessionV1
                     handle.I4LocalCandidateKey,
                     out byte[] responseBody))
             {
-                currentBinding = null;
+                ClearCurrentBinding();
                 return FlatPromptContinuationStepResultV1.Terminal(
                     responseBody);
             }
 
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Failure(
                 FlatPromptErrorCodeV1.InvalidContinuationAction);
         }
@@ -455,7 +510,7 @@ public sealed class FlatPromptSessionV1
             sortState.Family == currentBinding.Family &&
             sortCancel.ChoiceKind == FlatPromptChoiceKindV1.Cancel)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Terminal(
                 CreateInt32Response(-1));
         }
@@ -482,11 +537,11 @@ public sealed class FlatPromptSessionV1
                     out byte[] responseBody,
                     out FlatPromptErrorCodeV1 error))
             {
-                currentBinding = null;
+                ClearCurrentBinding();
                 return FlatPromptContinuationStepResultV1.Failure(error);
             }
 
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Terminal(responseBody);
         }
 
@@ -495,12 +550,12 @@ public sealed class FlatPromptSessionV1
             cancel.ChoiceKind == FlatPromptChoiceKindV1.Cancel &&
             cardCancelState.Cancelable)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Terminal(
                 CreateInt32Response(-1));
         }
 
-        currentBinding = null;
+        ClearCurrentBinding();
         return FlatPromptContinuationStepResultV1.Failure(
             FlatPromptErrorCodeV1.InvalidContinuationAction);
     }
@@ -517,7 +572,7 @@ public sealed class FlatPromptSessionV1
             nextDraft is null ||
             currentBinding is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Failure(error);
         }
 
@@ -527,6 +582,10 @@ public sealed class FlatPromptSessionV1
             nextDraft.CopyCandidates();
         string[] localKeys = nextDraft.CopyLocalKeys();
         int[] responses = nextDraft.CopyResponses();
+        FlatPromptProjectionResultV1 projection =
+            FlatPromptProjectionResultV1.Success(
+                nextDraft.Context,
+                candidates);
         if (!CurrentFlatPromptBindingV1.TryCreate(
                 binding.PromptInstanceOrdinal,
                 nextDraft.Context.PromptFamily,
@@ -537,18 +596,15 @@ public sealed class FlatPromptSessionV1
                 out FlatPromptErrorCodeV1 bindingError,
                 nextDraft.CopyResponseBodies(),
                 nextDraft.ContinuationState,
-                frameAuthority: binding.FrameAuthority) ||
+                frameAuthority: binding.FrameAuthority,
+                acceptedProjection: projection) ||
             nextBinding is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Failure(bindingError);
         }
 
-        FlatPromptProjectionResultV1 projection =
-            FlatPromptProjectionResultV1.Success(
-                nextDraft.Context,
-                candidates);
-        currentBinding = nextBinding;
+        ReplaceCurrentBinding(nextBinding);
         return FlatPromptContinuationStepResultV1.Intermediate(projection);
     }
 
@@ -558,7 +614,7 @@ public sealed class FlatPromptSessionV1
     {
         if (nextDraft is null || currentBinding is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Failure(
                 error == FlatPromptErrorCodeV1.None
                     ? FlatPromptErrorCodeV1.InvalidContinuationAction
@@ -574,12 +630,12 @@ public sealed class FlatPromptSessionV1
                     out byte[] responseBody,
                     out FlatPromptErrorCodeV1 responseError))
             {
-                currentBinding = null;
+                ClearCurrentBinding();
                 return FlatPromptContinuationStepResultV1.Failure(
                     responseError);
             }
 
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Terminal(responseBody);
         }
 
@@ -592,7 +648,7 @@ public sealed class FlatPromptSessionV1
     {
         if (nextDraft is null || currentBinding is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Failure(
                 error == FlatPromptErrorCodeV1.None
                     ? FlatPromptErrorCodeV1.InvalidContinuationAction
@@ -609,12 +665,12 @@ public sealed class FlatPromptSessionV1
                     out byte[] responseBody,
                     out FlatPromptErrorCodeV1 responseError))
             {
-                currentBinding = null;
+                ClearCurrentBinding();
                 return FlatPromptContinuationStepResultV1.Failure(
                     responseError);
             }
 
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Terminal(responseBody);
         }
 
@@ -627,7 +683,7 @@ public sealed class FlatPromptSessionV1
     {
         if (nextDraft is null || currentBinding is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Failure(
                 error == FlatPromptErrorCodeV1.None
                     ? FlatPromptErrorCodeV1.InvalidContinuationAction
@@ -643,12 +699,12 @@ public sealed class FlatPromptSessionV1
                     out byte[] responseBody,
                     out FlatPromptErrorCodeV1 responseError))
             {
-                currentBinding = null;
+                ClearCurrentBinding();
                 return FlatPromptContinuationStepResultV1.Failure(
                     responseError);
             }
 
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Terminal(responseBody);
         }
 
@@ -661,7 +717,7 @@ public sealed class FlatPromptSessionV1
     {
         if (nextDraft is null || currentBinding is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Failure(
                 error == FlatPromptErrorCodeV1.None
                     ? FlatPromptErrorCodeV1.InvalidContinuationAction
@@ -676,12 +732,12 @@ public sealed class FlatPromptSessionV1
                     out byte[] responseBody,
                     out FlatPromptErrorCodeV1 responseError))
             {
-                currentBinding = null;
+                ClearCurrentBinding();
                 return FlatPromptContinuationStepResultV1.Failure(
                     responseError);
             }
 
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Terminal(responseBody);
         }
 
@@ -694,7 +750,7 @@ public sealed class FlatPromptSessionV1
         if (currentBinding is null ||
             nextDraft.ContinuationState is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Failure(
                 FlatPromptErrorCodeV1.InvalidContinuationAction);
         }
@@ -703,6 +759,10 @@ public sealed class FlatPromptSessionV1
             nextDraft.CopyCandidates();
         string[] localKeys = nextDraft.CopyLocalKeys();
         int[] responses = nextDraft.CopyResponses();
+        FlatPromptProjectionResultV1 projection =
+            FlatPromptProjectionResultV1.Success(
+                nextDraft.Context,
+                candidates);
         if (!CurrentFlatPromptBindingV1.TryCreate(
                 currentBinding.PromptInstanceOrdinal,
                 nextDraft.Context.PromptFamily,
@@ -713,18 +773,15 @@ public sealed class FlatPromptSessionV1
                 out FlatPromptErrorCodeV1 bindingError,
                 nextDraft.CopyResponseBodies(),
                 nextDraft.ContinuationState,
-                frameAuthority: currentBinding.FrameAuthority) ||
+                frameAuthority: currentBinding.FrameAuthority,
+                acceptedProjection: projection) ||
             nextBinding is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptContinuationStepResultV1.Failure(bindingError);
         }
 
-        FlatPromptProjectionResultV1 projection =
-            FlatPromptProjectionResultV1.Success(
-                nextDraft.Context,
-                candidates);
-        currentBinding = nextBinding;
+        ReplaceCurrentBinding(nextBinding);
         return FlatPromptContinuationStepResultV1.Intermediate(projection);
     }
 
@@ -739,7 +796,7 @@ public sealed class FlatPromptSessionV1
         }
         catch (OverflowException)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(
                 FlatPromptErrorCodeV1.ArithmeticFailure);
         }
@@ -748,6 +805,8 @@ public sealed class FlatPromptSessionV1
             draft.CopyCandidates();
         string[] localKeys = draft.CopyLocalKeys();
         int[] responses = draft.CopyResponses();
+        FlatPromptProjectionResultV1 result =
+            FlatPromptProjectionResultV1.Success(draft.Context, candidates);
         if (!CurrentFlatPromptBindingV1.TryCreate(
                 nextPromptOrdinal,
                 draft.Context.PromptFamily,
@@ -758,16 +817,15 @@ public sealed class FlatPromptSessionV1
                 out FlatPromptErrorCodeV1 bindingError,
                 draft.CopyResponseBodies(),
                 draft.ContinuationState,
-                frameAuthority: frameAuthority) ||
+                frameAuthority: frameAuthority,
+                acceptedProjection: result) ||
             binding is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             return FlatPromptProjectionResultV1.Failure(bindingError);
         }
 
-        FlatPromptProjectionResultV1 result =
-            FlatPromptProjectionResultV1.Success(draft.Context, candidates);
-        currentBinding = binding;
+        ReplaceCurrentBinding(binding);
         nextPromptOrdinal = nextOrdinal;
         return result;
     }
@@ -777,7 +835,7 @@ public sealed class FlatPromptSessionV1
         FlatPromptErrorCodeV1 error)
     {
         currentFrame.Invalidate();
-        currentBinding = null;
+        ClearCurrentBinding();
         return FlatPromptProjectionResultV1.Failure(error);
     }
 
@@ -796,11 +854,13 @@ public sealed class FlatPromptSessionV1
                 out error);
         }
 
+        PrivateFlatPromptBindingLifetimeAuthorityV1? promptAuthority =
+            currentBinding?.PromptLifetimeAuthority;
         PrivateGameplayFrameAuthorityLeaseV1? lease =
             frameAuthority.TryAcquire();
         if (lease is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             handle = null;
             error = FlatPromptErrorCodeV1.StalePromptBinding;
             return false;
@@ -808,10 +868,23 @@ public sealed class FlatPromptSessionV1
 
         using (lease)
         {
-            return TryCaptureSelectionCore(
-                i4LocalCandidateKey,
-                out handle,
-                out error);
+            PrivateFlatPromptBindingLifetimeLeaseV1? promptLease =
+                promptAuthority?.TryAcquire();
+            if (promptLease is null)
+            {
+                ClearCurrentBinding();
+                handle = null;
+                error = FlatPromptErrorCodeV1.StalePromptBinding;
+                return false;
+            }
+
+            using (promptLease)
+            {
+                return TryCaptureSelectionCore(
+                    i4LocalCandidateKey,
+                    out handle,
+                    out error);
+            }
         }
     }
 
@@ -860,11 +933,13 @@ public sealed class FlatPromptSessionV1
             return TryResolveSelectionCore(handle, out response, out error);
         }
 
+        PrivateFlatPromptBindingLifetimeAuthorityV1? promptAuthority =
+            currentBinding?.PromptLifetimeAuthority;
         PrivateGameplayFrameAuthorityLeaseV1? lease =
             frameAuthority.TryAcquire();
         if (lease is null)
         {
-            currentBinding = null;
+            ClearCurrentBinding();
             response = default;
             error = FlatPromptErrorCodeV1.StalePromptBinding;
             return false;
@@ -872,7 +947,20 @@ public sealed class FlatPromptSessionV1
 
         using (lease)
         {
-            return TryResolveSelectionCore(handle, out response, out error);
+            PrivateFlatPromptBindingLifetimeLeaseV1? promptLease =
+                promptAuthority?.TryAcquire();
+            if (promptLease is null)
+            {
+                ClearCurrentBinding();
+                response = default;
+                error = FlatPromptErrorCodeV1.StalePromptBinding;
+                return false;
+            }
+
+            using (promptLease)
+            {
+                return TryResolveSelectionCore(handle, out response, out error);
+            }
         }
     }
 

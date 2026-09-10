@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using OCGForge.Ignis.Client;
 using OCGForge.Ignis.Gameplay;
+using OCGForge.Ignis.Model;
 using OCGForge.Ignis.Protocol;
 using static OCGForge.Ignis.Gameplay.Tests.TestAssert;
 using static OCGForge.Ignis.Gameplay.Tests.GameplayMessageFixtures;
@@ -16,6 +17,532 @@ namespace OCGForge.Ignis.Gameplay.Tests;
 
 internal static class I6CPublicFrameSourceTests
 {
+    internal static void TestI6DFrameOwnedCrossLocatorImplementation()
+    {
+        I6DCompositionFixture fixture = CreateI6DCompositionFixture();
+        try
+        {
+            FlatPublicCandidateDescriptorV1 firstCandidate =
+                fixture.PromptProjection.Candidates![0];
+            True(fixture.Composition.Handoff!.TryGetValidatedTarget(
+                    firstCandidate,
+                    fixture.Composition.Frame,
+                    out PublicSemanticLocatorV1? firstTarget,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? targetError),
+                targetError?.ToString() ?? "target rejected");
+            Equal("p0:HAND:0", firstTarget!.Value);
+
+            OcgForgeAcceptedDecisionBoundaryProducerV1 noHandoffProducer =
+                new();
+            True(noHandoffProducer.TryAccept(
+                    fixture.Composition.Frame,
+                    fixture.PromptProjection,
+                    null,
+                    out OcgForgeAcceptedDecisionBoundaryV1? noHandoffBoundary,
+                    out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? noHandoffError),
+                noHandoffError?.ToString() ?? "legacy boundary rejected");
+            OcgForgePublicDecisionContextResultV1 noHandoffMapping =
+                OcgForgePublicCandidateBridgeV1.TryCreate(noHandoffBoundary);
+            False(noHandoffMapping.IsSuccess);
+            Equal(
+                OcgForgePublicCandidateBridgeErrorCodeV1.InvalidPublicReference,
+                noHandoffMapping.Error!.Value.Code);
+
+            OcgForgeAcceptedDecisionBoundaryProducerV1 producer = new();
+            True(producer.TryAccept(
+                    fixture.Composition.Frame,
+                    fixture.PromptProjection,
+                    fixture.Composition.Handoff,
+                    out OcgForgeAcceptedDecisionBoundaryV1? boundary,
+                    out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? boundaryError),
+                boundaryError?.ToString() ?? "boundary rejected");
+            NotNull(boundary);
+            OcgForgePublicDecisionContextResultV1 mapped =
+                OcgForgePublicCandidateBridgeV1.TryCreate(boundary);
+            True(mapped.IsSuccess, mapped.Error?.ToString() ?? "bridge rejected");
+            NotNull(mapped.Context);
+            Equal(2, mapped.Context!.Candidates.Count);
+            Equal(
+                "p0:HAND:0",
+                mapped.Context.Candidates[0].Descriptor.SourceReference!
+                    .Value.ObservationLocator);
+            Equal(
+                "p0:HAND:1",
+                mapped.Context.Candidates[1].Descriptor.SourceReference!
+                    .Value.ObservationLocator);
+            False(mapped.Context.Candidates.Any(candidate =>
+                candidate.PublicActionKey.Contains(
+                    "11223344",
+                    StringComparison.Ordinal)));
+        }
+        finally
+        {
+            DisposeI6C5Session(fixture.Session, fixture.Consumer);
+        }
+    }
+
+    internal static void TestI6DBoundaryHandoffCurrentnessAndAtomicity()
+    {
+        I6DCompositionFixture fixture = CreateI6DCompositionFixture();
+        try
+        {
+            I6DPrivateCrossLocatorBindingHandoffV1 handoff =
+                fixture.Composition.Handoff!;
+            PerspectiveSafeFrameSourceResultV1 equivalentFrameResult =
+                fixture.Session.TryCreateI6C5Frame();
+            True(equivalentFrameResult.IsSuccess);
+
+            False(handoff.TryAcquireBoundaryAcceptanceLease(
+                    equivalentFrameResult.Frame,
+                    fixture.PromptProjection,
+                    out I6DBoundaryAcceptanceLeaseV1? mismatchedFrameLease,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? frameError));
+            Null(mismatchedFrameLease);
+            Equal(
+                I6DPrivateCrossLocatorHandoffErrorCodeV1.FrameMismatch,
+                frameError!.Value.Code);
+
+            FlatPromptProjectionResultV1 detachedProjection =
+                FlatPromptProjectionResultV1.Success(
+                    fixture.PromptProjection.Context!,
+                    fixture.PromptProjection.Candidates!);
+            False(handoff.TryAcquireBoundaryAcceptanceLease(
+                    fixture.Composition.Frame,
+                    detachedProjection,
+                    out I6DBoundaryAcceptanceLeaseV1? mismatchedProjectionLease,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? projectionError));
+            Null(mismatchedProjectionLease);
+            Equal(
+                I6DPrivateCrossLocatorHandoffErrorCodeV1.ProjectionMismatch,
+                projectionError!.Value.Code);
+
+            OcgForgeAcceptedDecisionBoundaryProducerV1 producer = new();
+            False(producer.TryAccept(
+                    equivalentFrameResult.Frame,
+                    fixture.PromptProjection,
+                    handoff,
+                    out OcgForgeAcceptedDecisionBoundaryV1? rejectedBoundary,
+                    out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? rejectedError));
+            Null(rejectedBoundary);
+            Equal(
+                OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1.HandoffRejected,
+                rejectedError!.Value.Code);
+
+            True(producer.TryAccept(
+                    fixture.Composition.Frame,
+                    fixture.PromptProjection,
+                    handoff,
+                    out OcgForgeAcceptedDecisionBoundaryV1? acceptedBoundary,
+                    out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? acceptedError),
+                acceptedError?.ToString() ?? "valid handoff was rejected");
+            Equal(0ul, acceptedBoundary!.DecisionIndex);
+
+            FlatPublicCandidateDescriptorV1 candidate =
+                fixture.PromptProjection.Candidates![0];
+            True(handoff.TryGetValidatedTarget(
+                    candidate,
+                    fixture.Composition.Frame,
+                    out PublicSemanticLocatorV1? currentTarget,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? currentError),
+                currentError?.ToString() ?? "current target was rejected");
+            Equal("p0:HAND:0", currentTarget!.Value);
+
+            True(ApplyI6C4ThroughSession(
+                    fixture.Session,
+                    fixture.Transport,
+                    new byte[] { 40, 0 }).IsSuccess);
+            False(handoff.TryGetValidatedTarget(
+                    candidate,
+                    fixture.Composition.Frame,
+                    out PublicSemanticLocatorV1? staleTarget,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? staleError));
+            Null(staleTarget);
+            Equal(
+                I6DPrivateCrossLocatorHandoffErrorCodeV1.StaleFrame,
+                staleError!.Value.Code);
+        }
+        finally
+        {
+            DisposeI6C5Session(fixture.Session, fixture.Consumer);
+        }
+
+        I6DCompositionFixture promptFixture = CreateI6DCompositionFixture();
+        try
+        {
+            I6DPrivateCrossLocatorBindingHandoffV1 handoff =
+                promptFixture.Composition.Handoff!;
+            True(promptFixture.Prompt.TryAcceptFrameOwnedPrompt(
+                    DuplicateOwnHandIdleMessage(0x11223344),
+                    GetCurrentFrame(promptFixture.Session),
+                    promptFixture.I4Projection).IsSuccess);
+            FlatPublicCandidateDescriptorV1 candidate =
+                promptFixture.PromptProjection.Candidates![0];
+            False(handoff.TryGetValidatedTarget(
+                    candidate,
+                    promptFixture.Composition.Frame,
+                    out PublicSemanticLocatorV1? staleTarget,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? staleError));
+            Null(staleTarget);
+            Equal(
+                I6DPrivateCrossLocatorHandoffErrorCodeV1.StalePrompt,
+                staleError!.Value.Code);
+        }
+        finally
+        {
+            DisposeI6C5Session(promptFixture.Session, promptFixture.Consumer);
+        }
+    }
+
+    internal static void TestI6DCompositionRejectsUnprovenTargets()
+    {
+        I6DCompositionFixture fixture = CreateI6DCompositionFixture();
+        try
+        {
+            True(fixture.Session.TryGetCurrentFrameAuthority(
+                    out PrivateGameplayFrameAuthorityV1? authority));
+            NotNull(authority);
+            True(fixture.Prompt.TryGetCurrentFrameOwnedBinding(
+                    authority!,
+                    fixture.PromptProjection,
+                    out CurrentFlatPromptBindingV1? binding));
+            NotNull(binding);
+            PrivateI6DFrameCompositionResultV1 source =
+                PerspectiveSafePublicFrameSourceV1.TryCreateI6DFrame(
+                    fixture.Session.Mirror,
+                    CreateValidI6C5MatchContext(),
+                    fixture.Provider);
+            True(source.FrameResult.IsSuccess);
+            NotNull(source.FrameResult.Frame);
+            NotNull(source.LocatorMap);
+            PerspectiveSafeFrameV1 sourceFrame = source.FrameResult.Frame!;
+            PrivateI6C3LocatorMapV1 locatorMap = source.LocatorMap!;
+            MirrorSnapshotV1 currentSnapshot = authority!.MirrorSnapshot;
+            CurrentFlatPromptBindingV1 currentBinding = binding!;
+
+            PerspectiveSafeFrameV1 missingTargetFrame = CopyPublicFrame(
+                sourceFrame,
+                sourceFrame.Entities.Where(entity =>
+                    entity.Locator != "p0:HAND:0"));
+            False(I6DPrivateCrossLocatorBindingHandoffV1.TryCreate(
+                    authority!,
+                    currentBinding,
+                    fixture.PromptProjection,
+                    fixture.I4Projection,
+                    missingTargetFrame,
+                    currentSnapshot,
+                    locatorMap,
+                    out I6DPrivateCrossLocatorBindingHandoffV1? missingHandoff,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? missingError));
+            Null(missingHandoff);
+            Equal(
+                I6DPrivateCrossLocatorHandoffErrorCodeV1.TargetUnavailable,
+                missingError!.Value.Code);
+
+            PerspectiveSafeEntityV1 targetEntity = sourceFrame.Entities
+                .Single(entity => entity.Locator == "p0:HAND:0");
+            PerspectiveSafeFrameV1 ambiguousTargetFrame = CopyPublicFrame(
+                sourceFrame,
+                sourceFrame.Entities.Append(targetEntity));
+            False(I6DPrivateCrossLocatorBindingHandoffV1.TryCreate(
+                    authority!,
+                    currentBinding,
+                    fixture.PromptProjection,
+                    fixture.I4Projection,
+                    ambiguousTargetFrame,
+                    currentSnapshot,
+                    locatorMap,
+                    out I6DPrivateCrossLocatorBindingHandoffV1? ambiguousHandoff,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? ambiguousError));
+            Null(ambiguousHandoff);
+            Equal(
+                I6DPrivateCrossLocatorHandoffErrorCodeV1.AmbiguousBinding,
+                ambiguousError!.Value.Code);
+
+            PerspectiveSafeEntityV1 shadowI4Locator = new(
+                "p0:HAND:public:287454020:0",
+                identityKnown: true,
+                passcode: 0x11223344,
+                owner: 0,
+                controller: 0,
+                zone: PerspectiveSafeSemanticZoneV1.Hand,
+                sequence: 0,
+                overlaySequence: null,
+                position: PerspectiveSafePositionV1.Unknown,
+                faceUp: false,
+                faceDown: true);
+            PerspectiveSafeFrameV1 frameWithShadowI4Locator = CopyPublicFrame(
+                sourceFrame,
+                sourceFrame.Entities.Append(shadowI4Locator));
+            True(I6DPrivateCrossLocatorBindingHandoffV1.TryCreate(
+                    authority!,
+                    currentBinding,
+                    fixture.PromptProjection,
+                    fixture.I4Projection,
+                    frameWithShadowI4Locator,
+                    currentSnapshot,
+                    locatorMap,
+                    out I6DPrivateCrossLocatorBindingHandoffV1? shadowHandoff,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? shadowError),
+                shadowError?.ToString() ?? "shadow handoff rejected");
+            NotNull(shadowHandoff);
+            OcgForgeAcceptedDecisionBoundaryProducerV1 shadowProducer = new();
+            True(shadowProducer.TryAccept(
+                    frameWithShadowI4Locator,
+                    fixture.PromptProjection,
+                    shadowHandoff,
+                    out OcgForgeAcceptedDecisionBoundaryV1? shadowBoundary,
+                    out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? shadowBoundaryError),
+                shadowBoundaryError?.ToString() ?? "shadow boundary rejected");
+            OcgForgePublicDecisionContextResultV1 shadowContext =
+                OcgForgePublicCandidateBridgeV1.TryCreate(shadowBoundary);
+            True(shadowContext.IsSuccess,
+                shadowContext.Error?.ToString() ?? "shadow bridge rejected");
+            Equal(
+                "p0:HAND:0",
+                shadowContext.Context!.Candidates[0].Descriptor.SourceReference!
+                    .Value.ObservationLocator);
+        }
+        finally
+        {
+            DisposeI6C5Session(fixture.Session, fixture.Consumer);
+        }
+    }
+
+    internal static void TestI6DPrivateOccurrenceDoesNotChangePublicIdentity()
+    {
+        I6DCompositionFixture first =
+            CreateI6DCompositionFixture(0x11223344);
+        I6DCompositionFixture second =
+            CreateI6DCompositionFixture(0x55667788);
+        try
+        {
+            OcgForgePublicDecisionContextResultV1 firstContext =
+                CreateMappedI6DContext(first);
+            OcgForgePublicDecisionContextResultV1 secondContext =
+                CreateMappedI6DContext(second);
+            True(firstContext.IsSuccess);
+            True(secondContext.IsSuccess);
+            True(firstContext.Context!.Candidates.Select(
+                    candidate => candidate.PublicActionKey)
+                .SequenceEqual(secondContext.Context!.Candidates.Select(
+                    candidate => candidate.PublicActionKey)));
+            for (int index = 0;
+                 index < firstContext.Context.Candidates.Count;
+                 index++)
+            {
+                BytesEqual(
+                    firstContext.Context.Candidates[index].CanonicalDescriptorBytes,
+                    secondContext.Context.Candidates[index].CanonicalDescriptorBytes);
+            }
+            Equal(
+                firstContext.Context.PublicCandidateDomainDigest,
+                secondContext.Context.PublicCandidateDomainDigest);
+        }
+        finally
+        {
+            DisposeI6C5Session(first.Session, first.Consumer);
+            DisposeI6C5Session(second.Session, second.Consumer);
+        }
+    }
+
+    internal static void TestI6DBoundaryAcceptanceLeaseContention()
+    {
+        TestBoundaryAcceptanceWinsAgainstFrameAdvance();
+        TestFrameAdvanceWinsAgainstBoundaryAcceptance();
+    }
+
+    internal static void TestI6DBoundaryAcceptanceWinsAgainstFrameAdvance() =>
+        TestBoundaryAcceptanceWinsAgainstFrameAdvance();
+
+    internal static void TestI6DFrameAdvanceWinsAgainstBoundaryAcceptance() =>
+        TestFrameAdvanceWinsAgainstBoundaryAcceptance();
+
+    private static void TestBoundaryAcceptanceWinsAgainstFrameAdvance()
+    {
+        I6DCompositionFixture fixture = CreateI6DCompositionFixture();
+        PrivateGameplayFrameAuthorityV1? authority = null;
+        I6DBoundaryAcceptanceLeaseV1? acceptanceLease = null;
+        Task<bool>? competitorTask = null;
+        TaskCompletionSource<bool>? releaseCompetitor = null;
+        CancellationTokenSource? cleanup = null;
+        try
+        {
+            True(fixture.Session.TryGetCurrentFrameAuthority(
+                    out authority));
+            NotNull(authority);
+            True(fixture.Composition.Handoff!.TryAcquireBoundaryAcceptanceLease(
+                    fixture.Composition.Frame,
+                    fixture.PromptProjection,
+                    out acceptanceLease,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? acceptanceError),
+                acceptanceError?.ToString() ?? "acceptance lease rejected");
+
+            TaskCompletionSource<bool> pumpAttempted =
+                NewSignal();
+            releaseCompetitor = NewSignal();
+            authority!.SetTestLeaseAcquisitionHook(acquired =>
+            {
+                if (!acquired)
+                {
+                    pumpAttempted.TrySetResult(true);
+                    return;
+                }
+
+                releaseCompetitor.Task.GetAwaiter().GetResult();
+            });
+            cleanup = new CancellationTokenSource();
+            cleanup.CancelAfter(TimeSpan.FromSeconds(5));
+            competitorTask = Task.Factory.StartNew(
+                () =>
+                {
+                    using PrivateGameplayFrameAuthorityLeaseV1? lease =
+                        authority.TryAcquire();
+                    return lease is not null;
+                },
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+            pumpAttempted.Task.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult();
+            Task<bool> availabilityTask = Task.Factory.StartNew(
+                authority.IsLeaseAvailableForTest,
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+            False(availabilityTask.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult());
+
+            acceptanceLease!.Dispose();
+            releaseCompetitor.TrySetResult(true);
+            True(competitorTask.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult());
+            True(ApplyI6C4ThroughSession(
+                    fixture.Session,
+                    fixture.Transport,
+                    new byte[] { 40, 0 }).IsSuccess);
+        }
+        finally
+        {
+            acceptanceLease?.Dispose();
+            releaseCompetitor?.TrySetResult(true);
+            authority?.SetTestLeaseAcquisitionHook(null);
+            cleanup?.Cancel();
+
+            DisposeI6C5Session(fixture.Session, fixture.Consumer);
+        }
+    }
+
+    private static void TestFrameAdvanceWinsAgainstBoundaryAcceptance()
+    {
+        I6DCompositionFixture fixture = CreateI6DCompositionFixture();
+        PrivateGameplayFrameAuthorityV1? authority = null;
+        TaskCompletionSource<bool>? releasePumpLease = null;
+        Task<GameplayMirrorPumpResult>? pumpTask = null;
+        Task<(bool Success,
+            I6DBoundaryAcceptanceLeaseV1? Lease,
+            I6DPrivateCrossLocatorHandoffErrorV1? Error)>? handoffTask = null;
+        CancellationTokenSource? cleanup = null;
+        try
+        {
+            True(fixture.Session.TryGetCurrentFrameAuthority(
+                    out authority));
+            NotNull(authority);
+            TaskCompletionSource<bool> pumpLeaseHeld = NewSignal();
+            releasePumpLease = NewSignal();
+            TaskCompletionSource<bool> handoffAttempted = NewSignal();
+            int pumpPhase = 0;
+            authority!.SetTestLeaseAcquisitionHook(acquired =>
+            {
+                if (!acquired)
+                {
+                    if (Volatile.Read(ref pumpPhase) == 1)
+                    {
+                        handoffAttempted.TrySetResult(true);
+                    }
+
+                    return;
+                }
+
+                if (Interlocked.CompareExchange(ref pumpPhase, 1, 0) == 0)
+                {
+                    pumpLeaseHeld.TrySetResult(true);
+                    releasePumpLease.Task.GetAwaiter().GetResult();
+                }
+            });
+
+            cleanup = new CancellationTokenSource();
+            cleanup.CancelAfter(TimeSpan.FromSeconds(5));
+            fixture.Transport.Enqueue(WireFrameCodec.EncodeStoc(
+                StocPacketType.GameMsg,
+                new byte[] { 40, 0 }));
+            pumpTask = Task.Factory.StartNew(
+                async () => await fixture.Session.PumpAsync(cleanup.Token)
+                    .ConfigureAwait(false),
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default).Unwrap();
+            pumpLeaseHeld.Task.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult();
+
+            handoffTask = Task.Factory.StartNew(() =>
+                {
+                    bool success = fixture.Composition.Handoff!
+                        .TryAcquireBoundaryAcceptanceLease(
+                            fixture.Composition.Frame,
+                            fixture.PromptProjection,
+                            out I6DBoundaryAcceptanceLeaseV1? lease,
+                            out I6DPrivateCrossLocatorHandoffErrorV1? error);
+                    return (success, lease, error);
+                },
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+            handoffAttempted.Task.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult();
+
+            releasePumpLease.TrySetResult(true);
+            GameplayMirrorPumpResult pumped = pumpTask.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult();
+            True(pumped.IsSuccess, pumped.Error.ToString());
+            (bool Success,
+                I6DBoundaryAcceptanceLeaseV1? Lease,
+                I6DPrivateCrossLocatorHandoffErrorV1? Error) outcome =
+                handoffTask!.WaitAsync(cleanup.Token)
+                    .GetAwaiter()
+                    .GetResult();
+            False(outcome.Success);
+            Null(outcome.Lease);
+            Equal(
+                I6DPrivateCrossLocatorHandoffErrorCodeV1.StaleFrame,
+                outcome.Error!.Value.Code);
+        }
+        finally
+        {
+            releasePumpLease?.TrySetResult(true);
+            authority?.SetTestLeaseAcquisitionHook(null);
+            cleanup?.Cancel();
+
+            DisposeI6C5Session(fixture.Session, fixture.Consumer);
+        }
+    }
+
+    private static TaskCompletionSource<bool> NewSignal() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private static PrivateGameplayFrameAuthorityV1 GetCurrentFrame(
+        GameplayMirrorSessionV1 session)
+    {
+        True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? authority));
+        return authority!;
+    }
+
     internal static void TestI6C1SourceContainer()
     {
         Run("complete structural value", AssertCompleteStructuralValue);
@@ -48,6 +575,168 @@ internal static class I6CPublicFrameSourceTests
                 exception);
         }
     }
+
+    private static byte[] DuplicateOwnHandIdleMessage(uint cardCode)
+    {
+        return Join(
+            new byte[] { 11, 0 },
+            U32(2),
+            U32(cardCode),
+            new byte[] { 0, 0x02 },
+            U32(0),
+            U32(cardCode),
+            new byte[] { 0, 0x02 },
+            U32(1),
+            U32(0),
+            U32(0),
+            U32(0),
+            U32(0),
+            U32(0),
+            new byte[] { 0, 0, 0 });
+    }
+
+    private static I6DCompositionFixture CreateI6DCompositionFixture(
+        uint duplicateCardCode = 0x11223344)
+    {
+        PerspectiveSafePrintedProviderV1 printedProvider =
+            CreatePrintedProviderForCodes(new[] { duplicateCardCode });
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer,
+            TestTransport transport) = CreateI6C5Session(
+                0,
+                CreateValidI6C5MatchContext(),
+                printedProvider);
+        try
+        {
+            ModernLocInfoV1 empty = new(0, 0, 0, 0);
+            True(ApplyI6C4ThroughSession(
+                    session,
+                    transport,
+                    MoveMessage(
+                        duplicateCardCode,
+                        empty,
+                        new ModernLocInfoV1(0, 0x02, 0, 0x08),
+                        0)).IsSuccess);
+            True(ApplyI6C4ThroughSession(
+                    session,
+                    transport,
+                    MoveMessage(
+                        duplicateCardCode,
+                        empty,
+                        new ModernLocInfoV1(0, 0x02, 1, 0x08),
+                        0)).IsSuccess);
+
+            True(session.TryGetCurrentFrameAuthority(
+                    out PrivateGameplayFrameAuthorityV1? frameAuthority));
+            NotNull(frameAuthority);
+            PublicStateProjectionResultV1 acceptedI4Projection =
+                PublicStateProjectionV1.TryProject(
+                    frameAuthority!.MirrorSnapshot,
+                    new PublicStateProjectionContextV1(0x234),
+                    frameAuthority.FrameInstanceOrdinal);
+            True(acceptedI4Projection.IsSuccess,
+                acceptedI4Projection.Error.ToString());
+
+            FlatPromptSessionV1 promptSession = new();
+            FlatPromptProjectionResultV1 acceptedPrompt =
+                promptSession.TryAcceptFrameOwnedPrompt(
+                    DuplicateOwnHandIdleMessage(duplicateCardCode),
+                    frameAuthority,
+                    acceptedI4Projection);
+            True(acceptedPrompt.IsSuccess, acceptedPrompt.Error.ToString());
+            Equal(2, acceptedPrompt.Candidates!.Count);
+
+            I6DFrameOwnedCompositionResultV1 composition =
+                session.TryCreateI6DFrameOwnedComposition(
+                    promptSession,
+                    acceptedPrompt,
+                    acceptedI4Projection);
+            True(composition.IsSuccess,
+                composition.Error?.ToString() ?? "I6D composition rejected");
+            NotNull(composition.Frame);
+            NotNull(composition.Handoff);
+            return new I6DCompositionFixture(
+                session,
+                consumer,
+                transport,
+                promptSession,
+                acceptedPrompt,
+                acceptedI4Projection,
+                composition,
+                printedProvider);
+        }
+        catch
+        {
+            DisposeI6C5Session(session, consumer);
+            throw;
+        }
+    }
+
+    private sealed class I6DCompositionFixture
+    {
+        internal I6DCompositionFixture(
+            GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer,
+            TestTransport transport,
+            FlatPromptSessionV1 prompt,
+            FlatPromptProjectionResultV1 promptProjection,
+            PublicStateProjectionResultV1 i4Projection,
+            I6DFrameOwnedCompositionResultV1 composition,
+            PerspectiveSafePrintedProviderV1 provider)
+        {
+            Session = session;
+            Consumer = consumer;
+            Transport = transport;
+            Prompt = prompt;
+            PromptProjection = promptProjection;
+            I4Projection = i4Projection;
+            Composition = composition;
+            Provider = provider;
+        }
+
+        internal GameplayMirrorSessionV1 Session { get; }
+
+        internal GameplayHandoffConsumerV1 Consumer { get; }
+
+        internal TestTransport Transport { get; }
+
+        internal FlatPromptSessionV1 Prompt { get; }
+
+        internal FlatPromptProjectionResultV1 PromptProjection { get; }
+
+        internal PublicStateProjectionResultV1 I4Projection { get; }
+
+        internal I6DFrameOwnedCompositionResultV1 Composition { get; }
+
+        internal PerspectiveSafePrintedProviderV1 Provider { get; }
+    }
+
+    private static OcgForgePublicDecisionContextResultV1 CreateMappedI6DContext(
+        I6DCompositionFixture fixture)
+    {
+        OcgForgeAcceptedDecisionBoundaryProducerV1 producer = new();
+        True(producer.TryAccept(
+                fixture.Composition.Frame,
+                fixture.PromptProjection,
+                fixture.Composition.Handoff,
+                out OcgForgeAcceptedDecisionBoundaryV1? boundary,
+                out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? error),
+            error?.ToString() ?? "boundary rejected");
+        return OcgForgePublicCandidateBridgeV1.TryCreate(boundary);
+    }
+
+    private static PerspectiveSafeFrameV1 CopyPublicFrame(
+        PerspectiveSafeFrameV1 source,
+        IEnumerable<PerspectiveSafeEntityV1> entities) =>
+        new(
+            new PerspectiveSafeFrameSourceInputV1(
+                source.Globals,
+                source.Zones,
+                entities,
+                source.Relationships,
+                source.Chain,
+                source.VisibleEvents,
+                source.MatchContext));
 
     private static void AssertCompleteStructuralValue()
     {

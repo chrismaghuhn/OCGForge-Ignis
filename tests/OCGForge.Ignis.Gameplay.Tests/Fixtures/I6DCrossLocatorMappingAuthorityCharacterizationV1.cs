@@ -361,16 +361,16 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
         "NONE";
 
     internal const string AssemblyHandoffOperation =
-        "TryGetValidatedTarget";
+        "TryAcquireBoundaryAcceptanceLease(...) + TryGetValidatedTarget(...)";
 
     internal const string AssemblyHandoffCreationOperation =
-        "FlatPromptSessionV1.TryCreateI6DPrivateBindingHandoff(current_frame, accepted_public_projection, out handoff, out error)";
+        "GameplayMirrorSessionV1.TryCreateI6DFrameOwnedComposition(prompt_session, accepted_prompt_projection, accepted_i4_projection)";
 
     internal const string AssemblyBoundaryHandoffArgument =
         "one opaque capability argument";
 
     internal const string AssemblyHandoffSignature =
-        "public opaque TryGetValidatedTarget(accepted_public_candidate, current_accepted_public_frame, out safe_target, out error)";
+        "public opaque TryAcquireBoundaryAcceptanceLease(...) + TryGetValidatedTarget(accepted_public_candidate, current_accepted_public_frame, out safe_target, out error)";
 
     internal const string CarrierVisibility =
         "internal carrier + public opaque capability";

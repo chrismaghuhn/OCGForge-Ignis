@@ -5,7 +5,7 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
     internal const string Task =
         "I6D_FRAME_OWNED_CROSS_LOCATOR_INTEGRATION_RECONCILIATION_01";
 
-    internal const string Status = "DESIGN_AND_CHARACTERIZATION_ONLY";
+    internal const string Status = "IMPLEMENTATION_PRESENT_ACCEPTANCE_PENDING_REVIEW";
 
     internal const string FrameOrdinalCreationBoundary =
         "GameplayMirrorSessionV1 bind initialized mirror -> FRAME_0; successful owner Apply -> FRAME_N+1";
@@ -163,7 +163,7 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
 
     internal const bool NonEqualLocatorRequiresHandoff = true;
 
-    internal const bool I6DImplementationPresent = false;
+    internal const bool I6DImplementationPresent = true;
 
-    internal const bool I6DImplementationAuthorized = false;
+    internal const bool I6DImplementationAuthorized = true;
 }

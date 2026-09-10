@@ -70,7 +70,8 @@ public enum OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1 : byte
     None = 0,
     InvalidInput = 1,
     InvalidProjection = 2,
-    DecisionIndexExhausted = 3
+    DecisionIndexExhausted = 3,
+    HandoffRejected = 4
 }
 
 public readonly record struct OcgForgeAcceptedDecisionBoundaryProducerErrorV1(
@@ -82,11 +83,14 @@ public sealed class OcgForgeAcceptedDecisionBoundaryV1
     private readonly FlatPromptProjectionResultV1 projection;
     private readonly FlatPublicCandidateDescriptorV1[] candidates;
     private readonly IReadOnlyList<FlatPublicCandidateDescriptorV1> candidatesView;
+    private readonly I6DPrivateCrossLocatorBindingHandoffV1?
+        crossLocatorHandoff;
 
     internal OcgForgeAcceptedDecisionBoundaryV1(
         PerspectiveSafeFrameV1 frame,
         FlatPromptProjectionResultV1 projection,
-        OcgForgeAcceptedDecisionIndexV1 decisionIndex)
+        OcgForgeAcceptedDecisionIndexV1 decisionIndex,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff = null)
     {
         Frame = frame ?? throw new ArgumentNullException(nameof(frame));
         this.projection = projection ??
@@ -106,6 +110,7 @@ public sealed class OcgForgeAcceptedDecisionBoundaryV1
         candidates = projection.Candidates.ToArray();
         candidatesView = Array.AsReadOnly(candidates);
         DecisionIndex = decisionIndex.Value;
+        this.crossLocatorHandoff = crossLocatorHandoff;
     }
 
     public PerspectiveSafeFrameV1 Frame { get; }
@@ -115,11 +120,15 @@ public sealed class OcgForgeAcceptedDecisionBoundaryV1
     public FlatPromptPublicContextV1 Decision => projection.Context!;
 
     public IReadOnlyList<FlatPublicCandidateDescriptorV1> Candidates => candidatesView;
+
+    internal I6DPrivateCrossLocatorBindingHandoffV1? CrossLocatorHandoff =>
+        crossLocatorHandoff;
 }
 
 public sealed class OcgForgeAcceptedDecisionBoundaryProducerV1
 {
     private ulong nextDecisionIndex;
+    private readonly object acceptanceGate = new();
 
     public OcgForgeAcceptedDecisionBoundaryProducerV1()
     {
@@ -128,6 +137,42 @@ public sealed class OcgForgeAcceptedDecisionBoundaryProducerV1
     public bool TryAccept(
         PerspectiveSafeFrameV1? frame,
         FlatPromptProjectionResultV1? projection,
+        out OcgForgeAcceptedDecisionBoundaryV1? boundary,
+        out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? error)
+    {
+        lock (acceptanceGate)
+        {
+            return TryAcceptCore(
+                frame,
+                projection,
+                null,
+                out boundary,
+                out error);
+        }
+    }
+
+    public bool TryAccept(
+        PerspectiveSafeFrameV1? frame,
+        FlatPromptProjectionResultV1? projection,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
+        out OcgForgeAcceptedDecisionBoundaryV1? boundary,
+        out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? error)
+    {
+        lock (acceptanceGate)
+        {
+            return TryAcceptCore(
+                frame,
+                projection,
+                crossLocatorHandoff,
+                out boundary,
+                out error);
+        }
+    }
+
+    private bool TryAcceptCore(
+        PerspectiveSafeFrameV1? frame,
+        FlatPromptProjectionResultV1? projection,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
         out OcgForgeAcceptedDecisionBoundaryV1? boundary,
         out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? error)
     {
@@ -169,12 +214,30 @@ public sealed class OcgForgeAcceptedDecisionBoundaryProducerV1
             return false;
         }
 
-        boundary = new OcgForgeAcceptedDecisionBoundaryV1(
-            frame,
-            projection,
-            new OcgForgeAcceptedDecisionIndexV1(nextDecisionIndex));
-        nextDecisionIndex++;
-        return true;
+        I6DBoundaryAcceptanceLeaseV1? acceptanceLease = null;
+        if (crossLocatorHandoff is not null &&
+            !crossLocatorHandoff.TryAcquireBoundaryAcceptanceLease(
+                frame,
+                projection,
+                out acceptanceLease,
+                out I6DPrivateCrossLocatorHandoffErrorV1? handoffError))
+        {
+            error = new(
+                OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1.HandoffRejected,
+                handoffError?.FieldPath ?? "handoff");
+            return false;
+        }
+
+        using (acceptanceLease)
+        {
+            boundary = new OcgForgeAcceptedDecisionBoundaryV1(
+                frame,
+                projection,
+                new OcgForgeAcceptedDecisionIndexV1(nextDecisionIndex),
+                crossLocatorHandoff);
+            nextDecisionIndex++;
+            return true;
+        }
     }
 }
 
@@ -364,6 +427,7 @@ public static class OcgForgePublicCandidateBridgeV1
                     frame,
                     decision,
                     candidate,
+                    acceptedDecision.CrossLocatorHandoff,
                     index,
                     out OcgForgePublicActionDescriptorV1? descriptor,
                     out OcgForgePublicCandidateBridgeErrorV1? mappingError))
@@ -448,6 +512,7 @@ public static class OcgForgePublicCandidateBridgeV1
         PerspectiveSafeFrameV1 frame,
         FlatPromptPublicContextV1 decision,
         FlatPublicCandidateDescriptorV1 candidate,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
         int index,
         out OcgForgePublicActionDescriptorV1? descriptor,
         out OcgForgePublicCandidateBridgeErrorV1? error)
@@ -650,6 +715,7 @@ public static class OcgForgePublicCandidateBridgeV1
                     frame,
                     decision,
                     idleSummon,
+                    crossLocatorHandoff,
                     0,
                     path,
                     out descriptor,
@@ -660,6 +726,7 @@ public static class OcgForgePublicCandidateBridgeV1
                     frame,
                     decision,
                     idleSpecialSummon,
+                    crossLocatorHandoff,
                     1,
                     path,
                     out descriptor,
@@ -670,6 +737,7 @@ public static class OcgForgePublicCandidateBridgeV1
                     frame,
                     decision,
                     idleReposition,
+                    crossLocatorHandoff,
                     2,
                     path,
                     out descriptor,
@@ -680,6 +748,7 @@ public static class OcgForgePublicCandidateBridgeV1
                     frame,
                     decision,
                     idleMset,
+                    crossLocatorHandoff,
                     3,
                     path,
                     out descriptor,
@@ -690,6 +759,7 @@ public static class OcgForgePublicCandidateBridgeV1
                     frame,
                     decision,
                     idleSset,
+                    crossLocatorHandoff,
                     4,
                     path,
                     out descriptor,
@@ -700,6 +770,7 @@ public static class OcgForgePublicCandidateBridgeV1
                     frame,
                     decision,
                     idleActivate,
+                    crossLocatorHandoff,
                     path,
                     out descriptor,
                     out error);
@@ -961,6 +1032,7 @@ public static class OcgForgePublicCandidateBridgeV1
         PerspectiveSafeFrameV1 frame,
         FlatPromptPublicContextV1 decision,
         FlatIdleCardActionPublicCandidateBaseV1 candidate,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
         uint phase,
         string path,
         out OcgForgePublicActionDescriptorV1? descriptor,
@@ -974,9 +1046,11 @@ public static class OcgForgePublicCandidateBridgeV1
             return Unsupported(path + ".source_section", out descriptor, out error);
         }
 
-        if (!TryMapReference(
+        if (!TryMapIdleReference(
                 frame,
                 candidate.PublicSemanticCardLocator,
+                candidate,
+                crossLocatorHandoff,
                 path + ".source_reference",
                 out OcgForgePublicCardReferenceV1 reference,
                 out error) ||
@@ -1000,10 +1074,63 @@ public static class OcgForgePublicCandidateBridgeV1
         return true;
     }
 
+    private static bool TryMapIdleReference(
+        PerspectiveSafeFrameV1 frame,
+        PublicSemanticLocatorV1 locator,
+        FlatPublicCandidateDescriptorV1 candidate,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
+        string path,
+        out OcgForgePublicCardReferenceV1 reference,
+        out OcgForgePublicCandidateBridgeErrorV1? error)
+    {
+        reference = default;
+        error = null;
+        PublicSemanticLocatorV1? target = null;
+        I6DPrivateCrossLocatorHandoffErrorV1? handoffError = null;
+        if (crossLocatorHandoff is not null &&
+            crossLocatorHandoff.TryGetValidatedTarget(
+                candidate,
+                frame,
+                out target,
+                out handoffError))
+        {
+            return target is not null &&
+                TryMapReference(
+                    frame,
+                    target,
+                    path,
+                    out reference,
+                    out error);
+        }
+
+        if (handoffError is not null &&
+            handoffError.Value.Code !=
+                I6DPrivateCrossLocatorHandoffErrorCodeV1.MissingBinding)
+        {
+            error = new(
+                handoffError.Value.Code ==
+                    I6DPrivateCrossLocatorHandoffErrorCodeV1.AmbiguousBinding
+                    ? OcgForgePublicCandidateBridgeErrorCodeV1
+                        .AmbiguousPublicReference
+                    : OcgForgePublicCandidateBridgeErrorCodeV1
+                        .InvalidPublicReference,
+                path);
+            return false;
+        }
+
+        return TryMapReference(
+            frame,
+            locator,
+            path,
+            out reference,
+            out error);
+    }
+
     private static bool TryMapIdleActivate(
         PerspectiveSafeFrameV1 frame,
         FlatPromptPublicContextV1 decision,
         FlatIdleActivatablePublicCandidateBaseV1 candidate,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
         string path,
         out OcgForgePublicActionDescriptorV1? descriptor,
         out OcgForgePublicCandidateBridgeErrorV1? error)
@@ -1016,9 +1143,11 @@ public static class OcgForgePublicCandidateBridgeV1
             return Unsupported(path + ".source_section", out descriptor, out error);
         }
 
-        if (!TryMapReference(
+        if (!TryMapIdleReference(
                 frame,
                 candidate.PublicSemanticCardLocator,
+                candidate,
+                crossLocatorHandoff,
                 path + ".source_reference",
                 out OcgForgePublicCardReferenceV1 reference,
                 out error) ||

@@ -186,6 +186,147 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Creates the Gameplay-owned same-snapshot I6D composition. The returned
+    /// frame is public-safe and the optional handoff is opaque; all occurrence
+    /// and lifecycle provenance remains inside Gameplay.
+    /// </summary>
+    public I6DFrameOwnedCompositionResultV1
+        TryCreateI6DFrameOwnedComposition(
+            FlatPromptSessionV1? promptSession,
+            FlatPromptProjectionResultV1? acceptedPromptProjection,
+            PublicStateProjectionResultV1? acceptedI4Projection)
+    {
+        if (promptSession is null ||
+            acceptedPromptProjection is null ||
+            acceptedI4Projection is null)
+        {
+            return I6DFrameOwnedCompositionResultV1.Failure(
+                I6DFrameOwnedCompositionErrorCodeV1.InvalidInput,
+                "composition");
+        }
+
+        operationGate.Wait();
+        try
+        {
+            if (Volatile.Read(ref terminal) != 0 ||
+                !currentFrameAuthority.IsCurrent)
+            {
+                return I6DFrameOwnedCompositionResultV1.Failure(
+                    I6DFrameOwnedCompositionErrorCodeV1.InvalidState,
+                    "frame");
+            }
+
+            PrivateGameplayFrameAuthorityV1 frameAuthority =
+                currentFrameAuthority;
+            using PrivateGameplayFrameAuthorityLeaseV1? frameLease =
+                frameAuthority.TryAcquire();
+            if (frameLease is null)
+            {
+                return I6DFrameOwnedCompositionResultV1.Failure(
+                    I6DFrameOwnedCompositionErrorCodeV1.InvalidState,
+                    "frame");
+            }
+
+            if (!IsCurrentI4Projection(
+                    frameAuthority,
+                    acceptedI4Projection))
+            {
+                frameAuthority.Invalidate();
+                return I6DFrameOwnedCompositionResultV1.Failure(
+                    I6DFrameOwnedCompositionErrorCodeV1.PromptBindingMismatch,
+                    "i4_projection");
+            }
+
+            if (!promptSession.TryGetCurrentFrameOwnedBinding(
+                    frameAuthority,
+                    acceptedPromptProjection,
+                    out CurrentFlatPromptBindingV1? binding) ||
+                binding is null)
+            {
+                frameAuthority.Invalidate();
+                return I6DFrameOwnedCompositionResultV1.Failure(
+                    I6DFrameOwnedCompositionErrorCodeV1.PromptBindingMismatch,
+                    "prompt");
+            }
+
+            PrivateI6DFrameCompositionResultV1 composition =
+                PerspectiveSafePublicFrameSourceV1.TryCreateI6DFrame(
+                    mirror,
+                    boundMatchContext,
+                    boundPrintedProvider);
+            if (!composition.FrameResult.IsSuccess ||
+                composition.FrameResult.Frame is null ||
+                composition.LocatorMap is null)
+            {
+                frameAuthority.Invalidate();
+                return I6DFrameOwnedCompositionResultV1.Failure(
+                    I6DFrameOwnedCompositionErrorCodeV1.FrameSourceFailure,
+                    composition.FrameResult.Error?.Section.ToString() ??
+                    "frame_source");
+            }
+
+            if (!I6DPrivateCrossLocatorBindingHandoffV1.TryCreate(
+                    frameAuthority,
+                    binding,
+                    acceptedPromptProjection,
+                    acceptedI4Projection,
+                    composition.FrameResult.Frame,
+                    frameAuthority.MirrorSnapshot,
+                    composition.LocatorMap,
+                    out I6DPrivateCrossLocatorBindingHandoffV1? handoff,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? handoffError))
+            {
+                frameAuthority.Invalidate();
+                return I6DFrameOwnedCompositionResultV1.Failure(
+                    I6DFrameOwnedCompositionErrorCodeV1.CrossLocatorBindingFailure,
+                    handoffError?.FieldPath ?? "handoff");
+            }
+
+            return I6DFrameOwnedCompositionResultV1.Success(
+                composition.FrameResult.Frame,
+                handoff);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private static bool IsCurrentI4Projection(
+        PrivateGameplayFrameAuthorityV1 frameAuthority,
+        PublicStateProjectionResultV1 acceptedProjection)
+    {
+        if (!acceptedProjection.IsSuccess ||
+            acceptedProjection.Snapshot is null ||
+            acceptedProjection.PrivateOccurrenceSidecar is null)
+        {
+            return false;
+        }
+
+        PublicStateProjectionResultV1 recomputed =
+            PublicStateProjectionV1.TryProject(
+                frameAuthority.MirrorSnapshot,
+                new PublicStateProjectionContextV1(
+                    acceptedProjection.Snapshot.DuelFlags),
+                frameAuthority.FrameInstanceOrdinal);
+        return recomputed.IsSuccess &&
+            recomputed.Snapshot is not null &&
+            recomputed.PrivateOccurrenceSidecar is not null &&
+            recomputed.CanonicalBytes.Span.SequenceEqual(
+                acceptedProjection.CanonicalBytes.Span) &&
+            string.Equals(
+                recomputed.Sha256,
+                acceptedProjection.Sha256,
+                StringComparison.Ordinal) &&
+            string.Equals(
+                recomputed.PublicProjectionId,
+                acceptedProjection.PublicProjectionId,
+                StringComparison.Ordinal) &&
+            acceptedProjection.PrivateOccurrenceSidecar.IsEquivalentTo(
+                recomputed.PrivateOccurrenceSidecar);
+    }
+
     public async ValueTask<GameplayMirrorPumpResult> PumpAsync(
         CancellationToken cancellationToken)
     {

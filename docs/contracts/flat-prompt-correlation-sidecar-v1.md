@@ -185,11 +185,10 @@ The capability is created by the current Gameplay session after the sidecar
 and complete frame-owned prompt have been accepted:
 
 ```text
-GameplayMirrorSessionV1.TryCreateFrameOwnedI6DPrivateBindingHandoff(
-    accepted_frame_owned_prompt,
-    accepted_public_projection,
-    out handoff,
-    out error)
+GameplayMirrorSessionV1.TryCreateI6DFrameOwnedComposition(
+    prompt_session,
+    accepted_prompt_projection,
+    accepted_i4_projection)
 ```
 
 That operation holds the current FRAME lease, obtains the PROMPT/binding lease,
@@ -198,8 +197,8 @@ is available, joins exact I4 occurrences, validates the complete binding set,
 and only then creates the opaque handoff. The transient map is never detached
 or returned to the Model assembly.
 
-The future I6D boundary producer receives that opaque value as a single
-trusted capability argument. `FlatPromptProjectionResultV1` is not extended
+The I6D boundary producer receives that opaque value as a single trusted
+capability argument. `FlatPromptProjectionResultV1` is not extended
 with private data, and callers cannot construct the capability or a second
 binding list independently.
 
@@ -279,8 +278,8 @@ target missing or non-unique in the current I6C5 frame
 No candidate is dropped, substituted, sorted by policy, or repaired after a
 sidecar failure.
 
-Boundary creation is atomic with respect to the opaque handoff. The future
-Model producer receives only the accepted public frame, accepted public
+Boundary creation is atomic with respect to the opaque handoff. The Model
+producer receives only the accepted public frame, accepted public
 projection, and one opaque handoff. Before constructing
 `OcgForgeAcceptedDecisionBoundaryV1`, it asks the handoff to validate those
 public values against its privately retained frame/prompt authorities. A
@@ -316,5 +315,6 @@ PUBLICSTATE_BYTES_CHANGED=NO
 PUBLICSTATE_IDENTITY_CHANGED=NO
 ```
 
-This implementation does not authorize I6D mapping implementation, Counter
-retry, Link capture, or fresh-process A/B.
+This implementation does not authorize Counter retry, Link capture, or
+fresh-process A/B. I6D mapping implementation remains separately subject to
+its focused independent review.

@@ -321,6 +321,25 @@ var tests = new (string Name, Action Body)[]
     ("I6C1 source types and fail-closed container",
         I6CPublicFrameSourceTests.TestI6C1SourceContainer),
 
+    ("I6D frame-owned cross-locator implementation",
+        I6CPublicFrameSourceTests.TestI6DFrameOwnedCrossLocatorImplementation),
+
+    ("I6D handoff currentness and atomicity",
+        I6CPublicFrameSourceTests.TestI6DBoundaryHandoffCurrentnessAndAtomicity),
+
+    ("I6D composition rejects missing and ambiguous targets",
+        I6CPublicFrameSourceTests.TestI6DCompositionRejectsUnprovenTargets),
+
+    ("I6D private occurrence is absent from public identity",
+        I6CPublicFrameSourceTests.TestI6DPrivateOccurrenceDoesNotChangePublicIdentity),
+
+
+    ("I6D boundary acceptance wins against frame advance",
+        I6CPublicFrameSourceTests.TestI6DBoundaryAcceptanceWinsAgainstFrameAdvance),
+
+    ("I6D frame advance wins against boundary acceptance",
+        I6CPublicFrameSourceTests.TestI6DFrameAdvanceWinsAgainstBoundaryAcceptance),
+
     ("I6C6-1 native oracle RED contract",
         I6C6NativeOracleTests.TestI6C6_1RedContract),
 
@@ -479,9 +498,9 @@ var tests = new (string Name, Action Body)[]
         I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
             .TestI6C3LocatorMapIsTransientAndFrameBound),
 
-    ("I6D model boundary has no current private handoff",
+    ("I6D model boundary stores opaque handoff only",
         I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
-            .TestI6DModelBoundaryHasNoCurrentPrivateHandoff),
+            .TestI6DModelBoundaryStoresOpaqueHandoffOnly),
 
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
