@@ -149,6 +149,111 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
         Equal(
             "internal immutable Gameplay-to-Model handoff",
             I6DPrivateSourceOccurrenceBindingDesignV1.CarrierVisibility);
+        Equal(
+            "private prompt-correlation provenance only",
+            I6DPrivateSourceOccurrenceBindingDesignV1.I4SidecarAmendment);
+        Equal(
+            "same I3D projection occurrence-to-public-ordinal assignment",
+            I6DPrivateSourceOccurrenceBindingDesignV1.I4SidecarCreationSeam);
+        Equal(
+            "FlatPromptCardCorrelationV1.TryCorrelatePile exact occurrence lookup",
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .I4SidecarConsumptionSeam);
+        Equal(
+            "TryCorrelatePile/CompleteCorrelation",
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .I4DuplicateOwnHandFailureStage);
+        Equal(
+            "UnprovenPublicReference",
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .I4DuplicateOwnHandFailure);
+        Equal(
+            "SELECTED",
+            I6DPrivateSourceOccurrenceBindingDesignV1.OptionAStatus);
+        Equal(
+            "REJECTED_FOR_PUBLIC_CONTRACT_CHANGE",
+            I6DPrivateSourceOccurrenceBindingDesignV1.OptionBStatus);
+        Equal(
+            "REJECTED_FOR_COMPLETE_DOMAIN",
+            I6DPrivateSourceOccurrenceBindingDesignV1.OptionCStatus);
+        Equal(
+            "I6DPrivateCrossLocatorBindingHandoffV1",
+            I6DPrivateSourceOccurrenceBindingDesignV1.AssemblyHandoffType);
+        Equal(
+            "OCGForge.Ignis.Model",
+            I6DPrivateSourceOccurrenceBindingDesignV1.AssemblyFriendTarget);
+        Equal(
+            "TryGetValidatedTarget",
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .AssemblyHandoffOperation);
+        Equal(
+            "internal TryGetValidatedTarget(prompt_instance, continuation_step, frame_instance, projection_id, local_key, source_section, source_ordinal, current_frame, out target, out error)",
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .AssemblyHandoffSignature);
+        string[] expectedSidecarFields =
+        {
+            "FrameInstanceOrdinal",
+            "AcceptedPublicProjectionId",
+            "AbsoluteController",
+            "NormalizedZone",
+            "SourceSequence",
+            "IsOverlay",
+            "OverlayIndex",
+            "AcceptedI4PublicLocator"
+        };
+        True(I6DPrivateSourceOccurrenceBindingDesignV1.I4SidecarFields
+            .SequenceEqual(expectedSidecarFields));
+        True(I6DPrivateSourceOccurrenceBindingDesignV1.I4SidecarLookupKey
+            .SequenceEqual(
+                new[]
+                {
+                    "FrameInstanceOrdinal",
+                    "AcceptedPublicProjectionId",
+                    "AbsoluteController",
+                    "NormalizedZone",
+                    "SourceSequence",
+                    "IsOverlay",
+                    "OverlayIndex"
+                }));
+        True(I6DPrivateSourceOccurrenceBindingDesignV1.I4SidecarInvalidations
+            .SequenceEqual(
+                new[]
+                {
+                    "FrameInstanceOrdinalMismatch",
+                    "AcceptedPublicProjectionIdMismatch",
+                    "SourceOccurrenceMissing",
+                    "SourceOccurrenceAmbiguous",
+                    "SidecarTargetMissing",
+                    "SidecarTargetCollision"
+                }));
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .PublicStateBytesUnchanged);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .PublicStateIdentityUnchanged);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarUsesMirrorEntityIdOnlyTransiently);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarStoresMirrorEntityId);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarSerialized);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarUsesCardCodeAsLookup);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarUsesSequenceAsPublicLocator);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarImplemented);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4ContractAmendmentImplemented);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .AssemblyHandoffIsSingleFacade);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .AssemblyHandoffHasSingleFriendTarget);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .AssemblyHandoffExposesPrivateFields);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .AssemblyHandoffAllowsDirectGameplayInternals);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .AssemblyFriendTargetsTestsOrApplication);
 
         string[] expectedFields =
         {
@@ -317,11 +422,112 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
         Equal(privacyA.AcceptedTargetLocator, privacyB.AcceptedTargetLocator);
         Equal(privacyA.PublicDescriptor, privacyB.PublicDescriptor);
 
-        Type? accidentalProductionCarrier =
-            typeof(CurrentFlatPromptBindingV1).Assembly.GetType(
-                "OCGForge.Ignis.Gameplay.PrivateCrossLocatorBindingV1",
-                throwOnError: false);
-        Null(accidentalProductionCarrier);
+        string[] futureProductionTypes =
+        {
+            "OCGForge.Ignis.Gameplay.PrivateI4OccurrencePublicLocatorSidecarV1",
+            "OCGForge.Ignis.Gameplay.PrivateCrossLocatorBindingV1",
+            "OCGForge.Ignis.Gameplay.I6DPrivateCrossLocatorBindingHandoffV1"
+        };
+        foreach (string futureProductionType in futureProductionTypes)
+        {
+            Type? accidentalProductionType =
+                typeof(CurrentFlatPromptBindingV1).Assembly.GetType(
+                    futureProductionType,
+                    throwOnError: false);
+            Null(accidentalProductionType);
+        }
+    }
+
+    internal static void TestDuplicateOwnHandI4StopsBeforeI6DBoundary()
+    {
+        const uint duplicateCardCode = 0x11223344;
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(
+                0,
+                deckCount0: 2,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0);
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+
+        MirrorApplyResult firstMove = mirror.Apply(DecodeMessage(
+            decoder,
+            MoveMessage(
+                duplicateCardCode,
+                empty,
+                new ModernLocInfoV1(0, 0x02, 0, 0x08),
+                0)));
+        True(firstMove.IsSuccess, firstMove.Error.ToString());
+
+        MirrorApplyResult secondMove = mirror.Apply(DecodeMessage(
+            decoder,
+            MoveMessage(
+                duplicateCardCode,
+                empty,
+                new ModernLocInfoV1(0, 0x02, 1, 0x08),
+                0)));
+        True(secondMove.IsSuccess, secondMove.Error.ToString());
+
+        PublicStateProjectionResultV1 acceptedProjection =
+            PublicStateProjectionV1.TryProject(
+                mirror.Snapshot,
+                new PublicStateProjectionContextV1(0));
+        True(acceptedProjection.IsSuccess, acceptedProjection.Error.ToString());
+        NotNull(acceptedProjection.Snapshot);
+        Equal(
+            2,
+            acceptedProjection.Snapshot!.Cards.Count(card =>
+                card.AbsolutePlayer == 0 &&
+                card.Zone == PublicSemanticZoneV1.Hand &&
+                card.CardCode == duplicateCardCode));
+
+        uint[] sourceSequences = { 0, 1 };
+        foreach (uint sourceSequence in sourceSequences)
+        {
+            bool correlated = FlatPromptCardCorrelationV1.TryCorrelate(
+                mirror.Snapshot,
+                acceptedProjection.Snapshot!,
+                duplicateCardCode,
+                new ModernLocInfoV1(0, 0x02, sourceSequence, 0x08),
+                out FlatPromptCardCorrelationResultV1? correlation,
+                out FlatPromptErrorCodeV1 correlationError);
+            False(correlated);
+            Null(correlation);
+            Equal(
+                FlatPromptErrorCodeV1.UnprovenPublicReference,
+                correlationError);
+        }
+
+        FlatPromptProjectionResultV1 promptResult =
+            new FlatPromptSessionV1().TryAcceptPrompt(
+                DuplicateOwnHandIdleMessage(duplicateCardCode),
+                mirror,
+                acceptedProjection);
+        False(promptResult.IsSuccess);
+        Equal(
+            FlatPromptErrorCodeV1.UnprovenPublicReference,
+            promptResult.Error);
+        Null(promptResult.Context);
+        Null(promptResult.Candidates);
+    }
+
+    private static byte[] DuplicateOwnHandIdleMessage(uint cardCode)
+    {
+        return Join(
+            new byte[] { 11, 0 },
+            U32(2),
+            U32(cardCode),
+            new byte[] { 0, 0x02 },
+            U32(0),
+            U32(cardCode),
+            new byte[] { 0, 0x02 },
+            U32(1),
+            U32(0),
+            U32(0),
+            U32(0),
+            U32(0),
+            U32(0),
+            new byte[] { 0, 0, 0 });
     }
 
     private static bool ContainsType(Type value, IReadOnlyList<Type> forbidden)

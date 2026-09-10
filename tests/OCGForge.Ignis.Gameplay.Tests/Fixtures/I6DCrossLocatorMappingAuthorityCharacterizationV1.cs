@@ -242,6 +242,45 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
                     true)
             });
 
+    private static readonly IReadOnlyList<string> i4SidecarFields =
+        Array.AsReadOnly(
+            new[]
+            {
+                "FrameInstanceOrdinal",
+                "AcceptedPublicProjectionId",
+                "AbsoluteController",
+                "NormalizedZone",
+                "SourceSequence",
+                "IsOverlay",
+                "OverlayIndex",
+                "AcceptedI4PublicLocator"
+            });
+
+    private static readonly IReadOnlyList<string> i4SidecarLookupKey =
+        Array.AsReadOnly(
+            new[]
+            {
+                "FrameInstanceOrdinal",
+                "AcceptedPublicProjectionId",
+                "AbsoluteController",
+                "NormalizedZone",
+                "SourceSequence",
+                "IsOverlay",
+                "OverlayIndex"
+            });
+
+    private static readonly IReadOnlyList<string> i4SidecarInvalidations =
+        Array.AsReadOnly(
+            new[]
+            {
+                "FrameInstanceOrdinalMismatch",
+                "AcceptedPublicProjectionIdMismatch",
+                "SourceOccurrenceMissing",
+                "SourceOccurrenceAmbiguous",
+                "SidecarTargetMissing",
+                "SidecarTargetCollision"
+            });
+
     internal const string CarrierName = "PrivateCrossLocatorBindingV1";
 
     internal const string SemanticOwner =
@@ -258,6 +297,41 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
 
     internal const string BindingSetName =
         "PrivateCrossLocatorBindingSetV1";
+
+    internal const string I4SidecarAmendment =
+        "private prompt-correlation provenance only";
+
+    internal const string I4SidecarCreationSeam =
+        "same I3D projection occurrence-to-public-ordinal assignment";
+
+    internal const string I4SidecarConsumptionSeam =
+        "FlatPromptCardCorrelationV1.TryCorrelatePile exact occurrence lookup";
+
+    internal const string I4DuplicateOwnHandFailureStage =
+        "TryCorrelatePile/CompleteCorrelation";
+
+    internal const string I4DuplicateOwnHandFailure =
+        "UnprovenPublicReference";
+
+    internal const string OptionAStatus = "SELECTED";
+
+    internal const string OptionBStatus =
+        "REJECTED_FOR_PUBLIC_CONTRACT_CHANGE";
+
+    internal const string OptionCStatus =
+        "REJECTED_FOR_COMPLETE_DOMAIN";
+
+    internal const string AssemblyHandoffType =
+        "I6DPrivateCrossLocatorBindingHandoffV1";
+
+    internal const string AssemblyFriendTarget =
+        "OCGForge.Ignis.Model";
+
+    internal const string AssemblyHandoffOperation =
+        "TryGetValidatedTarget";
+
+    internal const string AssemblyHandoffSignature =
+        "internal TryGetValidatedTarget(prompt_instance, continuation_step, frame_instance, projection_id, local_key, source_section, source_ordinal, current_frame, out target, out error)";
 
     internal const string CarrierVisibility =
         "internal immutable Gameplay-to-Model handoff";
@@ -283,6 +357,34 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
     internal const bool ExactTokenPathMayOmitPrivateBinding = true;
 
     internal const bool NonEqualLocatorRequiresPrivateBinding = true;
+
+    internal const bool PublicStateBytesUnchanged = true;
+
+    internal const bool PublicStateIdentityUnchanged = true;
+
+    internal const bool I4SidecarUsesMirrorEntityIdOnlyTransiently = true;
+
+    internal const bool I4SidecarStoresMirrorEntityId = false;
+
+    internal const bool I4SidecarSerialized = false;
+
+    internal const bool I4SidecarUsesCardCodeAsLookup = false;
+
+    internal const bool I4SidecarUsesSequenceAsPublicLocator = false;
+
+    internal const bool I4SidecarImplemented = false;
+
+    internal const bool I4ContractAmendmentImplemented = false;
+
+    internal const bool AssemblyHandoffExposesPrivateFields = false;
+
+    internal const bool AssemblyHandoffHasSingleFriendTarget = true;
+
+    internal const bool AssemblyHandoffIsSingleFacade = true;
+
+    internal const bool AssemblyHandoffAllowsDirectGameplayInternals = false;
+
+    internal const bool AssemblyFriendTargetsTestsOrApplication = false;
 
     internal const bool CompleteBindingSetIsAcceptedAtomically = true;
 
@@ -310,6 +412,15 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
 
     internal static IReadOnlyList<string> CandidateCrossChecks =>
         candidateCrossChecks;
+
+    internal static IReadOnlyList<string> I4SidecarFields =>
+        i4SidecarFields;
+
+    internal static IReadOnlyList<string> I4SidecarLookupKey =>
+        i4SidecarLookupKey;
+
+    internal static IReadOnlyList<string> I4SidecarInvalidations =>
+        i4SidecarInvalidations;
 
     internal static IReadOnlyList<string> InvalidationRules =>
         invalidationRules;

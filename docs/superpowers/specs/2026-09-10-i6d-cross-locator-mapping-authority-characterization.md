@@ -312,6 +312,180 @@ AMBIGUOUS_BINDING  = WHOLE_BOUNDARY_REJECT
 COLLIDING_BINDING = WHOLE_BOUNDARY_REJECT
 ```
 
+## Remediation 02: duplicate own-hand I4 amendment
+
+The real I4 path has an earlier fail-closed boundary than the I6D carrier.
+With two current own-hand occurrences that have the same known CardCode but
+different source sequences, the complete modern `MSG_SELECT_IDLECMD` prompt
+is parsed, but each pile correlation sees two matching I4 public cards. The
+current `TryCorrelatePile` / `CompleteCorrelation` path therefore returns
+`UnprovenPublicReference`, the prompt result has no context or candidates, and
+I6D is not reached. This is an executable characterization, not admitted
+Counter-capture evidence.
+
+The design decision is Option A:
+
+```text
+OPTION_A = SELECTED
+  private source-occurrence -> existing I4 public-ordinal sidecar
+
+OPTION_B = REJECTED
+  changing own-Hand public locators to indexed semantics would change the
+  frozen public-state contract and its canonical identity
+
+OPTION_C = REJECTED
+  continuing to reject duplicate same-code own-Hand occurrences would leave
+  a complete legal I4/I6D candidate domain unavailable
+```
+
+### Explicit I4 contract amendment
+
+This is an amendment to the internal prompt-correlation contract only. It is
+not a change to `ocgforge-ignis.public-state-projection.v1` public semantics:
+
+```text
+I4_PUBLIC_LOCATOR_SEMANTICS = UNCHANGED
+PUBLICSTATE_BYTES            = UNCHANGED
+PUBLICSTATE_IDENTITY         = UNCHANGED
+```
+
+The future I4 implementation produces an internal immutable
+`PrivateI4OccurrencePublicLocatorSidecarV1` alongside the accepted public
+projection. For each public known Hand/Extra-Deck occurrence, the sidecar
+records the already assigned I4 public ordinal for the exact normalized
+source occurrence. It does not add a sequence to `PublicCardStateV1`, its
+canonical bytes, or its identity.
+
+The sidecar's exact fields are:
+
+```text
+FrameInstanceOrdinal
+AcceptedPublicProjectionId
+AbsoluteController
+NormalizedZone
+SourceSequence
+IsOverlay
+OverlayIndex                 # present exactly for overlay occurrences
+AcceptedI4PublicLocator
+```
+
+Its exact lookup key is:
+
+```text
+(FrameInstanceOrdinal,
+ AcceptedPublicProjectionId,
+ AbsoluteController,
+ NormalizedZone,
+ SourceSequence,
+ IsOverlay,
+ OverlayIndex)
+```
+
+The sidecar is populated at the same point at which the I3D projection
+assigns the public ordinal, so duplicate own-hand occurrences are paired with
+the actual public ordinals produced by the accepted projection. A transient
+`MirrorEntityIdV1` may join the current mirror card to that assignment while
+building the sidecar, but the ID is not stored, serialized, hashed, or
+published. The sidecar never searches by CardCode alone, uses collection
+order, or guesses a sequence.
+
+When an I4 prompt supplies an exact current source occurrence, the pile
+correlator must look up that occurrence in the sidecar and verify the
+accepted public card/code facts already required by I4. A missing or
+ambiguous sidecar entry fails closed. Existing exact public-token cases remain
+unchanged. Hidden opponent Hand still creates no per-card sidecar entry.
+Main Deck and other unsupported pile forms remain fail-closed; this amendment
+does not make hidden identity or physical continuity observable.
+
+The sidecar is an internal prompt-correlation aid, not a public locator
+replacement. In particular:
+
+```text
+RAW_HAND_SEQUENCE_IN_PUBLIC_LOCATOR = NO
+MIRROR_ENTITY_ID_PUBLIC             = NO
+CARDCODE_HEURISTIC                  = NO
+COLLECTION_ORDER_HEURISTIC          = NO
+```
+
+### Controlled Gameplay-to-Model assembly handoff
+
+The current project dependency direction is Gameplay -> Model. The
+cross-assembly decision is therefore deliberately narrow:
+
+```text
+Gameplay owns:
+  internal immutable PrivateI4OccurrencePublicLocatorSidecarV1
+  internal immutable PrivateCrossLocatorBindingV1
+  one internal I6DPrivateCrossLocatorBindingHandoffV1 facade
+
+Model may receive only:
+  the facade's validated accepted-target operation
+
+Model may not receive:
+  MirrorSnapshotV1
+  MirrorEntityIdV1
+  ModernLocInfoV1
+  raw loc_info
+  private occurrence fields
+```
+
+The implementation may grant exactly one explicit friend target,
+`OCGForge.Ignis.Model`, if C# accessibility requires it. The friend access is
+restricted by the single typed facade; no direct Gameplay-internal access is
+part of the design, and no tests or application assembly becomes a friend.
+
+The only permitted operation across that seam is conceptually:
+
+```text
+internal TryGetValidatedTarget(
+    prompt_instance_ordinal,
+    continuation_step,
+    frame_instance_ordinal,
+    accepted_public_projection_id,
+    i4_local_candidate_key,
+    source_section,
+    source_ordinal,
+    current_accepted_frame,
+    out accepted_i6c5_target_locator,
+    out error)
+```
+
+The operation returns only the already accepted safe target or a structured
+failure. It does not return the source occurrence, mirror snapshot, mirror
+ID, raw address, prompt CardCode, or sidecar storage. The Model bridge must
+not call any other Gameplay-internal member. If the implementation cannot
+enforce this narrow operation with the existing assembly graph, it must stop
+and request a separate assembly design rather than widening the handoff.
+
+The public `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)`
+interface remains unchanged. Its accepted decision boundary stores the
+complete binding set internally; the bridge uses the I4 exact-token path or
+the facade's validated target, never an independently supplied mapping list.
+
+### I4-to-I6D flow after the amendment
+
+```text
+same committed mirror/frame
+    -> I3D creates unchanged public snapshot and private occurrence sidecar
+    -> I4 parses complete prompt occurrences
+    -> exact sidecar lookup yields existing I4 public ordinal
+    -> I4 emits the complete public candidate domain plus internal handoff
+    -> I6D combines the same source occurrence with the same-frame I6C5 target
+    -> public OCGForge descriptor/key sees only its accepted safe target
+```
+
+The following future production requirements remain requirements rather than
+current capabilities:
+
+```text
+I4_DUPLICATE_OWN_HAND_COMPLETE_DOMAIN = REQUIRED
+SIDECAR_MISSING_REJECT                = REQUIRED
+SIDECAR_AMBIGUOUS_REJECT              = REQUIRED
+SIDECAR_STALE_REJECT                   = REQUIRED
+SIDECAR_COLLISION_REJECT               = REQUIRED
+I6D_BINDING_IMPLEMENTATION             = NOT_IMPLEMENTED
+```
+
 ## Boundary implications
 
 The current `OcgForgePublicCandidateBridgeV1` exact-token check remains
@@ -374,6 +548,12 @@ STALE_MAPPING_REJECTION_REQUIREMENT=CHARACTERIZED
 UNIQUE_MATCH_IS_MAPPING_AUTHORITY=NO
 CURRENT_PRIVATE_OCCURRENCE_SEAM=ABSENT
 
+REAL_DUPLICATE_OWN_HAND_I4_FAILURE=CHARACTERIZED
+I4_FAILURE_STAGE=TryCorrelatePile/CompleteCorrelation
+I6D_BOUNDARY_REACHED=NO
+I4_PRIVATE_SIDECAR_AMENDMENT=DESIGNED_PENDING_IMPLEMENTATION
+OPTION_A_PRIVATE_OCCURRENCE_TO_I4_LOCATOR=SELECTED
+
 HIDDEN_IDENTITY_USED=NO
 MIRROR_ENTITY_ID_USED_AS_PUBLIC_PROOF=NO
 RAW_POINTER_OR_PROTOCOL_ADDRESS_EXPOSED=NO
@@ -399,6 +579,7 @@ REPLAY_DETERMINISM_IMPLICATIONS=bind only current accepted frame/prompt, reject 
 
 I6D_CROSS_LOCATOR_MAPPING_IMPLEMENTATION=NOT_IMPLEMENTED
 I6D_PRIVATE_SOURCE_OCCURRENCE_BINDING_DESIGN=FROZEN_PENDING_REVIEW
+I6D_PRIVATE_SOURCE_OCCURRENCE_BINDING_REMEDIATION_02=FROZEN_PENDING_REVIEW
 I6G_COUNTER_CAPTURE_RETRY=NOT_AUTHORIZED
 I6G_LINK_CAPTURE=NOT_AUTHORIZED
 I6G_FRESH_PROCESS_A_B=NOT_AUTHORIZED

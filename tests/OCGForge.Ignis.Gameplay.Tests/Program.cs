@@ -467,6 +467,10 @@ var tests = new (string Name, Action Body)[]
         I6DCrossLocatorMappingAuthorityCharacterizationTests
             .TestPrivateSourceOccurrenceBindingDesignContract),
 
+    ("I6D duplicate own-hand prompt stops before boundary",
+        I6DCrossLocatorMappingAuthorityCharacterizationTests
+            .TestDuplicateOwnHandI4StopsBeforeI6DBoundary),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 
