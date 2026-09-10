@@ -111,6 +111,11 @@ composition or handoff creation. `GameplayMirrorSessionV1` consumes that proof
 before the transient I6C3 map is discarded and creates the complete opaque
 handoff.
 
+```text
+I6D_COMPOSITION_OWNER=GameplayMirrorSessionV1
+FLATPROMPT_SESSION_ROLE=PROMPT_LIFETIME_AUTHORITY_OWNER_ONLY
+```
+
 The carrier is an internal immutable `PrivateCrossLocatorBindingV1` value,
 owned by the Gameplay-side source-proof implementation and never exposed as a
 public I4 or I6D member. The Model assembly does not receive a friend view of
