@@ -104,6 +104,21 @@ OWNER_CAPABILITY_APPLY=ONLY_SUCCESSFUL_MUTATION_PATH
 SUCCESSFUL_OWNER_APPLY=EXACTLY_ONE_FRAME_ADVANCE
 ```
 
+Claim lifetime is also fixed for one mirror instance:
+
+```text
+constructor validation completes before claim attempt
+successful claim count = exactly one
+second claim = fail closed
+owner replacement = forbidden
+session disposal does not release the claim
+post-disposal public Apply = fail closed
+```
+
+If a post-claim owner setup step fails, the mirror remains claimed and
+fail-closed. There is no rollback that would allow another session to interpret
+the same mutable instance as a new FRAME_0.
+
 The current base status is intentionally recorded separately:
 
 ```text
@@ -126,6 +141,7 @@ session-owned FRAME_N authority
     -> successfully commit FRAME_N -> FRAME_N+1
     -> old TryCaptureSelection remains accepted
     -> old TryResolveSelection remains accepted
+    -> TryApplySelection still reaches its normal operation path
 ```
 
 Therefore:
@@ -140,10 +156,18 @@ The required future implementation is narrow and I4-only:
 frame-owned I4 CommitProjection
     -> stores the private current-frame lifetime token in the binding
 
-TryCaptureSelection / TryResolveSelection
-    -> validate that token is still current
+TryCaptureSelection / TryResolveSelection / TryApplySelection
+    -> acquire the same FRAME_N lifetime lease
+    -> validate the binding while holding that lease
+    -> perform the operation and response/continuation creation
+       while holding that lease
     -> on invalid token clear the binding
     -> return existing StalePromptBinding
+
+lease unavailable
+    -> clear the frame-bound binding
+    -> return existing StalePromptBinding
+    -> produce no response and no continuation transition
 ```
 
 I5 bindings remain frame-unbound and retain the exact behavior of the accepted
@@ -187,6 +211,16 @@ case B: pump wins
     pump commits FRAME_N+1 and invalidates FRAME_N
     prompt acquisition fails closed
     no stale prompt binding or response is committed
+
+case C: response resolve wins
+    TryResolveSelection enters FRAME_N lease
+    response value is produced before the lease is released
+    pump cannot replace FRAME_N until that response operation linearizes
+
+case D: pump wins over response resolve
+    pump replaces FRAME_N and invalidates its lease
+    TryResolveSelection cannot acquire FRAME_N lease
+    no response is produced
 ```
 
 The test coordinator uses explicit `TaskCompletionSource`/barrier events and a
@@ -221,9 +255,17 @@ occurrence data do not cross into the public model-facing surface.
 MUTABLE_MIRROR_ESCAPE_INVENTORY_COMPLETE=YES
 POST_BIND_MIRROR_MUTATION_POLICY=EXACTLY_DEFINED
 FRAME_OWNER_CAN_BE_BYPASSED=PROVEN_AT_BASE
+MIRROR_CLAIM_CARDINALITY=ONE
+SECOND_MIRROR_CLAIM=FAIL_CLOSED
+CLAIM_OWNER_REPLACEMENT=NO
+CLAIM_RELEASE_ON_DISPOSAL=NO
+POST_DISPOSAL_PUBLIC_APPLY=FAIL_CLOSED
 
 STALE_BINDING_AFTER_FRAME_ADVANCE_CHARACTERIZED=YES
 FRAME_BOUND_BINDING_LIFETIME=EXACTLY_DEFINED
+FRAME_BOUND_RESPONSE_LIFETIME_LEASE=REQUIRED
+FRAME_BOUND_CAPTURE_LIFETIME_LEASE=REQUIRED
+FRAME_BOUND_CONTINUATION_LIFETIME_LEASE=REQUIRED
 
 NO_PUBLIC_FRAME_COORDINATE=YES
 NO_MODEL_FRAME_COORDINATE=YES

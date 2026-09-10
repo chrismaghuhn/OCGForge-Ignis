@@ -507,6 +507,12 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
                 out FlatPromptErrorCodeV1 staleResolveError),
                 staleResolveError.ToString());
             Equal(0, oldResponse.ResponseI32);
+            FlatPromptContinuationStepResultV1 oldApply =
+                prompt.TryApplySelection(oldHandle);
+            False(oldApply.IsSuccess);
+            Equal(
+                FlatPromptErrorCodeV1.InvalidContinuationAction,
+                oldApply.Error);
         }
         finally
         {
