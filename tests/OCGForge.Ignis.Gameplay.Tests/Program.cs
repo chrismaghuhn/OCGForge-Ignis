@@ -541,6 +541,14 @@ var tests = new (string Name, Action Body)[]
         I4FrameOwnedSidecarLifecycleReconciliationTests
             .TestFailedFrameOwnedPromptInvalidatesFrameAuthority),
 
+    ("I4 post-bind mirror mutation escape is characterized",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestPostBindMirrorMutationEscapeIsCharacterized),
+
+    ("I4 frame-bound prompt binding survives frame advance",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestFrameBoundPromptBindingSurvivesFrameAdvance),
+
     ("I4 frame authority has safe lifecycle",
         I4FrameOwnedSidecarLifecycleReconciliationTests
             .TestFrameAuthorityHasSafeLifecycle),

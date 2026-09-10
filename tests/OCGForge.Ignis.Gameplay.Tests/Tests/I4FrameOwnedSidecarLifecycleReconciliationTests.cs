@@ -395,6 +395,126 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         }
     }
 
+    internal static void TestPostBindMirrorMutationEscapeIsCharacterized()
+    {
+        const uint cardCode = 0x11223344;
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateGameplaySession();
+        try
+        {
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? initialAuthority));
+            NotNull(initialAuthority);
+            string authoritySnapshot =
+                initialAuthority!.MirrorSnapshot.ToDeterministicString();
+
+            GameplayMessageV1 directMessage = DecodeMessage(
+                new GameplayMessageDecoderV1(
+                    session.Mirror.Snapshot.Perspective),
+                MoveMessage(
+                    cardCode,
+                    new ModernLocInfoV1(0, 0, 0, 0),
+                    new ModernLocInfoV1(0, 0x02, 0, 0x08),
+                    0));
+            MirrorApplyResult directApply = session.Mirror.Apply(directMessage);
+            True(directApply.IsSuccess, directApply.Error.ToString());
+            NotEqual(
+                authoritySnapshot,
+                session.Mirror.Snapshot.ToDeterministicString());
+
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? afterDirectApply));
+            NotNull(afterDirectApply);
+            Equal(0ul, afterDirectApply!.FrameInstanceOrdinal);
+            Equal(
+                authoritySnapshot,
+                afterDirectApply.MirrorSnapshot.ToDeterministicString());
+        }
+        finally
+        {
+            session.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestFrameBoundPromptBindingSurvivesFrameAdvance()
+    {
+        const uint cardCode = 0x11223344;
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        byte[] firstMove = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            MoveMessage(
+                cardCode,
+                empty,
+                new ModernLocInfoV1(0, 0x02, 0, 0x08),
+                0));
+        byte[] secondMove = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            MoveMessage(
+                cardCode,
+                new ModernLocInfoV1(0, 0x02, 0, 0x08),
+                new ModernLocInfoV1(0, 0x04, 0, 0x04),
+                0));
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateGameplaySession(firstMove, secondMove);
+        try
+        {
+            GameplayMirrorPumpResult firstApply = session.PumpAsync(
+                CancellationToken.None).GetAwaiter().GetResult();
+            True(firstApply.IsSuccess, firstApply.Error.ToString());
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? frame));
+            NotNull(frame);
+            PublicStateProjectionResultV1 projection =
+                PublicStateProjectionV1.TryProject(
+                    frame!.MirrorSnapshot,
+                    new PublicStateProjectionContextV1(0),
+                    frame.FrameInstanceOrdinal);
+            True(projection.IsSuccess, projection.Error.ToString());
+            FlatPromptSessionV1 prompt = new();
+            FlatPromptProjectionResultV1 accepted =
+                prompt.TryAcceptFrameOwnedPrompt(
+                    SingleOwnHandIdleMessage(cardCode),
+                    frame,
+                    projection);
+            True(accepted.IsSuccess, accepted.Error.ToString());
+            string key = accepted.Candidates![0].I4LocalCandidateKey;
+            True(prompt.TryCaptureSelection(
+                key,
+                out FlatPromptSelectionHandleV1? oldHandle,
+                out FlatPromptErrorCodeV1 captureError),
+                captureError.ToString());
+            NotNull(oldHandle);
+
+            GameplayMirrorPumpResult secondApply = session.PumpAsync(
+                CancellationToken.None).GetAwaiter().GetResult();
+            True(secondApply.IsSuccess, secondApply.Error.ToString());
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? nextFrame));
+            NotNull(nextFrame);
+            Equal(2ul, nextFrame!.FrameInstanceOrdinal);
+
+            True(prompt.TryCaptureSelection(
+                key,
+                out _,
+                out FlatPromptErrorCodeV1 staleCaptureError),
+                staleCaptureError.ToString());
+            True(prompt.TryResolveSelection(
+                oldHandle,
+                out FlatPromptResponseResolutionV1 oldResponse,
+                out FlatPromptErrorCodeV1 staleResolveError),
+                staleResolveError.ToString());
+            Equal(0, oldResponse.ResponseI32);
+        }
+        finally
+        {
+            session.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
     internal static void TestFrameAuthorityHasSafeLifecycle()
     {
         Equal(
