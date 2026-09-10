@@ -263,7 +263,8 @@ frozen flat-prompt-projection.v1
     -> authorized I4 correlation implementation
 ```
 
-The correlation implementation is now present pending independent review.
+The correlation implementation is present and accepted as part of the final
+I4 frame-owned sidecar path.
 Duplicate same-code own-Hand prompts use the current frame-owned sidecar;
 missing or detached sidecars still fail closed. This transition changes
 neither public-state canonical bytes nor public-state identity:

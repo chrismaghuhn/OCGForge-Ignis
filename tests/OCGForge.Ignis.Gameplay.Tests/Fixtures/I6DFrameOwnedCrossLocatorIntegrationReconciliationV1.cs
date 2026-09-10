@@ -58,11 +58,38 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
     internal const string LeaseAcquisitionOrder =
         "FRAME lifetime lease -> PROMPT lifetime lease; release in reverse order";
 
-    internal const string PromptLifetimeOwner =
-        "FlatPromptSessionV1/current frame-bound binding";
-
     internal const string HandoffCurrentnessRule =
         "stored revocable authorities, not caller coordinates, prove currentness";
+
+    internal const string CompositionOwner =
+        "GameplayMirrorSessionV1";
+
+    internal const string PromptLifetimeOwner =
+        "FlatPromptSessionV1/current frame-bound binding only";
+
+    internal const string CompositionOwnerInputs =
+        "current frame authority + immutable snapshot + bound MatchContext + bound PrintedProvider";
+
+    internal const string CompositionSequence =
+        "FRAME lease -> PROMPT lease -> I6C3/I6C5 from FRAME snapshot -> exact I4 join -> complete binding set -> opaque handoff";
+
+    internal const string HandoffStoredAuthorities =
+        "PrivateGameplayFrameAuthorityV1 + revocable PrivateFlatPromptBindingLifetimeAuthorityV1";
+
+    internal const string BoundaryAcceptanceInterface =
+        "handoff.TryAcquireBoundaryAcceptanceLease(accepted public frame, accepted public projection, out lease, out error)";
+
+    internal const string BoundaryAcceptanceLeaseLifetime =
+        "FRAME lease -> PROMPT lease held through boundary construction and nextDecisionIndex increment";
+
+    internal const string BoundaryAcceptanceOwner =
+        "OcgForgeAcceptedDecisionBoundaryProducerV1 acceptanceGate";
+
+    internal const string PublicHandoffInputs =
+        "accepted public frame + accepted public projection + opaque handoff; no private lifecycle coordinates";
+
+    internal const string BoundaryFailureSemantics =
+        "validation failure -> no boundary -> no decision-index consumption";
 
     internal const string LegacyBoundaryBehavior =
         "existing boundary overload remains unchanged; non-equal locator mapping requires handoff";
@@ -111,6 +138,26 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
     internal const bool MismatchedHandoffRejectedBeforeBoundary = true;
 
     internal const bool StaleHandoffRejected = true;
+
+    internal const bool CompositionOwnerIsExactlyOne = true;
+
+    internal const bool FlatPromptSessionAloneIsI6C5Owner = false;
+
+    internal const bool TransientLocatorMapDetached = false;
+
+    internal const bool TransientLocatorMapPublic = false;
+
+    internal const bool BoundaryAcceptanceLeaseIsExact = true;
+
+    internal const bool BoundaryAcceptanceLeaseHoldsAuthorities = true;
+
+    internal const bool FailedAcceptanceConsumesDecisionIndex = false;
+
+    internal const bool PublicConsumerNeedsFrameOrdinal = false;
+
+    internal const bool PublicConsumerNeedsPromptOrdinal = false;
+
+    internal const bool PublicConsumerNeedsContinuationStep = false;
 
     internal const bool ExactTokenPathMayOmitHandoff = true;
 
