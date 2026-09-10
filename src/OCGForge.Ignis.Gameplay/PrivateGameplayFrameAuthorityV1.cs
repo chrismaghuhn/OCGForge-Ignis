@@ -8,6 +8,7 @@ namespace OCGForge.Ignis.Gameplay;
 internal sealed class PrivateGameplayFrameAuthorityV1
 {
     private readonly object lifecycleGate = new();
+    private Action<bool>? testLeaseAcquisitionHook;
     private bool invalidated;
 
     internal PrivateGameplayFrameAuthorityV1(
@@ -36,6 +37,8 @@ internal sealed class PrivateGameplayFrameAuthorityV1
 
     internal PrivateGameplayFrameAuthorityLeaseV1? TryAcquire()
     {
+        Action<bool>? hook = Volatile.Read(ref testLeaseAcquisitionHook);
+        hook?.Invoke(false);
         Monitor.Enter(lifecycleGate);
         if (invalidated)
         {
@@ -43,7 +46,49 @@ internal sealed class PrivateGameplayFrameAuthorityV1
             return null;
         }
 
+        hook?.Invoke(true);
         return new PrivateGameplayFrameAuthorityLeaseV1(lifecycleGate);
+    }
+
+    /// <summary>
+    /// Installs or clears an internal, test-only coordination hook at the
+    /// real lease boundary. The boolean is false before the monitor attempt
+    /// and true after a successful acquisition. It has no effect unless a
+    /// test explicitly installs it and is never part of public, serialized,
+    /// or semantic state.
+    /// </summary>
+    internal void SetTestLeaseAcquisitionHook(Action<bool>? hook)
+    {
+        if (hook is null)
+        {
+            Volatile.Write(ref testLeaseAcquisitionHook, null);
+            return;
+        }
+
+        if (Interlocked.CompareExchange(
+                ref testLeaseAcquisitionHook,
+                hook,
+                null) is not null)
+        {
+            throw new InvalidOperationException(
+                "A test lease hook is already installed.");
+        }
+    }
+
+    /// <summary>
+    /// Internal test-only observation of the same monitor used by
+    /// <see cref="TryAcquire"/>. This does not acquire or mutate authority;
+    /// it only proves that a held lease still excludes another entrant.
+    /// </summary>
+    internal bool IsLeaseAvailableForTest()
+    {
+        if (!Monitor.TryEnter(lifecycleGate))
+        {
+            return false;
+        }
+
+        Monitor.Exit(lifecycleGate);
+        return true;
     }
 
     internal void Invalidate()

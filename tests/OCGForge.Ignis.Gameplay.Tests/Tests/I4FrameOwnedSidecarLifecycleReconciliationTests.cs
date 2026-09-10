@@ -599,31 +599,40 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         (GameplayMirrorSessionV1 session,
             GameplayHandoffConsumerV1 consumer) =
             CreateBlockedGameplaySession(transport);
+        using CancellationTokenSource cleanup = CreateCleanupCancellation();
+        LeaseContentionGate contention = new(cleanup.Token);
         Task<GameplayMirrorPumpResult>? pumpTask = null;
+        Task<FlatPromptProjectionResultV1>? promptTask = null;
+        PrivateGameplayFrameAuthorityV1? frame = null;
         try
         {
             True(session.TryGetCurrentFrameAuthority(
-                out PrivateGameplayFrameAuthorityV1? frame));
+                out frame));
             NotNull(frame);
             PublicStateProjectionResultV1 projection =
                 CreateFrameProjection(frame!);
             FlatPromptSessionV1 promptSession = new();
 
-            pumpTask = StartPump(session);
-            transport.ReadStarted.GetAwaiter().GetResult();
+            frame!.SetTestLeaseAcquisitionHook(contention.LeaseBoundary);
+            pumpTask = StartPump(session, cleanup.Token);
+            AwaitSignal(transport.ReadStarted, cleanup.Token);
 
-            Task<FlatPromptProjectionResultV1> promptTask = Task.Run(
+            promptTask = Task.Run(
                 () => promptSession.TryAcceptFrameOwnedPrompt(
                     IdleTransitionOnly(),
                     frame,
                     projection));
+            AwaitSignal(contention.LeaseAcquired, cleanup.Token);
+            transport.Release();
+            AwaitSignal(contention.CompetitorAttempted, cleanup.Token);
+            False(frame!.IsLeaseAvailableForTest());
+            contention.Release();
+
             FlatPromptProjectionResultV1 prompt =
                 promptTask.GetAwaiter().GetResult();
             True(prompt.IsSuccess, prompt.Error.ToString());
             Equal(0ul, frame!.FrameInstanceOrdinal);
-            True(frame.IsCurrent);
 
-            transport.Release();
             GameplayMirrorPumpResult pump =
                 pumpTask.GetAwaiter().GetResult();
             True(pump.IsSuccess, pump.Error.ToString());
@@ -635,11 +644,20 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         }
         finally
         {
+            contention.Release();
             transport.Release();
+            cleanup.Cancel();
             if (pumpTask is not null)
             {
                 _ = pumpTask.GetAwaiter().GetResult();
             }
+
+            if (promptTask is not null)
+            {
+                _ = promptTask.GetAwaiter().GetResult();
+            }
+
+            frame?.SetTestLeaseAcquisitionHook(null);
 
             session.DisposeAsync().GetAwaiter().GetResult();
             consumer.DisposeAsync().GetAwaiter().GetResult();
@@ -652,29 +670,34 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         (GameplayMirrorSessionV1 session,
             GameplayHandoffConsumerV1 consumer) =
             CreateBlockedGameplaySession(transport);
+        using CancellationTokenSource cleanup = CreateCleanupCancellation();
+        LeaseContentionGate contention = new(cleanup.Token);
         Task<GameplayMirrorPumpResult>? pumpTask = null;
+        Task<FlatPromptProjectionResultV1>? promptTask = null;
+        PrivateGameplayFrameAuthorityV1? frame = null;
         try
         {
             True(session.TryGetCurrentFrameAuthority(
-                out PrivateGameplayFrameAuthorityV1? frame));
+                out frame));
             NotNull(frame);
             PublicStateProjectionResultV1 projection =
                 CreateFrameProjection(frame!);
             FlatPromptSessionV1 promptSession = new();
-            pumpTask = StartPump(session);
-            transport.ReadStarted.GetAwaiter().GetResult();
-
-            Task<FlatPromptProjectionResultV1> promptTask = Task.Run(
-                () =>
-                {
-                    _ = pumpTask.GetAwaiter().GetResult();
-                    return promptSession.TryAcceptFrameOwnedPrompt(
-                        IdleTransitionOnly(),
-                        frame,
-                        projection);
-                });
-
+            frame!.SetTestLeaseAcquisitionHook(contention.LeaseBoundary);
+            pumpTask = StartPump(session, cleanup.Token);
+            AwaitSignal(transport.ReadStarted, cleanup.Token);
             transport.Release();
+            AwaitSignal(contention.LeaseAcquired, cleanup.Token);
+
+            promptTask = Task.Run(
+                () => promptSession.TryAcceptFrameOwnedPrompt(
+                    IdleTransitionOnly(),
+                    frame,
+                    projection));
+            AwaitSignal(contention.CompetitorAttempted, cleanup.Token);
+            False(frame!.IsLeaseAvailableForTest());
+            contention.Release();
+
             GameplayMirrorPumpResult pump =
                 pumpTask.GetAwaiter().GetResult();
             True(pump.IsSuccess, pump.Error.ToString());
@@ -688,11 +711,20 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         }
         finally
         {
+            contention.Release();
             transport.Release();
+            cleanup.Cancel();
             if (pumpTask is not null)
             {
                 _ = pumpTask.GetAwaiter().GetResult();
             }
+
+            if (promptTask is not null)
+            {
+                _ = promptTask.GetAwaiter().GetResult();
+            }
+
+            frame?.SetTestLeaseAcquisitionHook(null);
 
             session.DisposeAsync().GetAwaiter().GetResult();
             consumer.DisposeAsync().GetAwaiter().GetResult();
@@ -705,11 +737,17 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         (GameplayMirrorSessionV1 session,
             GameplayHandoffConsumerV1 consumer) =
             CreateBlockedGameplaySession(transport);
+        using CancellationTokenSource cleanup = CreateCleanupCancellation();
+        LeaseContentionGate contention = new(cleanup.Token);
         Task<GameplayMirrorPumpResult>? pumpTask = null;
+        Task<(bool IsSuccess,
+            FlatPromptResponseResolutionV1 Response,
+            FlatPromptErrorCodeV1 Error)>? resolveTask = null;
+        PrivateGameplayFrameAuthorityV1? frame = null;
         try
         {
             True(session.TryGetCurrentFrameAuthority(
-                out PrivateGameplayFrameAuthorityV1? frame));
+                out frame));
             NotNull(frame);
             PublicStateProjectionResultV1 projection =
                 CreateFrameProjection(frame!);
@@ -717,11 +755,10 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
                 FlatPromptSelectionHandleV1 handle) =
                 CreateFrameBoundSelection(frame!, projection);
 
-            pumpTask = StartPump(session);
-            transport.ReadStarted.GetAwaiter().GetResult();
-            Task<(bool IsSuccess,
-                FlatPromptResponseResolutionV1 Response,
-                FlatPromptErrorCodeV1 Error)> resolveTask = Task.Run(
+            frame!.SetTestLeaseAcquisitionHook(contention.LeaseBoundary);
+            pumpTask = StartPump(session, cleanup.Token);
+            AwaitSignal(transport.ReadStarted, cleanup.Token);
+            resolveTask = Task.Run(
                 () =>
                 {
                     bool resolved = promptSession.TryResolveSelection(
@@ -730,6 +767,12 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
                         out FlatPromptErrorCodeV1 error);
                     return (resolved, response, error);
                 });
+            AwaitSignal(contention.LeaseAcquired, cleanup.Token);
+            transport.Release();
+            AwaitSignal(contention.CompetitorAttempted, cleanup.Token);
+            False(frame!.IsLeaseAvailableForTest());
+            contention.Release();
+
             (bool resolved,
                 FlatPromptResponseResolutionV1 response,
                 FlatPromptErrorCodeV1 error) =
@@ -738,7 +781,6 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
             Equal(FlatPromptErrorCodeV1.None, error);
             Equal(7, response.ResponseI32);
 
-            transport.Release();
             GameplayMirrorPumpResult pump =
                 pumpTask.GetAwaiter().GetResult();
             True(pump.IsSuccess, pump.Error.ToString());
@@ -746,11 +788,20 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         }
         finally
         {
+            contention.Release();
             transport.Release();
+            cleanup.Cancel();
             if (pumpTask is not null)
             {
                 _ = pumpTask.GetAwaiter().GetResult();
             }
+
+            if (resolveTask is not null)
+            {
+                _ = resolveTask.GetAwaiter().GetResult();
+            }
+
+            frame?.SetTestLeaseAcquisitionHook(null);
 
             session.DisposeAsync().GetAwaiter().GetResult();
             consumer.DisposeAsync().GetAwaiter().GetResult();
@@ -763,11 +814,17 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         (GameplayMirrorSessionV1 session,
             GameplayHandoffConsumerV1 consumer) =
             CreateBlockedGameplaySession(transport);
+        using CancellationTokenSource cleanup = CreateCleanupCancellation();
+        LeaseContentionGate contention = new(cleanup.Token);
         Task<GameplayMirrorPumpResult>? pumpTask = null;
+        Task<(bool IsSuccess,
+            FlatPromptResponseResolutionV1 Response,
+            FlatPromptErrorCodeV1 Error)>? resolveTask = null;
+        PrivateGameplayFrameAuthorityV1? frame = null;
         try
         {
             True(session.TryGetCurrentFrameAuthority(
-                out PrivateGameplayFrameAuthorityV1? frame));
+                out frame));
             NotNull(frame);
             PublicStateProjectionResultV1 projection =
                 CreateFrameProjection(frame!);
@@ -775,22 +832,25 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
                 FlatPromptSelectionHandleV1 handle) =
                 CreateFrameBoundSelection(frame!, projection);
 
-            pumpTask = StartPump(session);
-            transport.ReadStarted.GetAwaiter().GetResult();
-            Task<(bool IsSuccess,
-                FlatPromptResponseResolutionV1 Response,
-                FlatPromptErrorCodeV1 Error)> resolveTask = Task.Run(
+            frame!.SetTestLeaseAcquisitionHook(contention.LeaseBoundary);
+            pumpTask = StartPump(session, cleanup.Token);
+            AwaitSignal(transport.ReadStarted, cleanup.Token);
+            transport.Release();
+            AwaitSignal(contention.LeaseAcquired, cleanup.Token);
+
+            resolveTask = Task.Run(
                 () =>
                 {
-                    _ = pumpTask.GetAwaiter().GetResult();
                     bool resolved = promptSession.TryResolveSelection(
                         handle,
                         out FlatPromptResponseResolutionV1 response,
                         out FlatPromptErrorCodeV1 error);
                     return (resolved, response, error);
                 });
+            AwaitSignal(contention.CompetitorAttempted, cleanup.Token);
+            False(frame!.IsLeaseAvailableForTest());
+            contention.Release();
 
-            transport.Release();
             GameplayMirrorPumpResult pump =
                 pumpTask.GetAwaiter().GetResult();
             True(pump.IsSuccess, pump.Error.ToString());
@@ -805,11 +865,20 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
         }
         finally
         {
+            contention.Release();
             transport.Release();
+            cleanup.Cancel();
             if (pumpTask is not null)
             {
                 _ = pumpTask.GetAwaiter().GetResult();
             }
+
+            if (resolveTask is not null)
+            {
+                _ = resolveTask.GetAwaiter().GetResult();
+            }
+
+            frame?.SetTestLeaseAcquisitionHook(null);
 
             session.DisposeAsync().GetAwaiter().GetResult();
             consumer.DisposeAsync().GetAwaiter().GetResult();
@@ -975,9 +1044,23 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
     }
 
     private static Task<GameplayMirrorPumpResult> StartPump(
-        GameplayMirrorSessionV1 session) =>
+        GameplayMirrorSessionV1 session,
+        CancellationToken cancellationToken) =>
         Task.Run(async () =>
-            await session.PumpAsync(CancellationToken.None));
+            await session.PumpAsync(cancellationToken));
+
+    private static CancellationTokenSource CreateCleanupCancellation()
+    {
+        CancellationTokenSource cleanup = new();
+        // This bounds failure cleanup only; no ordering assertion uses time.
+        cleanup.CancelAfter(TimeSpan.FromSeconds(5));
+        return cleanup;
+    }
+
+    private static void AwaitSignal(
+        Task signal,
+        CancellationToken cleanupToken) =>
+        signal.WaitAsync(cleanupToken).GetAwaiter().GetResult();
 
     private static PublicStateProjectionResultV1 CreateFrameProjection(
         PrivateGameplayFrameAuthorityV1 frame)
@@ -1016,6 +1099,71 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
             captureError.ToString());
         NotNull(handle);
         return (prompt, handle!);
+    }
+
+    private sealed class LeaseContentionGate
+    {
+        private readonly CancellationToken cleanupToken;
+        private readonly TaskCompletionSource<bool> leaseAcquired =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> competitorAttempted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int firstLease;
+        private int leaseIsHeld;
+
+        internal LeaseContentionGate(CancellationToken cleanupToken)
+        {
+            this.cleanupToken = cleanupToken;
+        }
+
+        internal Task LeaseAcquired => leaseAcquired.Task;
+
+        internal Task CompetitorAttempted => competitorAttempted.Task;
+
+        private void BeforeAcquire()
+        {
+            if (Volatile.Read(ref leaseIsHeld) != 0)
+            {
+                competitorAttempted.TrySetResult(true);
+            }
+        }
+
+        private void AfterAcquire()
+        {
+            if (Interlocked.Exchange(ref firstLease, 1) != 0)
+            {
+                return;
+            }
+
+            Volatile.Write(ref leaseIsHeld, 1);
+            leaseAcquired.TrySetResult(true);
+            try
+            {
+                release.Task.WaitAsync(cleanupToken)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (OperationCanceledException)
+                when (cleanupToken.IsCancellationRequested)
+            {
+            }
+        }
+
+        internal void LeaseBoundary(bool acquired)
+        {
+            if (acquired)
+            {
+                AfterAcquire();
+            }
+            else
+            {
+                BeforeAcquire();
+            }
+        }
+
+        internal void Release() => release.TrySetResult(true);
     }
 
     private static (
