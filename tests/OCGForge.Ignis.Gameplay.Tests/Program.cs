@@ -455,6 +455,10 @@ var tests = new (string Name, Action Body)[]
         I6GLocatorParityCharacterizationTests
             .TestI4AndI6C5CrossPileOrdinalDrift),
 
+    ("I6D cross-locator mapping authority characterizes safe proof boundaries",
+        I6DCrossLocatorMappingAuthorityCharacterizationTests
+            .TestCrossLocatorAuthorityCases),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 
