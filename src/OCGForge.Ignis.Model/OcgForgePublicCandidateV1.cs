@@ -353,7 +353,7 @@ public static class OcgForgePublicCandidateBridgeV1
                     $"candidates[{index}]");
             }
 
-            if (HasPromptLocalCardCode(candidate))
+            if (HasForbiddenPromptLocalCardCode(candidate))
             {
                 return Failure(
                     OcgForgePublicCandidateBridgeErrorCodeV1.PromptLocalCardCode,
@@ -1655,19 +1655,22 @@ public static class OcgForgePublicCandidateBridgeV1
             _ => string.Empty
         };
 
-    private static bool HasPromptLocalCardCode(
+    private static bool HasForbiddenPromptLocalCardCode(
         FlatPublicCandidateDescriptorV1 candidate) =>
         candidate switch
         {
             FlatChainCardCodePublicCandidateDescriptorV1 => true,
             FlatBattleActivatableCardCodePublicCandidateV1 => true,
             FlatBattleAttackCardCodePublicCandidateV1 => true,
-            FlatIdleSummonCardCodePublicCandidateV1 => true,
-            FlatIdleSpecialSummonCardCodePublicCandidateV1 => true,
-            FlatIdleRepositionCardCodePublicCandidateV1 => true,
-            FlatIdleMsetCardCodePublicCandidateV1 => true,
-            FlatIdleSsetCardCodePublicCandidateV1 => true,
-            FlatIdleActivatableCardCodePublicCandidateV1 => true,
+            // These six variants already carry the safe public locator used by
+            // TryMapIdleCard/TryMapIdleActivate. The prompt-local CardCode is
+            // deliberately ignored by the public descriptor/key mapping.
+            FlatIdleSummonCardCodePublicCandidateV1 => false,
+            FlatIdleSpecialSummonCardCodePublicCandidateV1 => false,
+            FlatIdleRepositionCardCodePublicCandidateV1 => false,
+            FlatIdleMsetCardCodePublicCandidateV1 => false,
+            FlatIdleSsetCardCodePublicCandidateV1 => false,
+            FlatIdleActivatableCardCodePublicCandidateV1 => false,
             FlatPromptCardSelectionPromptCodeCandidateV1 => true,
             FlatPromptCardSelectionLocatorPromptCodeCandidateV1 => true,
             FlatPromptTributeSelectionPromptCodeCandidateV1 => true,

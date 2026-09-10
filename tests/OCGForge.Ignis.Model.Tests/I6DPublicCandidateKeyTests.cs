@@ -124,6 +124,7 @@ internal static class I6DPublicCandidateKeyTests
         TestCandidateFamilyMatrix();
         TestNativeCandidateMappingVectors();
         TestNToNAndFailClosedMapping();
+        TestLocatorBoundIdleCardCodes();
     }
 
     private static byte[] CreateYesNoMessage()
@@ -1277,6 +1278,139 @@ internal static class I6DPublicCandidateKeyTests
             "Ignis-local routing keys must not affect the OCGForge key");
         Require(keyA.PublicActionKey != changed.PublicActionKey,
             "an OCGForge-semantic option value must affect the public key");
+    }
+
+    private static void TestLocatorBoundIdleCardCodes()
+    {
+        PerspectiveSafeFrameV1 frame = CreatePublicFrame();
+        PublicSemanticLocatorV1 visible = Locator("p0:MONSTER_ZONE:0");
+        FlatPromptIdlePublicContextV1 context =
+            New<FlatPromptIdlePublicContextV1>((byte)0);
+        FlatPublicCandidateDescriptorV1[] locatorBoundCandidates =
+        {
+            New<FlatIdleSummonCardCodePublicCandidateV1>(
+                "idle.summon.code",
+                0,
+                visible,
+                111U),
+            New<FlatIdleSpecialSummonCardCodePublicCandidateV1>(
+                "idle.special.code",
+                0,
+                visible,
+                222U),
+            New<FlatIdleRepositionCardCodePublicCandidateV1>(
+                "idle.reposition.code",
+                0,
+                visible,
+                333U),
+            New<FlatIdleMsetCardCodePublicCandidateV1>(
+                "idle.mset.code",
+                0,
+                visible,
+                444U),
+            New<FlatIdleSsetCardCodePublicCandidateV1>(
+                "idle.sset.code",
+                0,
+                visible,
+                555U),
+            New<FlatIdleActivatableCardCodePublicCandidateV1>(
+                "idle.activate.code",
+                0,
+                visible,
+                42UL,
+                (byte)0,
+                666U)
+        };
+
+        foreach (FlatPublicCandidateDescriptorV1 candidate in
+                 locatorBoundCandidates)
+        {
+            OcgForgePublicDecisionContextResultV1 result = TryMap(
+                frame,
+                context,
+                new[] { candidate });
+            Require(
+                result.IsSuccess &&
+                result.Context is not null &&
+                result.Context.Candidates.Count == 1 &&
+                result.Context.Candidates[0].Descriptor.SourceReference is not null,
+                $"locator-bound idle candidate {candidate.GetType().Name} must map");
+        }
+
+        OcgForgePublicCandidateV1 noCode = MapSingle(
+            frame,
+            context,
+            New<FlatIdleSummonPublicCandidateV1>(
+                "idle.native.no-code",
+                3,
+                visible));
+        OcgForgePublicCandidateV1 codeA = MapSingle(
+            frame,
+            context,
+            New<FlatIdleSummonCardCodePublicCandidateV1>(
+                "idle.native.code-a",
+                3,
+                visible,
+                777U));
+        OcgForgePublicCandidateV1 codeB = MapSingle(
+            frame,
+            context,
+            New<FlatIdleSummonCardCodePublicCandidateV1>(
+                "idle.native.code-b",
+                3,
+                visible,
+                888U));
+        Require(noCode.PublicActionKey == NativeIdleKey,
+            "baseline locator-bound idle vector must match native KAT");
+        Require(codeA.PublicActionKey == NativeIdleKey &&
+                codeA.PublicActionKey == codeB.PublicActionKey &&
+                codeA.CanonicalDescriptorBytes.SequenceEqual(
+                    codeB.CanonicalDescriptorBytes),
+            "prompt-local CardCode must not affect public idle identity");
+
+        OcgForgePublicDecisionContextResultV1 domainA = TryMap(
+            frame,
+            context,
+            new[]
+            {
+                New<FlatIdleSummonCardCodePublicCandidateV1>(
+                    "idle.domain-a",
+                    3,
+                    visible,
+                    1111U)
+            });
+        OcgForgePublicDecisionContextResultV1 domainB = TryMap(
+            frame,
+            context,
+            new[]
+            {
+                New<FlatIdleSummonCardCodePublicCandidateV1>(
+                    "idle.domain-b",
+                    3,
+                    visible,
+                    2222U)
+            });
+        Require(domainA.IsSuccess && domainA.Context is not null &&
+                domainB.IsSuccess && domainB.Context is not null &&
+                domainA.Context.PublicCandidateDomainDigest ==
+                    domainB.Context.PublicCandidateDomainDigest,
+            "prompt-local CardCode must not affect public domain identity");
+
+        OcgForgePublicDecisionContextResultV1 invalidLocator = TryMap(
+            CreatePublicFrame(Array.Empty<(string Locator, bool IdentityKnown)>()),
+            context,
+            new[]
+            {
+                New<FlatIdleSummonCardCodePublicCandidateV1>(
+                    "idle.invalid-locator",
+                    0,
+                    visible,
+                    999U)
+            });
+        Require(!invalidLocator.IsSuccess &&
+                invalidLocator.Error!.Value.Code ==
+                    OcgForgePublicCandidateBridgeErrorCodeV1.InvalidPublicReference,
+            "locator-bound idle CardCode without a proven locator must fail closed");
     }
 
     private static OcgForgePublicCandidateV1 AssertMapped(
