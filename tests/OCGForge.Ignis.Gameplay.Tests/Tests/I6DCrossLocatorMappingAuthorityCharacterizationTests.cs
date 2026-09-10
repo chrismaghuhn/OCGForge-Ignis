@@ -289,8 +289,10 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
             .I4SidecarUsesSequenceAsPublicLocator);
         True(I6DPrivateSourceOccurrenceBindingDesignV1
             .I4SidecarImplemented);
-        True(I6DPrivateSourceOccurrenceBindingDesignV1
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
             .I4SidecarAcceptedForDesignOnly);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .I4SidecarImplementedAndAccepted);
         True(I6DPrivateSourceOccurrenceBindingDesignV1
             .I4SidecarImplementationAuthorized);
         False(I6DPrivateSourceOccurrenceBindingDesignV1

@@ -1,7 +1,11 @@
 # I6D Cross-Locator Mapping Authority Characterization
 
-Status: test/documentation-only characterization; no mapping implementation is
-authorized by this document.
+Status: design/characterization-only; I4 frame-owned sidecar/correlation is
+accepted, but no I6D mapping implementation is authorized by this document.
+
+The frame-owned integration reconciliation for the accepted I4 lifecycle is
+recorded separately in:
+`2026-09-10-i6d-frame-owned-cross-locator-integration-reconciliation.md`.
 
 ## Frozen authorities
 
@@ -76,8 +80,8 @@ bindings. `FlatPromptCardCorrelationResultV1` retains the accepted I4 public
 locator and safe public-code result. Neither current prompt-binding type
 carries a private source occurrence, `MirrorEntityIdV1`, `ModernLocInfoV1`, or
 raw address. Implementation 01 now stores the projection-scoped occurrence
-sidecar separately; prompt correlation and I6D consumption still do not read
-it.
+sidecar separately; the accepted frame-owned I4 prompt-correlation path now
+consumes it, while I6D consumption still does not.
 
 The gameplay projection does temporarily possess the wire occurrence and the
 exact mirror correlation while constructing a public candidate, but that
@@ -89,9 +93,9 @@ is authorized.
 
 ## Frozen private source-occurrence binding design
 
-This section is the accepted design contract. Implementation 01 adds only the
-projection-scoped sidecar; it does not enable prompt correlation or implement
-the I6D mapping.
+This section is the accepted design contract. The projection-scoped sidecar
+and the authorized I4 correlation implementation now exist; the I6D mapping
+and cross-assembly handoff remain unimplemented.
 
 ### Owner, acquisition seam, and visibility
 
@@ -152,9 +156,10 @@ safe target:
                                  same accepted I6C5 frame
 ```
 
-`FrameInstanceOrdinal` is assigned by the owning gameplay/frame session only
-after a complete I6C5 frame is accepted. It is monotonic within that session,
-derived from committed frame order, never caller-supplied, never serialized,
+`FrameInstanceOrdinal` is assigned by the owning gameplay/frame session when
+the initialized mirror is bound (`FRAME_0`) and after each successful owner
+mirror commit (`FRAME_N+1`). It is not created by I6C5 projection acceptance.
+It is monotonic within that session, never caller-supplied, never serialized,
 and never included in a public digest. `AcceptedPublicProjectionId` is an
 existing I3D consistency guard; it is not a new semantic identity.
 
@@ -333,14 +338,15 @@ COLLIDING_BINDING = WHOLE_BOUNDARY_REJECT
 
 ## Remediation 02: duplicate own-hand I4 amendment
 
-The real I4 path has an earlier fail-closed boundary than the I6D carrier.
-With two current own-hand occurrences that have the same known CardCode but
-different source sequences, the complete modern `MSG_SELECT_IDLECMD` prompt
-is parsed, but each pile correlation sees two matching I4 public cards. The
-current `TryCorrelatePile` / `CompleteCorrelation` path therefore returns
-`UnprovenPublicReference`, the prompt result has no context or candidates, and
-I6D is not reached. This is an executable characterization, not admitted
-Counter-capture evidence.
+Before the accepted I4 sidecar/correlation implementation, the real I4 path
+had an earlier fail-closed boundary than the I6D carrier. With two current
+own-hand occurrences that have the same known CardCode but different source
+sequences, the complete modern `MSG_SELECT_IDLECMD` prompt was parsed, but
+each pile correlation saw two matching I4 public cards. The historical
+`TryCorrelatePile` / `CompleteCorrelation` result was therefore
+`UnprovenPublicReference`, the prompt result had no context or candidates,
+and I6D was not reached. This remains an executable historical
+characterization, not admitted Counter-capture evidence.
 
 The design decision is Option A:
 
@@ -375,10 +381,11 @@ records the already assigned I4 public ordinal for the exact normalized
 source occurrence. It does not add a sequence to `PublicCardStateV1`, its
 canonical bytes, or its identity.
 
-Implementation 01 creates this sidecar only through an internal frame-owned
-projection overload with a session-supplied `FrameInstanceOrdinal`. The
+The implementation creates this sidecar only through an internal frame-owned
+projection overload with the session-owned `FrameInstanceOrdinal`. The
 existing two-argument PublicState projection path remains unchanged and does
-not expose or consume a sidecar; prompt-correlation enablement is separate.
+not expose or consume a sidecar; the frame-owned I4 correlation path consumes
+the sidecar only after independent current-frame validation.
 
 The sidecar container and its entries have these exact fields. The first two
 are container-scoped; the remaining fields belong to each entry:
@@ -584,8 +591,9 @@ proof boundary. A permissible proof would have to be one of:
    private data never enters the public descriptor, public key, or model input.
 ```
 
-The current characterization does not establish option 3 as an existing
-capability. In particular, it does not authorize using:
+The current characterization establishes the required I4-sidecar design but
+does not establish an existing I6D same-snapshot target handoff. In
+particular, it does not authorize using:
 
 ```text
 MirrorEntityIdV1
@@ -628,13 +636,14 @@ STALE_MAPPING_REJECTION_REQUIREMENT=CHARACTERIZED
 UNIQUE_MATCH_IS_MAPPING_AUTHORITY=NO
 CURRENT_PRIVATE_OCCURRENCE_SEAM=ABSENT
 
-REAL_DUPLICATE_OWN_HAND_I4_FAILURE=CHARACTERIZED
+HISTORICAL_REAL_DUPLICATE_OWN_HAND_I4_FAILURE=CHARACTERIZED
 I4_FAILURE_STAGE=TryCorrelatePile/CompleteCorrelation
-I6D_BOUNDARY_REACHED=NO
+HISTORICAL_I6D_BOUNDARY_REACHED=NO
+CURRENT_DUPLICATE_OWN_HAND_I4_COMPLETE_DOMAIN=ACCEPTED
 I4_AUTHORITATIVE_CONTRACT_RECONCILED=YES_BY_EXPLICIT_VERSION_TRANSITION
 I4_V1_IN_PLACE_AMENDMENT=FORBIDDEN
 I4_PRIVATE_SIDECAR_CONTRACT=ocgforge-ignis.flat-prompt-correlation-sidecar.v1
-I4_PRIVATE_SIDECAR_AMENDMENT=DESIGNED_PENDING_IMPLEMENTATION
+I4_PRIVATE_SIDECAR_AMENDMENT=IMPLEMENTED_AND_ACCEPTED
 OPTION_A_PRIVATE_OCCURRENCE_TO_I4_LOCATOR=SELECTED
 PRIVATE_OCCURRENCE_ORDINAL_RULE=EXACTLY_DEFINED
 DUPLICATE_ASSIGNMENT_INSERTION_ORDER_INDEPENDENT=CHARACTERIZED
@@ -671,9 +680,11 @@ I6D_CROSS_LOCATOR_MAPPING_IMPLEMENTATION=NOT_IMPLEMENTED
 I6D_PRIVATE_SOURCE_OCCURRENCE_BINDING_DESIGN=ACCEPTED_DESIGN_FREEZE
 I6D_PRIVATE_SOURCE_OCCURRENCE_BINDING_DESIGN_FINAL=YES
 I6D_PRIVATE_SOURCE_OCCURRENCE_BINDING_REMEDIATION_02=ACCEPTED_DESIGN_FREEZE
-I4_PRIVATE_SIDECAR_CONTRACT_ACCEPTED=YES_FOR_DESIGN_ONLY
-I4_PRIVATE_SIDECAR_IMPLEMENTATION=YES_PROJECTION_ONLY
-I4_PRIVATE_SIDECAR_CORRELATION_ENABLEMENT=NOT_IMPLEMENTED
+I4_PRIVATE_SIDECAR_CONTRACT_ACCEPTED=YES_IMPLEMENTED
+I4_PRIVATE_SIDECAR_IMPLEMENTATION=YES_PROJECTION_AND_CORRELATION
+I4_PRIVATE_SIDECAR_CORRELATION_ENABLEMENT=IMPLEMENTED_AND_ACCEPTED
+I4_FRAME_AUTHORITY=IMPLEMENTED_AND_ACCEPTED
+I4_FRAME_BOUND_BINDING_LIFETIME=IMPLEMENTED_AND_ACCEPTED
 I6G_COUNTER_CAPTURE_RETRY=NOT_AUTHORIZED
 I6G_LINK_CAPTURE=NOT_AUTHORIZED
 I6G_FRESH_PROCESS_A_B=NOT_AUTHORIZED

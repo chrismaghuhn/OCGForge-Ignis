@@ -471,6 +471,18 @@ var tests = new (string Name, Action Body)[]
         I6DCrossLocatorMappingAuthorityCharacterizationTests
             .TestDuplicateOwnHandI4StopsBeforeI6DBoundary),
 
+    ("I6D frame-owned cross-locator integration design",
+        I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
+            .TestFrameOwnedCrossLocatorIntegrationDesign),
+
+    ("I6D I6C3 locator map is transient and frame bound",
+        I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
+            .TestI6C3LocatorMapIsTransientAndFrameBound),
+
+    ("I6D model boundary has no current private handoff",
+        I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
+            .TestI6DModelBoundaryHasNoCurrentPrivateHandoff),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 

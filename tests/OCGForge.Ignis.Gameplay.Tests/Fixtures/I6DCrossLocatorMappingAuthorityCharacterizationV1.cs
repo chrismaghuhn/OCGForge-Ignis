@@ -429,7 +429,9 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
 
     internal const bool I4SidecarImplemented = true;
 
-    internal const bool I4SidecarAcceptedForDesignOnly = true;
+    internal const bool I4SidecarAcceptedForDesignOnly = false;
+
+    internal const bool I4SidecarImplementedAndAccepted = true;
 
     internal const bool I4SidecarImplementationAuthorized = true;
 
