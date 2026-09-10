@@ -41,6 +41,285 @@ internal readonly record struct I6DCrossLocatorMappingResultV1(
     bool IsSuccess,
     I6DCrossLocatorMappingObservationV1 Observation);
 
+internal enum I6DPrivateBindingFieldRoleV1 : byte
+{
+    Lifecycle = 0,
+    CandidateLookup = 1,
+    PrivateSourceOccurrence = 2,
+    SafeTarget = 3
+}
+
+internal readonly record struct I6DPrivateBindingFieldSpecV1(
+    string Name,
+    string TypeName,
+    I6DPrivateBindingFieldRoleV1 Role,
+    bool EntersPublicIdentity,
+    bool MayFeedPublicDescriptor);
+
+internal readonly record struct I6DPrivateBindingCaseV1(
+    string Name,
+    bool RequiresPrivateBinding,
+    int SourceOccurrenceCount,
+    bool SourceOccurrencesAreDistinct,
+    bool TargetLocatorsAreDistinct,
+    bool ExactTokenPathUnchanged,
+    bool PublicIdentityIndependentOfPrivateData);
+
+internal readonly record struct I6DPrivateBindingPrivacyProjectionV1(
+    uint PrivateSourceSequence,
+    string AcceptedTargetLocator,
+    string PublicDescriptor);
+
+internal static class I6DPrivateSourceOccurrenceBindingDesignV1
+{
+    private static readonly IReadOnlyList<I6DPrivateBindingFieldSpecV1>
+        fieldSpecs = Array.AsReadOnly(
+            new[]
+            {
+                new I6DPrivateBindingFieldSpecV1(
+                    "PromptInstanceOrdinal",
+                    "ulong",
+                    I6DPrivateBindingFieldRoleV1.Lifecycle,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "ContinuationStep",
+                    "int",
+                    I6DPrivateBindingFieldRoleV1.Lifecycle,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "FrameInstanceOrdinal",
+                    "ulong",
+                    I6DPrivateBindingFieldRoleV1.Lifecycle,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "AcceptedPublicProjectionId",
+                    "string",
+                    I6DPrivateBindingFieldRoleV1.Lifecycle,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "I4LocalCandidateKey",
+                    "string",
+                    I6DPrivateBindingFieldRoleV1.CandidateLookup,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "SourceSection",
+                    "FlatPromptSourceSectionV1",
+                    I6DPrivateBindingFieldRoleV1.CandidateLookup,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "SourceOrdinal",
+                    "int",
+                    I6DPrivateBindingFieldRoleV1.CandidateLookup,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "AbsoluteController",
+                    "byte",
+                    I6DPrivateBindingFieldRoleV1.PrivateSourceOccurrence,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "NormalizedZone",
+                    "MirrorZoneV1",
+                    I6DPrivateBindingFieldRoleV1.PrivateSourceOccurrence,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "SourceSequence",
+                    "uint",
+                    I6DPrivateBindingFieldRoleV1.PrivateSourceOccurrence,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "IsOverlay",
+                    "bool",
+                    I6DPrivateBindingFieldRoleV1.PrivateSourceOccurrence,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "OverlayIndex",
+                    "uint?",
+                    I6DPrivateBindingFieldRoleV1.PrivateSourceOccurrence,
+                    false,
+                    false),
+                new I6DPrivateBindingFieldSpecV1(
+                    "AcceptedI6C5TargetLocator",
+                    "PublicSemanticLocatorV1",
+                    I6DPrivateBindingFieldRoleV1.SafeTarget,
+                    false,
+                    true)
+            });
+
+    private static readonly IReadOnlyList<string> primaryLookupKey =
+        Array.AsReadOnly(
+            new[]
+            {
+                "PromptInstanceOrdinal",
+                "ContinuationStep",
+                "I4LocalCandidateKey"
+            });
+
+    private static readonly IReadOnlyList<string> candidateCrossChecks =
+        Array.AsReadOnly(
+            new[]
+            {
+                "SourceSection",
+                "SourceOrdinal"
+            });
+
+    private static readonly IReadOnlyList<string> invalidationRules =
+        Array.AsReadOnly(
+            new[]
+            {
+                "PromptInstanceOrdinalMismatch",
+                "ContinuationStepMismatch",
+                "FrameInstanceOrdinalMismatch",
+                "AcceptedPublicProjectionIdMismatch",
+                "CandidateKeyMismatch",
+                "SourceSectionOrOrdinalMismatch",
+                "MissingBinding",
+                "AmbiguousBinding",
+                "BindingKeyCollision",
+                "SourceOccurrenceCollision",
+                "TargetLocatorMissingOrNonUnique"
+            });
+
+    private static readonly IReadOnlyList<string> forbiddenCarrierData =
+        Array.AsReadOnly(
+            new[]
+            {
+                "PromptLocalCardCode",
+                "CardCode",
+                "MirrorEntityIdV1",
+                "ModernLocInfoV1",
+                "RawLocInfo",
+                "Pointer",
+                "ObjectHash",
+                "CollectionOrder"
+            });
+
+    private static readonly IReadOnlyList<I6DPrivateBindingCaseV1> cases =
+        Array.AsReadOnly(
+            new[]
+            {
+                new I6DPrivateBindingCaseV1(
+                    "OwnHandUnique",
+                    true,
+                    1,
+                    true,
+                    true,
+                    false,
+                    true),
+                new I6DPrivateBindingCaseV1(
+                    "OwnHandDuplicate",
+                    true,
+                    2,
+                    true,
+                    true,
+                    false,
+                    true),
+                new I6DPrivateBindingCaseV1(
+                    "OpponentPublicHand",
+                    false,
+                    1,
+                    true,
+                    true,
+                    true,
+                    true),
+                new I6DPrivateBindingCaseV1(
+                    "CrossPileSameCode",
+                    true,
+                    1,
+                    true,
+                    true,
+                    false,
+                    true)
+            });
+
+    internal const string CarrierName = "PrivateCrossLocatorBindingV1";
+
+    internal const string SemanticOwner =
+        "I6D OcgForgePublicCandidateBridgeV1";
+
+    internal const string AcquisitionSeam =
+        "Gameplay/I4 correlation before CompleteCorrelation";
+
+    internal const string ConsumptionSeam =
+        "accepted decision boundary -> OcgForgePublicCandidateBridgeV1.TryCreate";
+
+    internal const string BoundaryConstructionSeam =
+        "internal TryAccept(frame, completeProjection, completeBindings, out boundary, out error)";
+
+    internal const string BindingSetName =
+        "PrivateCrossLocatorBindingSetV1";
+
+    internal const string CarrierVisibility =
+        "internal immutable Gameplay-to-Model handoff";
+
+    internal const bool FrameInstanceOrdinalIsSessionOwned = true;
+
+    internal const bool FrameInstanceOrdinalIsCallerSupplied = false;
+
+    internal const bool PrivateBindingIsPublicType = false;
+
+    internal const bool PrivateBindingInPublicDescriptor = false;
+
+    internal const bool PrivateBindingInPublicActionKey = false;
+
+    internal const bool PrivateBindingInDomainDigest = false;
+
+    internal const bool PrivateBindingInModelInput = false;
+
+    internal const bool PrivateBindingInObservation = false;
+
+    internal const bool AcceptedTargetMayFeedPublicDescriptor = true;
+
+    internal const bool ExactTokenPathMayOmitPrivateBinding = true;
+
+    internal const bool NonEqualLocatorRequiresPrivateBinding = true;
+
+    internal const bool CompleteBindingSetIsAcceptedAtomically = true;
+
+    internal const bool BindingSetCompleteForRequiredCandidates = true;
+
+    internal const bool BindingSetHasNoExtraEntries = true;
+
+    internal const bool BindingSetIsDetachedCallerInput = false;
+
+    internal const bool RejectionRulesAreRequirementsOnly = true;
+
+    internal const bool MirrorEntityIdIsStored = false;
+
+    internal const bool RawProtocolAddressIsStored = false;
+
+    internal const bool HandSequenceIsPublicSubstitute = false;
+
+    internal const bool PromptCardCodeIsPublicSubstitute = false;
+
+    internal static IReadOnlyList<I6DPrivateBindingFieldSpecV1> Fields =>
+        fieldSpecs;
+
+    internal static IReadOnlyList<string> PrimaryLookupKey =>
+        primaryLookupKey;
+
+    internal static IReadOnlyList<string> CandidateCrossChecks =>
+        candidateCrossChecks;
+
+    internal static IReadOnlyList<string> InvalidationRules =>
+        invalidationRules;
+
+    internal static IReadOnlyList<string> ForbiddenCarrierData =>
+        forbiddenCarrierData;
+
+    internal static IReadOnlyList<I6DPrivateBindingCaseV1> Cases => cases;
+}
+
 internal static class I6DCrossLocatorMappingAuthorityCharacterizationV1
 {
     internal static I6DCrossLocatorMappingResultV1 Characterize(

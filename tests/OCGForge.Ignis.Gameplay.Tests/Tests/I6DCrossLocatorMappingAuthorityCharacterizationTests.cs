@@ -125,6 +125,205 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
         }
     }
 
+    internal static void TestPrivateSourceOccurrenceBindingDesignContract()
+    {
+        Equal(
+            "PrivateCrossLocatorBindingV1",
+            I6DPrivateSourceOccurrenceBindingDesignV1.CarrierName);
+        Equal(
+            "I6D OcgForgePublicCandidateBridgeV1",
+            I6DPrivateSourceOccurrenceBindingDesignV1.SemanticOwner);
+        Equal(
+            "Gameplay/I4 correlation before CompleteCorrelation",
+            I6DPrivateSourceOccurrenceBindingDesignV1.AcquisitionSeam);
+        Equal(
+            "accepted decision boundary -> OcgForgePublicCandidateBridgeV1.TryCreate",
+            I6DPrivateSourceOccurrenceBindingDesignV1.ConsumptionSeam);
+        Equal(
+            "internal TryAccept(frame, completeProjection, completeBindings, out boundary, out error)",
+            I6DPrivateSourceOccurrenceBindingDesignV1
+                .BoundaryConstructionSeam);
+        Equal(
+            "PrivateCrossLocatorBindingSetV1",
+            I6DPrivateSourceOccurrenceBindingDesignV1.BindingSetName);
+        Equal(
+            "internal immutable Gameplay-to-Model handoff",
+            I6DPrivateSourceOccurrenceBindingDesignV1.CarrierVisibility);
+
+        string[] expectedFields =
+        {
+            "PromptInstanceOrdinal",
+            "ContinuationStep",
+            "FrameInstanceOrdinal",
+            "AcceptedPublicProjectionId",
+            "I4LocalCandidateKey",
+            "SourceSection",
+            "SourceOrdinal",
+            "AbsoluteController",
+            "NormalizedZone",
+            "SourceSequence",
+            "IsOverlay",
+            "OverlayIndex",
+            "AcceptedI6C5TargetLocator"
+        };
+        True(I6DPrivateSourceOccurrenceBindingDesignV1.Fields
+            .Select(field => field.Name)
+            .SequenceEqual(expectedFields));
+
+        I6DPrivateBindingFieldSpecV1[] fields =
+            I6DPrivateSourceOccurrenceBindingDesignV1.Fields.ToArray();
+        True(fields.Take(4).All(field =>
+            field.Role == I6DPrivateBindingFieldRoleV1.Lifecycle));
+        True(fields.Skip(4).Take(3).All(field =>
+            field.Role == I6DPrivateBindingFieldRoleV1.CandidateLookup));
+        True(fields.Skip(7).Take(5).All(field =>
+            field.Role == I6DPrivateBindingFieldRoleV1.PrivateSourceOccurrence));
+        Equal(
+            I6DPrivateBindingFieldRoleV1.SafeTarget,
+            fields[^1].Role);
+        Equal("uint?", fields[11].TypeName);
+        Equal("PublicSemanticLocatorV1", fields[^1].TypeName);
+        True(fields[^1].MayFeedPublicDescriptor);
+        False(fields.Any(field => field.EntersPublicIdentity));
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .AcceptedTargetMayFeedPublicDescriptor);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .ExactTokenPathMayOmitPrivateBinding);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .NonEqualLocatorRequiresPrivateBinding);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .PrivateBindingInPublicDescriptor);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .PrivateBindingInPublicActionKey);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .PrivateBindingInDomainDigest);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .PrivateBindingInModelInput);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .PrivateBindingInObservation);
+
+        string[] expectedLookupKey =
+        {
+            "PromptInstanceOrdinal",
+            "ContinuationStep",
+            "I4LocalCandidateKey"
+        };
+        True(I6DPrivateSourceOccurrenceBindingDesignV1.PrimaryLookupKey
+            .SequenceEqual(expectedLookupKey));
+        True(I6DPrivateSourceOccurrenceBindingDesignV1.CandidateCrossChecks
+            .SequenceEqual(new[] { "SourceSection", "SourceOrdinal" }));
+
+        string[] expectedInvalidations =
+        {
+            "PromptInstanceOrdinalMismatch",
+            "ContinuationStepMismatch",
+            "FrameInstanceOrdinalMismatch",
+            "AcceptedPublicProjectionIdMismatch",
+            "CandidateKeyMismatch",
+            "SourceSectionOrOrdinalMismatch",
+            "MissingBinding",
+            "AmbiguousBinding",
+            "BindingKeyCollision",
+            "SourceOccurrenceCollision",
+            "TargetLocatorMissingOrNonUnique"
+        };
+        True(I6DPrivateSourceOccurrenceBindingDesignV1.InvalidationRules
+            .SequenceEqual(expectedInvalidations));
+
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .FrameInstanceOrdinalIsSessionOwned);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .FrameInstanceOrdinalIsCallerSupplied);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .PrivateBindingIsPublicType);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .CompleteBindingSetIsAcceptedAtomically);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .BindingSetCompleteForRequiredCandidates);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .BindingSetHasNoExtraEntries);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .BindingSetIsDetachedCallerInput);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
+            .RejectionRulesAreRequirementsOnly);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .MirrorEntityIdIsStored);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .RawProtocolAddressIsStored);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .HandSequenceIsPublicSubstitute);
+        False(I6DPrivateSourceOccurrenceBindingDesignV1
+            .PromptCardCodeIsPublicSubstitute);
+
+        string[] forbiddenCarrierData =
+        {
+            "PromptLocalCardCode",
+            "CardCode",
+            "MirrorEntityIdV1",
+            "ModernLocInfoV1",
+            "RawLocInfo",
+            "Pointer",
+            "ObjectHash",
+            "CollectionOrder"
+        };
+        True(I6DPrivateSourceOccurrenceBindingDesignV1.ForbiddenCarrierData
+            .SequenceEqual(forbiddenCarrierData));
+
+        Equal(4, I6DPrivateSourceOccurrenceBindingDesignV1.Cases.Count);
+        True(I6DPrivateSourceOccurrenceBindingDesignV1.Cases.All(
+            value => value.PublicIdentityIndependentOfPrivateData));
+
+        I6DPrivateBindingCaseV1 unique =
+            I6DPrivateSourceOccurrenceBindingDesignV1.Cases.Single(
+                value => value.Name == "OwnHandUnique");
+        True(unique.RequiresPrivateBinding);
+        Equal(1, unique.SourceOccurrenceCount);
+        True(unique.SourceOccurrencesAreDistinct);
+        False(unique.ExactTokenPathUnchanged);
+
+        I6DPrivateBindingCaseV1 duplicate =
+            I6DPrivateSourceOccurrenceBindingDesignV1.Cases.Single(
+                value => value.Name == "OwnHandDuplicate");
+        True(duplicate.RequiresPrivateBinding);
+        Equal(2, duplicate.SourceOccurrenceCount);
+        True(duplicate.SourceOccurrencesAreDistinct);
+        True(duplicate.TargetLocatorsAreDistinct);
+        True(duplicate.PublicIdentityIndependentOfPrivateData);
+
+        I6DPrivateBindingCaseV1 opponentHand =
+            I6DPrivateSourceOccurrenceBindingDesignV1.Cases.Single(
+                value => value.Name == "OpponentPublicHand");
+        False(opponentHand.RequiresPrivateBinding);
+        True(opponentHand.ExactTokenPathUnchanged);
+
+        I6DPrivateBindingCaseV1 crossPile =
+            I6DPrivateSourceOccurrenceBindingDesignV1.Cases.Single(
+                value => value.Name == "CrossPileSameCode");
+        True(crossPile.RequiresPrivateBinding);
+        True(crossPile.TargetLocatorsAreDistinct);
+        False(crossPile.ExactTokenPathUnchanged);
+
+        I6DPrivateBindingPrivacyProjectionV1 privacyA = new(
+            3,
+            "p0:HAND:3",
+            "choice=SUMMON;target=p0:HAND:3");
+        I6DPrivateBindingPrivacyProjectionV1 privacyB = new(
+            8,
+            "p0:HAND:3",
+            "choice=SUMMON;target=p0:HAND:3");
+        NotEqual(
+            privacyA.PrivateSourceSequence,
+            privacyB.PrivateSourceSequence);
+        Equal(privacyA.AcceptedTargetLocator, privacyB.AcceptedTargetLocator);
+        Equal(privacyA.PublicDescriptor, privacyB.PublicDescriptor);
+
+        Type? accidentalProductionCarrier =
+            typeof(CurrentFlatPromptBindingV1).Assembly.GetType(
+                "OCGForge.Ignis.Gameplay.PrivateCrossLocatorBindingV1",
+                throwOnError: false);
+        Null(accidentalProductionCarrier);
+    }
+
     private static bool ContainsType(Type value, IReadOnlyList<Type> forbidden)
     {
         if (forbidden.Contains(value))

@@ -463,6 +463,10 @@ var tests = new (string Name, Action Body)[]
         I6DCrossLocatorMappingAuthorityCharacterizationTests
             .TestExistingPromptBindingHasNoPrivateOccurrenceSeam),
 
+    ("I6D private source occurrence binding design contract",
+        I6DCrossLocatorMappingAuthorityCharacterizationTests
+            .TestPrivateSourceOccurrenceBindingDesignContract),
+
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 
