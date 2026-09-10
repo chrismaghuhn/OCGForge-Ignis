@@ -997,11 +997,13 @@ public static class PerspectiveSafePublicFrameSourceV1
                 ? result
                 : left.SourceSequence.CompareTo(right.SourceSequence);
         });
-        Dictionary<(byte Controller, uint CardCode), uint> ordinalCounters = new();
+        Dictionary<
+            (byte Controller, PerspectiveSafeSemanticZoneV1 Zone, uint CardCode),
+            uint> ordinalCounters = new();
         foreach (I6C3OrdinalCandidate candidate in ordinalCandidates)
         {
-            (byte Controller, uint CardCode) key =
-                (candidate.Controller, candidate.CardCode);
+            (byte Controller, PerspectiveSafeSemanticZoneV1 Zone, uint CardCode) key =
+                (candidate.Controller, candidate.Zone, candidate.CardCode);
             if (!ordinalCounters.TryGetValue(key, out uint ordinal))
             {
                 ordinal = 0;
@@ -2265,11 +2267,15 @@ public static class PerspectiveSafePublicFrameSourceV1
                 PerspectiveSafeSemanticZoneV1.Hand ? 0 : 1)
             .ThenBy(candidate => candidate.SourceSequence)
             .ToList();
-        Dictionary<(byte Controller, uint CardCode), uint> ordinalCounters = new();
+        Dictionary<
+            (byte Controller, PerspectiveSafeSemanticZoneV1 Zone, uint CardCode),
+            uint> ordinalCounters = new();
         foreach (I6C2EntityCandidate candidate in ordinalCandidates)
         {
-            (byte Controller, uint CardCode) key =
-                (candidate.AbsoluteController, candidate.CardCode!.Value);
+            (byte Controller, PerspectiveSafeSemanticZoneV1 Zone, uint CardCode) key =
+                (candidate.AbsoluteController,
+                 candidate.SemanticZone,
+                 candidate.CardCode!.Value);
             if (!ordinalCounters.TryGetValue(key, out uint ordinal))
             {
                 ordinal = 0;

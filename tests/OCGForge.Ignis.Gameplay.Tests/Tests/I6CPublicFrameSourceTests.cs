@@ -4173,7 +4173,7 @@ internal static class I6CPublicFrameSourceTests
             FindEntity(source, "p1:HAND:public:512:0").Passcode!.Value);
         Equal(
             (uint)0x100,
-            FindEntity(source, "p1:EXTRA_DECK:public:256:1").Passcode!.Value);
+            FindEntity(source, "p1:EXTRA_DECK:public:256:0").Passcode!.Value);
     }
 
     private static void AssertI6C3OverlayRelationSource()
