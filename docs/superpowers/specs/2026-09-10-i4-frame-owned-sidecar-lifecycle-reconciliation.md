@@ -76,12 +76,14 @@ serialization:
     none
 ```
 
-The owner creates ordinal `0` when the initial `MSG_START` mirror state is
-committed. Each successful state-message `Mirror.Apply` commit creates the
-next checked ordinal exactly once. Presentation-only packets, failed applies,
-projection reads, prompt acceptance, response encoding, and response writes
-do not create a new frame. Overflow or any failed boundary rejects the
-operation and does not reuse an ordinal.
+`PerspectiveStateMirrorV1.TryCreate(MSG_START)` consumes the initial start
+message and returns an already initialized mirror. `GameplayMirrorSessionV1`
+then binds that existing mirror at construction and establishes private frame
+ordinal `0`. Each successful subsequent state-message `Mirror.Apply` commit
+creates the next checked ordinal exactly once. Presentation-only packets,
+failed applies, projection reads, prompt acceptance, response encoding, and
+response writes do not create a new frame. Overflow or any failed boundary
+rejects the operation and does not reuse an ordinal.
 
 The frame authority is immutable and is valid only until the next successful
 mirror commit, a failed gameplay/projection boundary, or session disposal.
@@ -132,7 +134,8 @@ occurrence fields.
 The future implementation must prove:
 
 ```text
-INITIAL_MSG_START_COMMIT_ORDINAL=0
+INITIALIZED_MIRROR_BOUND_AT_SESSION_CONSTRUCTION=FRAME_0
+MIRROR_APPLY_START_AFTER_CREATION=DuplicatePerspective
 SUCCESSFUL_STATE_COMMIT=NEXT_ORDINAL_EXACTLY_ONCE
 PRESENTATION_PACKET_DOES_NOT_ADVANCE=PASS
 FAILED_APPLY_DOES_NOT_ADVANCE=PASS

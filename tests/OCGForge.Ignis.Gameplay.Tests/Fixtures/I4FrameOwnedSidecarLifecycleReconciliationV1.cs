@@ -25,7 +25,7 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationV1
     internal const string ProposedCoordinate = "ulong FrameInstanceOrdinal";
 
     internal const string ProposedCreationBoundary =
-        "initial MSG_START or one successful state-message mirror commit";
+        "PerspectiveStateMirrorV1.TryCreate(MSG_START) -> GameplayMirrorSessionV1 binds existing mirror -> FRAME_0";
 
     internal const string ProposedNonCreationEvents =
         "presentation packet, failed apply, projection read, prompt acceptance";

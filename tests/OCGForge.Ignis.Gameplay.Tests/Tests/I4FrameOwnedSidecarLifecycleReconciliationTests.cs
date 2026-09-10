@@ -1,5 +1,6 @@
 using System.Reflection;
 using OCGForge.Ignis.Gameplay;
+using OCGForge.Ignis.Protocol;
 using OCGForge.Ignis.Gameplay.Tests.Fixtures;
 using static OCGForge.Ignis.Gameplay.Tests.GameplayMessageFixtures;
 using static OCGForge.Ignis.Gameplay.Tests.MirrorFixtures;
@@ -94,6 +95,41 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
                 .StaleFrameRejection);
     }
 
+    internal static void TestInitialFrameBindsExistingInitializedMirror()
+    {
+        (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
+            CreateMirror(
+                0,
+                deckCount0: 2,
+                extraCount0: 1,
+                deckCount1: 2,
+                extraCount1: 1);
+        _ = decoder;
+        GameplayMessageDecodeResult duplicateStart =
+            new GameplayMessageDecoderV1().Decode(
+            new StocGameMessagePayload(
+                CreateStartBytes(
+                    0,
+                    deckCount0: 2,
+                    extraCount0: 1,
+                    deckCount1: 2,
+                    extraCount1: 1)));
+        True(duplicateStart.IsSuccess, duplicateStart.Error.ToString());
+        MirrorApplyResult applied = mirror.Apply(duplicateStart.Message!);
+        False(applied.IsSuccess);
+        Equal(GameplayErrorCode.DuplicatePerspective, applied.Error);
+
+        ConstructorInfo[] constructors = typeof(GameplayMirrorSessionV1)
+            .GetConstructors(BindingFlags.Instance | BindingFlags.Public);
+        True(constructors.Any(constructor =>
+            constructor.GetParameters().Any(parameter =>
+                parameter.ParameterType == typeof(PerspectiveStateMirrorV1))));
+        Equal(
+            "PerspectiveStateMirrorV1.TryCreate(MSG_START) -> GameplayMirrorSessionV1 binds existing mirror -> FRAME_0",
+            I4FrameOwnedSidecarLifecycleReconciliationV1
+                .ProposedCreationBoundary);
+    }
+
     internal static void TestCurrentI5SidecarEnablementIsOutOfScope()
     {
         const uint cardCode = 0x11223344;
@@ -134,7 +170,7 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
             "ulong FrameInstanceOrdinal",
             I4FrameOwnedSidecarLifecycleReconciliationV1.ProposedCoordinate);
         Equal(
-            "initial MSG_START or one successful state-message mirror commit",
+            "PerspectiveStateMirrorV1.TryCreate(MSG_START) -> GameplayMirrorSessionV1 binds existing mirror -> FRAME_0",
             I4FrameOwnedSidecarLifecycleReconciliationV1
                 .ProposedCreationBoundary);
         Equal(

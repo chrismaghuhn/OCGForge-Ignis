@@ -513,6 +513,10 @@ var tests = new (string Name, Action Body)[]
         I4FrameOwnedSidecarLifecycleReconciliationTests
             .TestCurrentSidecarFrameOrdinalIsSelfAuthenticated),
 
+    ("I4 initial frame binds existing initialized mirror",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestInitialFrameBindsExistingInitializedMirror),
+
     ("I4 current I5 sidecar enablement is out of scope",
         I4FrameOwnedSidecarLifecycleReconciliationTests
             .TestCurrentI5SidecarEnablementIsOutOfScope),
