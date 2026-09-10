@@ -89,6 +89,13 @@ previous in-memory authority token is explicitly invalidated at each such
 boundary. It is never derived from wall time, PID, process order, object identity,
 allocation order, TCP chunking, dictionary iteration, or a random UUID.
 
+The authority also owns a private non-async lifecycle lease. A frame-owned
+prompt holds that lease through projection validation and prompt binding, while
+the session acquires the same lease before applying a state message and
+replacing the current frame. This makes the validation-to-commit sequence
+atomic with respect to a concurrent mirror advance; a second current check is
+not used as a substitute for the transaction.
+
 ## Implemented consumer seam
 
 The frame owner must pass the current frame authority independently of the

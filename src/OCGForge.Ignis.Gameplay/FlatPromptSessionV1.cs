@@ -103,39 +103,60 @@ public sealed class FlatPromptSessionV1
         PrivateGameplayFrameAuthorityV1? currentFrame,
         PublicStateProjectionResultV1? acceptedProjection)
     {
-        if (!FlatPromptProjectionV1.TryParseWireDraft(
-                completeInnerGameMessage,
-                out FlatPromptWireDraftV1? wireDraft,
-                out FlatPromptErrorCodeV1 parseError) ||
-            wireDraft is null)
-        {
-            currentBinding = null;
-            return FlatPromptProjectionResultV1.Failure(parseError);
-        }
-
-        if (currentFrame is null ||
-            acceptedProjection is null ||
-            !acceptedProjection.IsSuccess ||
-            acceptedProjection.Snapshot is null)
+        if (currentFrame is null)
         {
             currentBinding = null;
             return FlatPromptProjectionResultV1.Failure(
                 FlatPromptErrorCodeV1.UnprovenPublicReference);
         }
 
-        if (!currentFrame.IsCurrent)
+        PrivateGameplayFrameAuthorityLeaseV1? lease =
+            currentFrame.TryAcquire();
+        if (lease is null)
         {
             currentBinding = null;
             return FlatPromptProjectionResultV1.Failure(
                 FlatPromptErrorCodeV1.AuthorityMismatch);
         }
 
+        using (lease)
+        {
+            return TryAcceptFrameOwnedPromptCore(
+                completeInnerGameMessage,
+                currentFrame,
+                acceptedProjection);
+        }
+    }
+
+    private FlatPromptProjectionResultV1 TryAcceptFrameOwnedPromptCore(
+        ReadOnlySpan<byte> completeInnerGameMessage,
+        PrivateGameplayFrameAuthorityV1 currentFrame,
+        PublicStateProjectionResultV1? acceptedProjection)
+    {
+        if (!FlatPromptProjectionV1.TryParseWireDraft(
+                completeInnerGameMessage,
+                out FlatPromptWireDraftV1? wireDraft,
+                out FlatPromptErrorCodeV1 parseError) ||
+            wireDraft is null)
+        {
+            return FailFrameOwned(currentFrame, parseError);
+        }
+
+        if (acceptedProjection is null ||
+            !acceptedProjection.IsSuccess ||
+            acceptedProjection.Snapshot is null)
+        {
+            return FailFrameOwned(
+                currentFrame,
+                FlatPromptErrorCodeV1.UnprovenPublicReference);
+        }
+
         PrivateI4OccurrencePublicLocatorSidecarV1? acceptedSidecar =
             acceptedProjection.PrivateOccurrenceSidecar;
         if (acceptedSidecar is null)
         {
-            currentBinding = null;
-            return FlatPromptProjectionResultV1.Failure(
+            return FailFrameOwned(
+                currentFrame,
                 FlatPromptErrorCodeV1.UnprovenPublicReference);
         }
 
@@ -146,8 +167,8 @@ public sealed class FlatPromptSessionV1
                 acceptedProjection.PublicProjectionId,
                 StringComparison.Ordinal))
         {
-            currentBinding = null;
-            return FlatPromptProjectionResultV1.Failure(
+            return FailFrameOwned(
+                currentFrame,
                 FlatPromptErrorCodeV1.AuthorityMismatch);
         }
 
@@ -174,8 +195,8 @@ public sealed class FlatPromptSessionV1
             !acceptedSidecar.IsEquivalentTo(
                 recomputedProjection.PrivateOccurrenceSidecar))
         {
-            currentBinding = null;
-            return FlatPromptProjectionResultV1.Failure(
+            return FailFrameOwned(
+                currentFrame,
                 FlatPromptErrorCodeV1.AuthorityMismatch);
         }
 
@@ -189,18 +210,13 @@ public sealed class FlatPromptSessionV1
                 out FlatPromptErrorCodeV1 projectionError) ||
             projected is null)
         {
-            currentBinding = null;
-            return FlatPromptProjectionResultV1.Failure(projectionError);
+            return FailFrameOwned(currentFrame, projectionError);
         }
 
-        if (!currentFrame.IsCurrent)
-        {
-            currentBinding = null;
-            return FlatPromptProjectionResultV1.Failure(
-                FlatPromptErrorCodeV1.AuthorityMismatch);
-        }
-
-        return CommitProjection(projected);
+        FlatPromptProjectionResultV1 committed = CommitProjection(projected);
+        return committed.IsSuccess
+            ? committed
+            : FailFrameOwned(currentFrame, committed.Error);
     }
 
     public FlatPromptProjectionResultV1 TryAcceptI5Prompt(
@@ -723,6 +739,15 @@ public sealed class FlatPromptSessionV1
         currentBinding = binding;
         nextPromptOrdinal = nextOrdinal;
         return result;
+    }
+
+    private FlatPromptProjectionResultV1 FailFrameOwned(
+        PrivateGameplayFrameAuthorityV1 currentFrame,
+        FlatPromptErrorCodeV1 error)
+    {
+        currentFrame.Invalidate();
+        currentBinding = null;
+        return FlatPromptProjectionResultV1.Failure(error);
     }
 
     internal bool TryCaptureSelection(

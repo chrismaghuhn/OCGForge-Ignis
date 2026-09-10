@@ -533,6 +533,14 @@ var tests = new (string Name, Action Body)[]
         I4FrameOwnedSidecarLifecycleReconciliationTests
             .TestFailedApplyDoesNotAdvanceFrameOrdinal),
 
+    ("I4 failed projection invalidates frame authority",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestFailedProjectionInvalidatesFrameAuthority),
+
+    ("I4 failed frame-owned prompt invalidates frame authority",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestFailedFrameOwnedPromptInvalidatesFrameAuthority),
+
     ("I4 frame authority has safe lifecycle",
         I4FrameOwnedSidecarLifecycleReconciliationTests
             .TestFrameAuthorityHasSafeLifecycle),

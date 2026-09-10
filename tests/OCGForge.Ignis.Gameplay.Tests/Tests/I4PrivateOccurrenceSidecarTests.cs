@@ -1,8 +1,10 @@
 using System.Reflection;
 using OCGForge.Ignis.Gameplay;
+using OCGForge.Ignis.Protocol;
 using static OCGForge.Ignis.Gameplay.Tests.GameplayMessageFixtures;
 using static OCGForge.Ignis.Gameplay.Tests.MirrorFixtures;
 using static OCGForge.Ignis.Gameplay.Tests.TestAssert;
+using static OCGForge.Ignis.Gameplay.Tests.TransportFixtures;
 
 namespace OCGForge.Ignis.Gameplay.Tests;
 
@@ -216,61 +218,68 @@ internal static class I4PrivateOccurrenceSidecarTests
     internal static void TestDuplicateOwnHandPromptUsesSidecarCorrelation()
     {
         const uint duplicateCardCode = 0x11223344;
-        (PerspectiveStateMirrorV1 mirror,
+        (GameplayMirrorSessionV1 gameplaySession,
+            GameplayHandoffConsumerV1 consumer,
+            PrivateGameplayFrameAuthorityV1 currentFrame,
             PublicStateProjectionResultV1 projection) =
-            CreateDuplicateOwnHandFrameAuthority(duplicateCardCode);
-        PrivateGameplayFrameAuthorityV1 currentFrame =
-            new(
-                projection.PrivateOccurrenceSidecar!.FrameInstanceOrdinal,
-                mirror.Snapshot);
+            CreateDuplicateOwnHandGameplaySession(duplicateCardCode);
 
-        FlatPromptSessionV1 session = new();
-        FlatPromptProjectionResultV1 result = session.TryAcceptFrameOwnedPrompt(
-            DuplicateOwnHandIdleMessage(duplicateCardCode),
-            currentFrame,
-            projection);
+        try
+        {
+            FlatPromptSessionV1 session = new();
+            FlatPromptProjectionResultV1 result =
+                session.TryAcceptFrameOwnedPrompt(
+                    DuplicateOwnHandIdleMessage(duplicateCardCode),
+                    currentFrame,
+                    projection);
 
-        True(result.IsSuccess, result.Error.ToString());
-        NotNull(result.Context);
-        NotNull(result.Candidates);
-        Equal(2, result.Candidates!.Count);
-        FlatIdleSummonCardCodePublicCandidateV1[] candidates = result.Candidates
-            .Cast<FlatIdleSummonCardCodePublicCandidateV1>()
-            .ToArray();
-        Equal(
-            "p0:HAND:public:287454020:0",
-            candidates[0].PublicSemanticCardLocator.Value);
-        Equal(
-            "p0:HAND:public:287454020:1",
-            candidates[1].PublicSemanticCardLocator.Value);
+            True(result.IsSuccess, result.Error.ToString());
+            NotNull(result.Context);
+            NotNull(result.Candidates);
+            Equal(2, result.Candidates!.Count);
+            FlatIdleSummonCardCodePublicCandidateV1[] candidates = result.Candidates
+                .Cast<FlatIdleSummonCardCodePublicCandidateV1>()
+                .ToArray();
+            Equal(
+                "p0:HAND:public:287454020:0",
+                candidates[0].PublicSemanticCardLocator.Value);
+            Equal(
+                "p0:HAND:public:287454020:1",
+                candidates[1].PublicSemanticCardLocator.Value);
 
-        True(session.TryCaptureSelection(
-            candidates[0].I4LocalCandidateKey,
-            out FlatPromptSelectionHandleV1? firstHandle,
-            out FlatPromptErrorCodeV1 firstCaptureError),
-            firstCaptureError.ToString());
-        True(session.TryResolveSelection(
-            firstHandle,
-            out FlatPromptResponseResolutionV1 firstResponse,
-            out FlatPromptErrorCodeV1 firstResolveError),
-            firstResolveError.ToString());
-        Equal(0, firstResponse.ResponseI32);
+            True(session.TryCaptureSelection(
+                candidates[0].I4LocalCandidateKey,
+                out FlatPromptSelectionHandleV1? firstHandle,
+                out FlatPromptErrorCodeV1 firstCaptureError),
+                firstCaptureError.ToString());
+            True(session.TryResolveSelection(
+                firstHandle,
+                out FlatPromptResponseResolutionV1 firstResponse,
+                out FlatPromptErrorCodeV1 firstResolveError),
+                firstResolveError.ToString());
+            Equal(0, firstResponse.ResponseI32);
 
-        True(session.TryAcceptFrameOwnedPrompt(
-            DuplicateOwnHandIdleMessage(duplicateCardCode),
-            currentFrame,
-            projection).IsSuccess);
-        True(session.TryCaptureSelection(
-            candidates[1].I4LocalCandidateKey,
-            out FlatPromptSelectionHandleV1? secondHandle,
-            out FlatPromptErrorCodeV1 secondCaptureError),
-            secondCaptureError.ToString());
-        True(session.TryResolveSelection(
-            secondHandle,
-            out FlatPromptResponseResolutionV1 secondResponse,
-            out FlatPromptErrorCodeV1 secondResolveError),
-            secondResolveError.ToString());
-        Equal(65536, secondResponse.ResponseI32);
+            True(session.TryAcceptFrameOwnedPrompt(
+                DuplicateOwnHandIdleMessage(duplicateCardCode),
+                currentFrame,
+                projection).IsSuccess);
+            True(session.TryCaptureSelection(
+                candidates[1].I4LocalCandidateKey,
+                out FlatPromptSelectionHandleV1? secondHandle,
+                out FlatPromptErrorCodeV1 secondCaptureError),
+                secondCaptureError.ToString());
+            True(session.TryResolveSelection(
+                secondHandle,
+                out FlatPromptResponseResolutionV1 secondResponse,
+                out FlatPromptErrorCodeV1 secondResolveError),
+                secondResolveError.ToString());
+            Equal(65536, secondResponse.ResponseI32);
+        }
+        finally
+        {
+            gameplaySession.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
     }
 
     internal static void TestSidecarProjectionIdentityMismatchFailsClosed()
@@ -536,6 +545,74 @@ internal static class I4PrivateOccurrenceSidecarTests
         True(projection.IsSuccess, projection.Error.ToString());
         NotNull(projection.PrivateOccurrenceSidecar);
         return (mirror, projection);
+    }
+
+    private static (
+        GameplayMirrorSessionV1 Session,
+        GameplayHandoffConsumerV1 Consumer,
+        PrivateGameplayFrameAuthorityV1 Authority,
+        PublicStateProjectionResultV1 Projection)
+        CreateDuplicateOwnHandGameplaySession(uint duplicateCardCode)
+    {
+        byte[] startFrame = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            CreateStartBytes(
+                0,
+                deckCount0: 2,
+                extraCount0: 0,
+                deckCount1: 0,
+                extraCount1: 0));
+        ModernLocInfoV1 empty = new(0, 0, 0, 0);
+        byte[] firstMove = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            MoveMessage(
+                duplicateCardCode,
+                empty,
+                new ModernLocInfoV1(0, 0x02, 0, 0x08),
+                0));
+        byte[] secondMove = WireFrameCodec.EncodeStoc(
+            StocPacketType.GameMsg,
+            MoveMessage(
+                duplicateCardCode,
+                empty,
+                new ModernLocInfoV1(0, 0x02, 1, 0x08),
+                0));
+        TestTransport transport = new(new[]
+        {
+            Join(startFrame, firstMove, secondMove)
+        });
+        GameplayHandoffAcquireResult acquired =
+            GameplayHandoffConsumerV1.TryCreate(
+                CreateHandoff(transport, Array.Empty<byte>()));
+        True(acquired.IsSuccess, acquired.Error.ToString());
+        GameplayHandoffConsumerV1 consumer = acquired.Consumer!;
+        GameplayPumpResult first = consumer.PumpAsync(
+            CancellationToken.None).GetAwaiter().GetResult();
+        True(first.IsSuccess, first.Error.ToString());
+        MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
+            first.Message!,
+            first.Perspective!);
+        True(created.IsSuccess, created.Error.ToString());
+        GameplayMirrorSessionV1 session = new(
+            first.Session!,
+            created.Mirror!);
+        GameplayMirrorPumpResult firstMoveResult = session.PumpAsync(
+            CancellationToken.None).GetAwaiter().GetResult();
+        True(firstMoveResult.IsSuccess, firstMoveResult.Error.ToString());
+        GameplayMirrorPumpResult secondMoveResult = session.PumpAsync(
+            CancellationToken.None).GetAwaiter().GetResult();
+        True(secondMoveResult.IsSuccess, secondMoveResult.Error.ToString());
+        True(session.TryGetCurrentFrameAuthority(
+            out PrivateGameplayFrameAuthorityV1? authority));
+        NotNull(authority);
+        PublicStateProjectionResultV1 projection =
+            PublicStateProjectionV1.TryProject(
+                authority!.MirrorSnapshot,
+                new PublicStateProjectionContextV1(0),
+                authority.FrameInstanceOrdinal);
+        True(projection.IsSuccess, projection.Error.ToString());
+        NotNull(projection.PrivateOccurrenceSidecar);
+        return (session, consumer, authority, projection);
     }
 
     private static void AssertSidecarCorrelationFailure(

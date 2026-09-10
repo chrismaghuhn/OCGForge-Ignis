@@ -228,7 +228,12 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
             NotNull(initialFrame);
             Equal(0ul, initialFrame!.FrameInstanceOrdinal);
 
-            _ = session.TryCreateI6C5Frame();
+            PublicStateProjectionResultV1 initialProjection =
+                PublicStateProjectionV1.TryProject(
+                    initialFrame.MirrorSnapshot,
+                    new PublicStateProjectionContextV1(0),
+                    initialFrame.FrameInstanceOrdinal);
+            True(initialProjection.IsSuccess, initialProjection.Error.ToString());
             True(session.TryGetCurrentFrameAuthority(
                 out PrivateGameplayFrameAuthorityV1? afterProjection));
             NotNull(afterProjection);
@@ -317,6 +322,70 @@ internal static class I4FrameOwnedSidecarLifecycleReconciliationTests
                     "frameInstanceOrdinal",
                     BindingFlags.Instance | BindingFlags.NonPublic)!;
             Equal(1ul, frameOrdinalField.GetValue(session));
+            False(session.TryGetCurrentFrameAuthority(out _));
+        }
+        finally
+        {
+            session.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestFailedProjectionInvalidatesFrameAuthority()
+    {
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateGameplaySession();
+        try
+        {
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? authority));
+            NotNull(authority);
+            Equal(0ul, authority!.FrameInstanceOrdinal);
+
+            PerspectiveSafeFrameSourceResultV1 projection =
+                session.TryCreateI6C5Frame();
+            False(projection.IsSuccess);
+            Equal(
+                PerspectiveSafeFrameSourceErrorCodeV1.MissingMatchContext,
+                projection.Error!.Value.Code);
+            False(authority.IsCurrent);
+            False(session.TryGetCurrentFrameAuthority(out _));
+        }
+        finally
+        {
+            session.DisposeAsync().GetAwaiter().GetResult();
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestFailedFrameOwnedPromptInvalidatesFrameAuthority()
+    {
+        (GameplayMirrorSessionV1 session,
+            GameplayHandoffConsumerV1 consumer) =
+            CreateGameplaySession();
+        try
+        {
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? authority));
+            NotNull(authority);
+            PublicStateProjectionResultV1 projection =
+                PublicStateProjectionV1.TryProject(
+                    authority!.MirrorSnapshot,
+                    new PublicStateProjectionContextV1(0),
+                    authority.FrameInstanceOrdinal);
+            True(projection.IsSuccess, projection.Error.ToString());
+
+            FlatPromptProjectionResultV1 result =
+                new FlatPromptSessionV1().TryAcceptFrameOwnedPrompt(
+                    SingleOwnHandIdleMessage(0x11223344),
+                    authority,
+                    projection);
+            False(result.IsSuccess);
+            Equal(
+                FlatPromptErrorCodeV1.UnprovenPublicReference,
+                result.Error);
+            False(authority.IsCurrent);
             False(session.TryGetCurrentFrameAuthority(out _));
         }
         finally

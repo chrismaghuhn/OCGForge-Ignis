@@ -119,7 +119,8 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
         try
         {
             authority = null;
-            if (Volatile.Read(ref terminal) != 0)
+            if (Volatile.Read(ref terminal) != 0 ||
+                !currentFrameAuthority.IsCurrent)
             {
                 return false;
             }
@@ -138,10 +139,36 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
         operationGate.Wait();
         try
         {
-            return PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
+            if (Volatile.Read(ref terminal) != 0 ||
+                !currentFrameAuthority.IsCurrent)
+            {
+                return PerspectiveSafeFrameSourceResultV1.Failure(
+                    new PerspectiveSafeFrameSourceErrorV1(
+                        PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                        PerspectiveSafeSourceSectionV1.Input));
+            }
+
+            using PrivateGameplayFrameAuthorityLeaseV1? lease =
+                currentFrameAuthority.TryAcquire();
+            if (lease is null)
+            {
+                return PerspectiveSafeFrameSourceResultV1.Failure(
+                    new PerspectiveSafeFrameSourceErrorV1(
+                        PerspectiveSafeFrameSourceErrorCodeV1.InvalidMirrorSnapshot,
+                        PerspectiveSafeSourceSectionV1.Input));
+            }
+
+            PerspectiveSafeFrameSourceResultV1 result =
+                PerspectiveSafePublicFrameSourceV1.TryCreateI6C5(
                 mirror,
                 boundMatchContext,
                 boundPrintedProvider);
+            if (!result.IsSuccess)
+            {
+                currentFrameAuthority.Invalidate();
+            }
+
+            return result;
         }
         finally
         {
@@ -160,6 +187,12 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
                 return GameplayMirrorPumpResult.Failure(
                     GameplayErrorCode.InvalidState,
                     mirror.Snapshot);
+            }
+
+            if (!currentFrameAuthority.IsCurrent)
+            {
+                return await FailAsync(GameplayErrorCode.InvalidState)
+                    .ConfigureAwait(false);
             }
 
             while (true)
@@ -248,19 +281,40 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
                                 .ConfigureAwait(false);
                         }
 
-                        MirrorApplyResult applied = mirror.Apply(decoded.Message);
+                        PrivateGameplayFrameAuthorityLeaseV1? lease =
+                            currentFrameAuthority.TryAcquire();
+                        if (lease is null)
+                        {
+                            return await FailAsync(
+                                    GameplayErrorCode.InvalidState)
+                                .ConfigureAwait(false);
+                        }
+
+                        MirrorApplyResult applied;
+                        using (lease)
+                        {
+                            applied = mirror.Apply(decoded.Message);
+                            if (!applied.IsSuccess)
+                            {
+                                currentFrameAuthority.Invalidate();
+                            }
+
+                            if (applied.IsSuccess)
+                            {
+                                currentFrameAuthority.Invalidate();
+                                frameInstanceOrdinal++;
+                                currentFrameAuthority =
+                                    new PrivateGameplayFrameAuthorityV1(
+                                        frameInstanceOrdinal,
+                                        applied.Snapshot);
+                            }
+                        }
+
                         if (!applied.IsSuccess)
                         {
                             return await FailAsync(applied.Error)
                                 .ConfigureAwait(false);
                         }
-
-                        currentFrameAuthority.Invalidate();
-                        frameInstanceOrdinal++;
-                        currentFrameAuthority =
-                            new PrivateGameplayFrameAuthorityV1(
-                                frameInstanceOrdinal,
-                                applied.Snapshot);
 
                         return GameplayMirrorPumpResult.Success(
                             decoded.Message,

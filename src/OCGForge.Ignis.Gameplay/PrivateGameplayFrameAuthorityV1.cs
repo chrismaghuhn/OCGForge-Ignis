@@ -7,7 +7,8 @@ namespace OCGForge.Ignis.Gameplay;
 /// </summary>
 internal sealed class PrivateGameplayFrameAuthorityV1
 {
-    private int invalidated;
+    private readonly object lifecycleGate = new();
+    private bool invalidated;
 
     internal PrivateGameplayFrameAuthorityV1(
         ulong frameInstanceOrdinal,
@@ -22,7 +23,54 @@ internal sealed class PrivateGameplayFrameAuthorityV1
 
     internal MirrorSnapshotV1 MirrorSnapshot { get; }
 
-    internal bool IsCurrent => Volatile.Read(ref invalidated) == 0;
+    internal bool IsCurrent
+    {
+        get
+        {
+            lock (lifecycleGate)
+            {
+                return !invalidated;
+            }
+        }
+    }
 
-    internal void Invalidate() => Volatile.Write(ref invalidated, 1);
+    internal PrivateGameplayFrameAuthorityLeaseV1? TryAcquire()
+    {
+        Monitor.Enter(lifecycleGate);
+        if (invalidated)
+        {
+            Monitor.Exit(lifecycleGate);
+            return null;
+        }
+
+        return new PrivateGameplayFrameAuthorityLeaseV1(lifecycleGate);
+    }
+
+    internal void Invalidate()
+    {
+        lock (lifecycleGate)
+        {
+            invalidated = true;
+        }
+    }
+}
+
+internal sealed class PrivateGameplayFrameAuthorityLeaseV1 : IDisposable
+{
+    private object? lifecycleGate;
+
+    internal PrivateGameplayFrameAuthorityLeaseV1(object lifecycleGate)
+    {
+        this.lifecycleGate = lifecycleGate ??
+            throw new ArgumentNullException(nameof(lifecycleGate));
+    }
+
+    public void Dispose()
+    {
+        object? gate = Interlocked.Exchange(ref lifecycleGate, null);
+        if (gate is not null)
+        {
+            Monitor.Exit(gate);
+        }
+    }
 }
