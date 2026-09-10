@@ -505,6 +505,22 @@ var tests = new (string Name, Action Body)[]
         I4PrivateOccurrenceSidecarTests
             .TestSidecarOccurrenceAndTargetValidationFailClosed),
 
+    ("I4 existing frame authority is absent",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestExistingFrameAuthorityIsAbsent),
+
+    ("I4 current sidecar frame ordinal is self-authenticated",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestCurrentSidecarFrameOrdinalIsSelfAuthenticated),
+
+    ("I4 current I5 sidecar enablement is out of scope",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestCurrentI5SidecarEnablementIsOutOfScope),
+
+    ("I4 proposed frame authority has safe lifecycle",
+        I4FrameOwnedSidecarLifecycleReconciliationTests
+            .TestProposedFrameAuthorityHasSafeLifecycle),
+
     ("I4 hidden opponent hand emits no sidecar entry",
         I4PrivateOccurrenceSidecarTests
             .TestHiddenOpponentHandEmitsNoSidecarEntry),
