@@ -69,25 +69,29 @@ an own-hand occurrence when multiplicity is greater than one.
 
 ## Existing private seam inventory
 
-The current I4 binding is intentionally recorded as a negative capability
-finding. `CurrentFlatPromptBindingV1` retains the prompt instance/family,
-public candidate values, local routing keys, continuation state, and response
+The current I4 prompt binding remains a negative capability finding.
+`CurrentFlatPromptBindingV1` retains the prompt instance/family, public
+candidate values, local routing keys, continuation state, and response
 bindings. `FlatPromptCardCorrelationResultV1` retains the accepted I4 public
-locator and safe public-code result. Neither current type carries a private
-source occurrence, `MirrorEntityIdV1`, `ModernLocInfoV1`, or raw address.
+locator and safe public-code result. Neither current prompt-binding type
+carries a private source occurrence, `MirrorEntityIdV1`, `ModernLocInfoV1`, or
+raw address. Implementation 01 now stores the projection-scoped occurrence
+sidecar separately; prompt correlation and I6D consumption still do not read
+it.
 
 The gameplay projection does temporarily possess the wire occurrence and the
 exact mirror correlation while constructing a public candidate, but that
 proof is not currently transported into the I4 binding or across the I6D
 interface. This is an observed seam gap, not permission to expose those
-values. The production seam remains absent; the following design freezes the
-smallest permitted carrier and lifecycle before any implementation is
-authorized.
+values. The I4-to-I6D binding seam remains absent; the following design
+freezes the smallest permitted carrier and lifecycle before that enablement
+is authorized.
 
 ## Frozen private source-occurrence binding design
 
-This section is a design contract only. It does not add a production type or
-authorize the I6D mapping implementation.
+This section is the accepted design contract. Implementation 01 adds only the
+projection-scoped sidecar; it does not enable prompt correlation or implement
+the I6D mapping.
 
 ### Owner, acquisition seam, and visibility
 
@@ -364,18 +368,27 @@ PUBLICSTATE_BYTES            = UNCHANGED
 PUBLICSTATE_IDENTITY         = UNCHANGED
 ```
 
-The future I4 implementation produces an internal immutable
+The I4 implementation produces an internal immutable
 `PrivateI4OccurrencePublicLocatorSidecarV1` alongside the accepted public
 projection. For each public known Hand/Extra-Deck occurrence, the sidecar
 records the already assigned I4 public ordinal for the exact normalized
 source occurrence. It does not add a sequence to `PublicCardStateV1`, its
 canonical bytes, or its identity.
 
-The sidecar's exact fields are:
+Implementation 01 creates this sidecar only through an internal frame-owned
+projection overload with a session-supplied `FrameInstanceOrdinal`. The
+existing two-argument PublicState projection path remains unchanged and does
+not expose or consume a sidecar; prompt-correlation enablement is separate.
+
+The sidecar container and its entries have these exact fields. The first two
+are container-scoped; the remaining fields belong to each entry:
 
 ```text
-FrameInstanceOrdinal
-AcceptedPublicProjectionId
+container:
+  FrameInstanceOrdinal
+  AcceptedPublicProjectionId
+
+entry:
 AbsoluteController
 NormalizedZone
 SourceSequence
@@ -659,7 +672,8 @@ I6D_PRIVATE_SOURCE_OCCURRENCE_BINDING_DESIGN=ACCEPTED_DESIGN_FREEZE
 I6D_PRIVATE_SOURCE_OCCURRENCE_BINDING_DESIGN_FINAL=YES
 I6D_PRIVATE_SOURCE_OCCURRENCE_BINDING_REMEDIATION_02=ACCEPTED_DESIGN_FREEZE
 I4_PRIVATE_SIDECAR_CONTRACT_ACCEPTED=YES_FOR_DESIGN_ONLY
-I4_PRIVATE_SIDECAR_IMPLEMENTATION=NOT_IMPLEMENTED
+I4_PRIVATE_SIDECAR_IMPLEMENTATION=YES_PROJECTION_ONLY
+I4_PRIVATE_SIDECAR_CORRELATION_ENABLEMENT=NOT_IMPLEMENTED
 I6G_COUNTER_CAPTURE_RETRY=NOT_AUTHORIZED
 I6G_LINK_CAPTURE=NOT_AUTHORIZED
 I6G_FRESH_PROCESS_A_B=NOT_AUTHORIZED

@@ -474,6 +474,20 @@ var tests = new (string Name, Action Body)[]
     ("I6C6-3A counter add/remove state",
         I6C6CurrentCounterTests.TestCounterAddRemovePublishesCurrent),
 
+    ("I4 private occurrence sidecar emits known pile bindings",
+        I4PrivateOccurrenceSidecarTests.TestKnownPileProjectionEmitsSidecar),
+
+    ("I4 duplicate sidecar pairing is insertion-order independent",
+        I4PrivateOccurrenceSidecarTests
+            .TestDuplicateSidecarPairingIsInsertionOrderIndependent),
+
+    ("I4 hidden opponent hand emits no sidecar entry",
+        I4PrivateOccurrenceSidecarTests
+            .TestHiddenOpponentHandEmitsNoSidecarEntry),
+
+    ("I4 sidecar stores no private identity",
+        I4PrivateOccurrenceSidecarTests.TestSidecarStoresNoPrivateIdentity),
+
     ("I6C6-3A counter reset and control semantics",
         I6C6CurrentCounterTests.TestCounterResetAndControlSemantics),
 

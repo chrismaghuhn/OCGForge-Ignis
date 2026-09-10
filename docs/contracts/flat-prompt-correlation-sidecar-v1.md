@@ -1,6 +1,6 @@
 # OCGForge-Ignis I4 Private Prompt Correlation Sidecar V1
 
-Status: `ACCEPTED_DESIGN_FREEZE`; implementation not authorized
+Status: `ACCEPTED_DESIGN_FREEZE`; projection implementation 01 pending review
 Contract ID: `ocgforge-ignis.flat-prompt-correlation-sidecar.v1`
 Parent public contract: `ocgforge-ignis.flat-prompt-projection.v1`
 Date: 2026-09-10
@@ -11,9 +11,10 @@ I4_PUBLICSTATE_BYTES=UNCHANGED
 I4_PUBLICSTATE_IDENTITY=UNCHANGED
 I4_AUTHORITATIVE_CONTRACT_RECONCILED=YES_BY_EXPLICIT_VERSION_TRANSITION
 I4_V1_IN_PLACE_AMENDMENT=FORBIDDEN
-I4_PRIVATE_CORRELATION_SIDECAR=ACCEPTED_DESIGN_FREEZE
+I4_PRIVATE_CORRELATION_SIDECAR=IMPLEMENTED_PROJECTION_ONLY
 I4_PRIVATE_CORRELATION_SIDECAR_ACCEPTED=YES_FOR_DESIGN_ONLY
-I4_PRIVATE_CORRELATION_SIDECAR_IMPLEMENTED=NO
+I4_PRIVATE_CORRELATION_SIDECAR_IMPLEMENTED=YES_PROJECTION_ONLY
+I4_PRIVATE_CORRELATION_ENABLEMENT=NO
 I6B_BUNDLE_ENTRY=NO
 ```
 
@@ -40,14 +41,24 @@ for which the same accepted public projection has already emitted the public
 ordinal. Main Deck, hidden opponent Hand, unknown CardCode, and any source
 occurrence without an exact current mirror resolution remain fail-closed.
 
+Implementation 01 builds the sidecar only through an internal frame-owned
+projection path that receives the session's `FrameInstanceOrdinal`. The
+existing two-argument public-state projection path remains unchanged and
+does not expose or consume a sidecar. Prompt-correlation enablement is a
+separate later operation.
+
 ## 2. Sidecar record
 
-The future internal immutable record
-`PrivateI4OccurrencePublicLocatorSidecarV1` has exactly these fields:
+The internal immutable sidecar container
+`PrivateI4OccurrencePublicLocatorSidecarV1` and its entries have exactly
+these fields:
 
 ```text
-FrameInstanceOrdinal
-AcceptedPublicProjectionId
+container:
+  FrameInstanceOrdinal
+  AcceptedPublicProjectionId
+
+entry:
 AbsoluteController
 NormalizedZone
 SourceSequence
@@ -55,6 +66,9 @@ IsOverlay
 OverlayIndex                 # present exactly when IsOverlay=true
 AcceptedI4PublicLocator
 ```
+
+The two container fields apply uniformly to every entry and are not repeated
+as public-state fields.
 
 Its exact lookup key is:
 
@@ -221,7 +235,7 @@ frozen flat-prompt-projection.v1
     -> future I4/I6D implementation authorization
 ```
 
-Until production implementation is separately authorized and verified,
+Until prompt-correlation enablement is separately authorized and verified,
 duplicate same-code own-Hand prompts remain unsupported and fail closed. The
 accepted design transition changes neither public-state canonical bytes nor
 public-state identity:
@@ -236,5 +250,5 @@ PUBLICSTATE_BYTES_CHANGED=NO
 PUBLICSTATE_IDENTITY_CHANGED=NO
 ```
 
-This design does not authorize the sidecar implementation, I6D mapping
+This slice does not authorize prompt-correlation enablement, I6D mapping
 implementation, Counter retry, Link capture, or fresh-process A/B.

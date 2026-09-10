@@ -427,11 +427,11 @@ internal static class I6DPrivateSourceOccurrenceBindingDesignV1
 
     internal const bool I4SidecarTieBreakUsesCardCode = false;
 
-    internal const bool I4SidecarImplemented = false;
+    internal const bool I4SidecarImplemented = true;
 
     internal const bool I4SidecarAcceptedForDesignOnly = true;
 
-    internal const bool I4SidecarImplementationAuthorized = false;
+    internal const bool I4SidecarImplementationAuthorized = true;
 
     internal const bool I4ContractAmendmentImplemented = false;
 

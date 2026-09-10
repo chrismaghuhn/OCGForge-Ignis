@@ -287,11 +287,11 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
             .I4SidecarUsesCardCodeAsLookup);
         False(I6DPrivateSourceOccurrenceBindingDesignV1
             .I4SidecarUsesSequenceAsPublicLocator);
-        False(I6DPrivateSourceOccurrenceBindingDesignV1
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
             .I4SidecarImplemented);
         True(I6DPrivateSourceOccurrenceBindingDesignV1
             .I4SidecarAcceptedForDesignOnly);
-        False(I6DPrivateSourceOccurrenceBindingDesignV1
+        True(I6DPrivateSourceOccurrenceBindingDesignV1
             .I4SidecarImplementationAuthorized);
         False(I6DPrivateSourceOccurrenceBindingDesignV1
             .I4ContractAmendmentImplemented);
@@ -521,7 +521,6 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
 
         string[] futureProductionTypes =
         {
-            "OCGForge.Ignis.Gameplay.PrivateI4OccurrencePublicLocatorSidecarV1",
             "OCGForge.Ignis.Gameplay.PrivateCrossLocatorBindingV1",
             "OCGForge.Ignis.Gameplay.I6DPrivateCrossLocatorBindingHandoffV1"
         };
@@ -533,6 +532,9 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
                     throwOnError: false);
             Null(accidentalProductionType);
         }
+
+        False(typeof(PrivateI4OccurrencePublicLocatorSidecarV1).IsPublic);
+        False(typeof(PrivateI4OccurrencePublicLocatorSidecarEntryV1).IsPublic);
     }
 
     internal static void TestDuplicateOwnHandI4StopsBeforeI6DBoundary()

@@ -144,13 +144,15 @@ public sealed class PublicStateProjectionResultV1
         PublicStateProjectionErrorV1 error,
         PublicStateSnapshotV1? snapshot,
         byte[] canonicalBytes,
-        string? sha256)
+        string? sha256,
+        PrivateI4OccurrencePublicLocatorSidecarV1? privateOccurrenceSidecar)
     {
         IsSuccess = isSuccess;
         Error = error;
         Snapshot = snapshot;
         this.canonicalBytes = canonicalBytes.ToArray();
         Sha256 = sha256;
+        PrivateOccurrenceSidecar = privateOccurrenceSidecar;
         PublicProjectionId = sha256 is null
             ? null
             : PublicProjectionIdPrefix + sha256;
@@ -167,6 +169,9 @@ public sealed class PublicStateProjectionResultV1
 
     public string? Sha256 { get; }
 
+    internal PrivateI4OccurrencePublicLocatorSidecarV1?
+        PrivateOccurrenceSidecar { get; }
+
     public string? PublicProjectionId { get; }
 
     internal static PublicStateProjectionResultV1 Success(
@@ -178,7 +183,21 @@ public sealed class PublicStateProjectionResultV1
             PublicStateProjectionErrorV1.None,
             snapshot,
             canonicalBytes,
-            sha256);
+            sha256,
+            null);
+
+    internal static PublicStateProjectionResultV1 Success(
+        PublicStateSnapshotV1 snapshot,
+        byte[] canonicalBytes,
+        string sha256,
+        PrivateI4OccurrencePublicLocatorSidecarV1? privateOccurrenceSidecar) =>
+        new(
+            true,
+            PublicStateProjectionErrorV1.None,
+            snapshot,
+            canonicalBytes,
+            sha256,
+            privateOccurrenceSidecar);
 
     internal static PublicStateProjectionResultV1 Failure(
         PublicStateProjectionErrorV1 error) =>
@@ -187,11 +206,14 @@ public sealed class PublicStateProjectionResultV1
             error,
             null,
             Array.Empty<byte>(),
+            null,
             null);
 }
 
 internal static class PublicStateProjectionV1
 {
+    private const string PublicProjectionIdPrefix =
+        "ocgforge-ignis.public-state-projection.v1.";
     private const ulong DuelPzone = 0x800;
     private const ulong DuelSeparatePzone = 0x1000;
     private const ulong DuelThreeColumnsField = 0x400000;
@@ -202,6 +224,26 @@ internal static class PublicStateProjectionV1
     internal static PublicStateProjectionResultV1 TryProject(
         MirrorSnapshotV1? mirror,
         PublicStateProjectionContextV1? context)
+    {
+        return TryProjectCore(mirror, context, null);
+    }
+
+    /// <summary>
+    /// Internal frame-owned projection path. The frame ordinal is supplied by
+    /// the owning gameplay session; it is not a public projection value.
+    /// </summary>
+    internal static PublicStateProjectionResultV1 TryProject(
+        MirrorSnapshotV1? mirror,
+        PublicStateProjectionContextV1? context,
+        ulong frameInstanceOrdinal)
+    {
+        return TryProjectCore(mirror, context, frameInstanceOrdinal);
+    }
+
+    private static PublicStateProjectionResultV1 TryProjectCore(
+        MirrorSnapshotV1? mirror,
+        PublicStateProjectionContextV1? context,
+        ulong? frameInstanceOrdinal)
     {
         if (mirror is null || context is null)
         {
@@ -222,6 +264,8 @@ internal static class PublicStateProjectionV1
                 mirror,
                 context.DuelFlags,
                 out PublicCardStateV1[] cards,
+                out PrivateI4OccurrencePublicLocatorSidecarEntryV1[]
+                    sidecarEntries,
                 out PublicStateProjectionErrorV1 cardError))
         {
             return PublicStateProjectionResultV1.Failure(cardError);
@@ -269,10 +313,27 @@ internal static class PublicStateProjectionV1
 
         string sha256 = Convert.ToHexString(
             SHA256.HashData(canonicalBytes)).ToLowerInvariant();
+        PrivateI4OccurrencePublicLocatorSidecarV1? sidecar = null;
+        if (frameInstanceOrdinal.HasValue)
+        {
+            string publicProjectionId = PublicProjectionIdPrefix + sha256;
+            if (!PrivateI4OccurrencePublicLocatorSidecarV1.TryCreate(
+                    frameInstanceOrdinal.Value,
+                    publicProjectionId,
+                    sidecarEntries,
+                    out sidecar) ||
+                sidecar is null)
+            {
+                return PublicStateProjectionResultV1.Failure(
+                    PublicStateProjectionErrorV1.UnprovenLocator);
+            }
+        }
+
         return PublicStateProjectionResultV1.Success(
             snapshot,
             canonicalBytes,
-            sha256);
+            sha256,
+            sidecar);
     }
 
     private static bool TryCreateParticipants(
@@ -386,11 +447,16 @@ internal static class PublicStateProjectionV1
         MirrorSnapshotV1 mirror,
         ulong duelFlags,
         out PublicCardStateV1[] cards,
+        out PrivateI4OccurrencePublicLocatorSidecarEntryV1[] sidecarEntries,
         out PublicStateProjectionErrorV1 error)
     {
         cards = Array.Empty<PublicCardStateV1>();
+        sidecarEntries = Array.Empty<
+            PrivateI4OccurrencePublicLocatorSidecarEntryV1>();
         error = PublicStateProjectionErrorV1.None;
         List<PublicCardStateV1> indexedCards = new();
+        List<PrivateI4OccurrencePublicLocatorSidecarEntryV1> sidecarValues =
+            new();
         Dictionary<PublicCardGroup, List<KnownPileCard>> pileGroups = new();
         HashSet<string> locatorValues = new(StringComparer.Ordinal);
 
@@ -503,7 +569,14 @@ internal static class PublicStateProjectionV1
                         pileGroups.Add(group, groupedCards);
                     }
 
-                    groupedCards.Add(new KnownPileCard(position));
+                    groupedCards.Add(
+                        new KnownPileCard(
+                            absolutePlayer,
+                            mirrorCard.Zone,
+                            mirrorCard.Sequence,
+                            mirrorCard.IsOverlay,
+                            mirrorCard.OverlayIndex,
+                            position));
                 }
 
                 continue;
@@ -565,6 +638,15 @@ internal static class PublicStateProjectionV1
                 {
                     return false;
                 }
+
+                sidecarValues.Add(
+                    new PrivateI4OccurrencePublicLocatorSidecarEntryV1(
+                        pileCard.AbsoluteController,
+                        pileCard.NormalizedZone,
+                        pileCard.SourceSequence,
+                        pileCard.IsOverlay,
+                        pileCard.OverlayIndex,
+                        locator!));
             }
         }
 
@@ -573,6 +655,7 @@ internal static class PublicStateProjectionV1
                 left.Locator.Value,
                 right.Locator.Value));
         cards = indexedCards.ToArray();
+        sidecarEntries = sidecarValues.ToArray();
         return true;
     }
 
@@ -957,10 +1040,31 @@ internal static class PublicStateProjectionV1
 
     private sealed class KnownPileCard
     {
-        internal KnownPileCard(uint? position)
+        internal KnownPileCard(
+            byte absoluteController,
+            MirrorZoneV1 normalizedZone,
+            uint sourceSequence,
+            bool isOverlay,
+            uint overlayIndex,
+            uint? position)
         {
+            AbsoluteController = absoluteController;
+            NormalizedZone = normalizedZone;
+            SourceSequence = sourceSequence;
+            IsOverlay = isOverlay;
+            OverlayIndex = isOverlay ? overlayIndex : null;
             Position = position;
         }
+
+        internal byte AbsoluteController { get; }
+
+        internal MirrorZoneV1 NormalizedZone { get; }
+
+        internal uint SourceSequence { get; }
+
+        internal bool IsOverlay { get; }
+
+        internal uint? OverlayIndex { get; }
 
         internal uint? Position { get; }
 
@@ -976,7 +1080,35 @@ internal static class PublicStateProjectionV1
                 return 1;
             }
 
-            return left.Position.Value.CompareTo(right.Position.Value);
+            int result = left.Position.Value.CompareTo(right.Position.Value);
+            if (result != 0)
+            {
+                return result;
+            }
+
+            result = left.AbsoluteController.CompareTo(right.AbsoluteController);
+            if (result != 0)
+            {
+                return result;
+            }
+
+            result = ((byte)left.NormalizedZone).CompareTo(
+                (byte)right.NormalizedZone);
+            if (result != 0)
+            {
+                return result;
+            }
+
+            result = left.SourceSequence.CompareTo(right.SourceSequence);
+            if (result != 0)
+            {
+                return result;
+            }
+
+            result = left.IsOverlay.CompareTo(right.IsOverlay);
+            return result != 0
+                ? result
+                : Nullable.Compare(left.OverlayIndex, right.OverlayIndex);
         }
     }
 }
