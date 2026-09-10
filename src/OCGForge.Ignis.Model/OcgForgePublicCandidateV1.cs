@@ -146,6 +146,7 @@ public sealed class OcgForgeAcceptedDecisionBoundaryProducerV1
                 frame,
                 projection,
                 null,
+                i6DAware: false,
                 out boundary,
                 out error);
         }
@@ -164,6 +165,7 @@ public sealed class OcgForgeAcceptedDecisionBoundaryProducerV1
                 frame,
                 projection,
                 crossLocatorHandoff,
+                i6DAware: true,
                 out boundary,
                 out error);
         }
@@ -173,6 +175,7 @@ public sealed class OcgForgeAcceptedDecisionBoundaryProducerV1
         PerspectiveSafeFrameV1? frame,
         FlatPromptProjectionResultV1? projection,
         I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
+        bool i6DAware,
         out OcgForgeAcceptedDecisionBoundaryV1? boundary,
         out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? error)
     {
@@ -211,6 +214,20 @@ public sealed class OcgForgeAcceptedDecisionBoundaryProducerV1
             error = new(
                 OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1.DecisionIndexExhausted,
                 "decision_index");
+            return false;
+        }
+
+        if (i6DAware &&
+            crossLocatorHandoff is null &&
+            !OcgForgePublicCandidateBridgeV1.TryValidateExactI6DReferences(
+                frame,
+                projection.Context!,
+                projection.Candidates,
+                out string missingHandoffPath))
+        {
+            error = new(
+                OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1.HandoffRejected,
+                missingHandoffPath);
             return false;
         }
 
@@ -540,9 +557,11 @@ public static class OcgForgePublicCandidateBridgeV1
 
             case FlatEffectYnPublicCandidateDescriptorV1 effectYn:
                 if (decision is not FlatPromptEffectYnPublicContextV1 effectContext ||
-                    !TryMapReference(
+                    !TryMapReferenceWithHandoff(
                         frame,
                         effectContext.EffectCardLocator,
+                        effectYn,
+                        crossLocatorHandoff,
                         path + ".source_reference",
                         out OcgForgePublicCardReferenceV1 effectReference,
                         out error) ||
@@ -611,9 +630,11 @@ public static class OcgForgePublicCandidateBridgeV1
             case FlatChainEntryPublicCandidateDescriptorBaseV1 chain:
                 if (!IsFamily(decision, 16) ||
                     chain.SourceSection != FlatPromptSourceSectionV1.ChainChoices ||
-                    !TryMapReference(
+                    !TryMapReferenceWithHandoff(
                         frame,
                         chain.PublicSemanticCardLocator,
+                        chain,
+                        crossLocatorHandoff,
                         path + ".source_reference",
                         out OcgForgePublicCardReferenceV1 chainReference,
                         out error) ||
@@ -639,9 +660,11 @@ public static class OcgForgePublicCandidateBridgeV1
             case FlatBattleActivatablePublicCandidateBaseV1 battleActivate:
                 if (!IsFamily(decision, 10) ||
                     battleActivate.SourceSection != FlatPromptSourceSectionV1.Activatable ||
-                    !TryMapReference(
+                    !TryMapReferenceWithHandoff(
                         frame,
                         battleActivate.PublicSemanticCardLocator,
+                        battleActivate,
+                        crossLocatorHandoff,
                         path + ".source_reference",
                         out OcgForgePublicCardReferenceV1 battleActivateReference,
                         out error) ||
@@ -667,9 +690,11 @@ public static class OcgForgePublicCandidateBridgeV1
             case FlatBattleAttackPublicCandidateBaseV1 battleAttack:
                 if (!IsFamily(decision, 10) ||
                     battleAttack.SourceSection != FlatPromptSourceSectionV1.Attackable ||
-                    !TryMapReference(
+                    !TryMapReferenceWithHandoff(
                         frame,
                         battleAttack.PublicSemanticCardLocator,
+                        battleAttack,
+                        crossLocatorHandoff,
                         path + ".source_reference",
                         out OcgForgePublicCardReferenceV1 battleAttackReference,
                         out error) ||
@@ -820,6 +845,8 @@ public static class OcgForgePublicCandidateBridgeV1
                     cardLocator.PublicSemanticCardLocator,
                     cardLocator.SourceSection,
                     path,
+                    cardLocator,
+                    crossLocatorHandoff,
                     out descriptor,
                     out error);
 
@@ -841,6 +868,8 @@ public static class OcgForgePublicCandidateBridgeV1
                     tributeLocator.PublicSemanticCardLocator,
                     tributeLocator.SourceSection,
                     path,
+                    tributeLocator,
+                    crossLocatorHandoff,
                     out descriptor,
                     out error);
 
@@ -864,6 +893,8 @@ public static class OcgForgePublicCandidateBridgeV1
                     selectLocator.SourceSection,
                     selectLocator.ChoiceKind,
                     path,
+                    selectLocator,
+                    crossLocatorHandoff,
                     out descriptor,
                     out error);
 
@@ -997,6 +1028,7 @@ public static class OcgForgePublicCandidateBridgeV1
                     frame,
                     decision,
                     counter,
+                    crossLocatorHandoff,
                     path,
                     out descriptor,
                     out error);
@@ -1009,6 +1041,8 @@ public static class OcgForgePublicCandidateBridgeV1
                     null,
                     sortAnonymous.SourceSection,
                     path,
+                    sortAnonymous,
+                    crossLocatorHandoff,
                     out descriptor,
                     out error);
 
@@ -1020,6 +1054,8 @@ public static class OcgForgePublicCandidateBridgeV1
                     sortLocator.PublicSemanticCardLocator,
                     sortLocator.SourceSection,
                     path,
+                    sortLocator,
+                    crossLocatorHandoff,
                     out descriptor,
                     out error);
 
@@ -1082,49 +1118,14 @@ public static class OcgForgePublicCandidateBridgeV1
         string path,
         out OcgForgePublicCardReferenceV1 reference,
         out OcgForgePublicCandidateBridgeErrorV1? error)
-    {
-        reference = default;
-        error = null;
-        PublicSemanticLocatorV1? target = null;
-        I6DPrivateCrossLocatorHandoffErrorV1? handoffError = null;
-        if (crossLocatorHandoff is not null &&
-            crossLocatorHandoff.TryGetValidatedTarget(
-                candidate,
-                frame,
-                out target,
-                out handoffError))
-        {
-            return target is not null &&
-                TryMapReference(
-                    frame,
-                    target,
-                    path,
-                    out reference,
-                    out error);
-        }
-
-        if (handoffError is not null &&
-            handoffError.Value.Code !=
-                I6DPrivateCrossLocatorHandoffErrorCodeV1.MissingBinding)
-        {
-            error = new(
-                handoffError.Value.Code ==
-                    I6DPrivateCrossLocatorHandoffErrorCodeV1.AmbiguousBinding
-                    ? OcgForgePublicCandidateBridgeErrorCodeV1
-                        .AmbiguousPublicReference
-                    : OcgForgePublicCandidateBridgeErrorCodeV1
-                        .InvalidPublicReference,
-                path);
-            return false;
-        }
-
-        return TryMapReference(
+        => TryMapReferenceWithHandoff(
             frame,
             locator,
+            candidate,
+            crossLocatorHandoff,
             path,
             out reference,
             out error);
-    }
 
     private static bool TryMapIdleActivate(
         PerspectiveSafeFrameV1 frame,
@@ -1186,6 +1187,8 @@ public static class OcgForgePublicCandidateBridgeV1
             locator,
             sourceSection,
             path,
+            null,
+            null,
             out descriptor,
             out error);
 
@@ -1196,6 +1199,8 @@ public static class OcgForgePublicCandidateBridgeV1
         PublicSemanticLocatorV1? locator,
         FlatPromptSourceSectionV1 sourceSection,
         string path,
+        FlatPublicCandidateDescriptorV1? candidate,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
         out OcgForgePublicActionDescriptorV1? descriptor,
         out OcgForgePublicCandidateBridgeErrorV1? error)
     {
@@ -1212,9 +1217,11 @@ public static class OcgForgePublicCandidateBridgeV1
                 path + ".source_index",
                 out uint sourceIndex,
                 out error) ||
-            !TryOptionalReference(
+            !TryOptionalReferenceWithHandoff(
                 frame,
                 locator,
+                candidate,
+                crossLocatorHandoff,
                 path + ".source_reference",
                 out OcgForgePublicCardReferenceV1? reference,
                 out error))
@@ -1252,6 +1259,8 @@ public static class OcgForgePublicCandidateBridgeV1
             locator,
             sourceSection,
             path,
+            null,
+            null,
             out descriptor,
             out error);
 
@@ -1262,6 +1271,8 @@ public static class OcgForgePublicCandidateBridgeV1
         PublicSemanticLocatorV1? locator,
         FlatPromptSourceSectionV1 sourceSection,
         string path,
+        FlatPublicCandidateDescriptorV1? candidate,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
         out OcgForgePublicActionDescriptorV1? descriptor,
         out OcgForgePublicCandidateBridgeErrorV1? error)
     {
@@ -1278,9 +1289,11 @@ public static class OcgForgePublicCandidateBridgeV1
                 path + ".source_index",
                 out uint sourceIndex,
                 out error) ||
-            !TryOptionalReference(
+            !TryOptionalReferenceWithHandoff(
                 frame,
                 locator,
+                candidate,
+                crossLocatorHandoff,
                 path + ".source_reference",
                 out OcgForgePublicCardReferenceV1? reference,
                 out error))
@@ -1313,6 +1326,8 @@ public static class OcgForgePublicCandidateBridgeV1
             sourceSection,
             choiceKind,
             path,
+            null,
+            null,
             out descriptor,
             out error);
 
@@ -1324,6 +1339,8 @@ public static class OcgForgePublicCandidateBridgeV1
         FlatPromptSourceSectionV1 sourceSection,
         FlatPromptChoiceKindV1 choiceKind,
         string path,
+        FlatPublicCandidateDescriptorV1? candidate,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
         out OcgForgePublicActionDescriptorV1? descriptor,
         out OcgForgePublicCandidateBridgeErrorV1? error)
     {
@@ -1371,9 +1388,11 @@ public static class OcgForgePublicCandidateBridgeV1
                 path + ".source_index",
                 out uint sourceIndex,
                 out error) ||
-            !TryOptionalReference(
+            !TryOptionalReferenceWithHandoff(
                 frame,
                 locator,
+                candidate,
+                crossLocatorHandoff,
                 path + ".source_reference",
                 out OcgForgePublicCardReferenceV1? reference,
                 out error))
@@ -1424,6 +1443,7 @@ public static class OcgForgePublicCandidateBridgeV1
         PerspectiveSafeFrameV1 frame,
         FlatPromptPublicContextV1 decision,
         FlatPromptCounterAmountPublicCandidateV1 candidate,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
         string path,
         out OcgForgePublicActionDescriptorV1? descriptor,
         out OcgForgePublicCandidateBridgeErrorV1? error)
@@ -1438,9 +1458,11 @@ public static class OcgForgePublicCandidateBridgeV1
                 candidate.SourceOrdinal ||
             candidate.Amount < 0 ||
             candidate.Amount > counterContext.Sources[candidate.SourceOrdinal].Capacity ||
-            !TryMapReference(
+            !TryMapReferenceWithHandoff(
                 frame,
                 counterContext.Sources[candidate.SourceOrdinal].PublicSemanticCardLocator,
+                candidate,
+                crossLocatorHandoff,
                 path + ".source_reference",
                 out OcgForgePublicCardReferenceV1 reference,
                 out error) ||
@@ -1476,6 +1498,8 @@ public static class OcgForgePublicCandidateBridgeV1
         PublicSemanticLocatorV1? locator,
         FlatPromptSourceSectionV1 sourceSection,
         string path,
+        FlatPublicCandidateDescriptorV1? candidate,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
         out OcgForgePublicActionDescriptorV1? descriptor,
         out OcgForgePublicCandidateBridgeErrorV1? error)
     {
@@ -1508,9 +1532,11 @@ public static class OcgForgePublicCandidateBridgeV1
                 path + ".source_index",
                 out uint sourceIndex,
                 out error) ||
-            !TryOptionalReference(
+            !TryOptionalReferenceWithHandoff(
                 frame,
                 locator,
+                candidate,
+                crossLocatorHandoff,
                 path + ".source_reference",
                 out OcgForgePublicCardReferenceV1? reference,
                 out error))
@@ -1710,6 +1736,182 @@ public static class OcgForgePublicCandidateBridgeV1
 
         reference = mapped;
         return true;
+    }
+
+    private static bool TryOptionalReferenceWithHandoff(
+        PerspectiveSafeFrameV1? frame,
+        PublicSemanticLocatorV1? locator,
+        FlatPublicCandidateDescriptorV1? candidate,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
+        string path,
+        out OcgForgePublicCardReferenceV1? reference,
+        out OcgForgePublicCandidateBridgeErrorV1? error)
+    {
+        reference = null;
+        error = null;
+        if (locator is null)
+        {
+            return true;
+        }
+
+        if (!TryMapReferenceWithHandoff(
+                frame,
+                locator,
+                candidate,
+                crossLocatorHandoff,
+                path,
+                out OcgForgePublicCardReferenceV1 mapped,
+                out error))
+        {
+            return false;
+        }
+
+        reference = mapped;
+        return true;
+    }
+
+    private static bool TryMapReferenceWithHandoff(
+        PerspectiveSafeFrameV1? frame,
+        PublicSemanticLocatorV1 locator,
+        FlatPublicCandidateDescriptorV1? candidate,
+        I6DPrivateCrossLocatorBindingHandoffV1? crossLocatorHandoff,
+        string path,
+        out OcgForgePublicCardReferenceV1 reference,
+        out OcgForgePublicCandidateBridgeErrorV1? error)
+    {
+        reference = default;
+        error = null;
+        PublicSemanticLocatorV1? target = null;
+        I6DPrivateCrossLocatorHandoffErrorV1? handoffError = null;
+        if (crossLocatorHandoff is not null && candidate is not null &&
+            crossLocatorHandoff.TryGetValidatedTarget(
+                candidate,
+                frame,
+                out target,
+                out handoffError))
+        {
+            return target is not null &&
+                TryMapReference(
+                    frame!,
+                    target,
+                    path,
+                    out reference,
+                    out error);
+        }
+
+        if (crossLocatorHandoff is not null &&
+            handoffError is not null &&
+            handoffError.Value.Code !=
+                I6DPrivateCrossLocatorHandoffErrorCodeV1.MissingBinding)
+        {
+            error = new(
+                handoffError.Value.Code ==
+                    I6DPrivateCrossLocatorHandoffErrorCodeV1.AmbiguousBinding
+                    ? OcgForgePublicCandidateBridgeErrorCodeV1
+                        .AmbiguousPublicReference
+                    : OcgForgePublicCandidateBridgeErrorCodeV1
+                        .InvalidPublicReference,
+                path);
+            return false;
+        }
+
+        // MissingBinding is the intentional exact-token fast path. Any other
+        // handoff result is authoritative and must not be bypassed by mapping
+        // the I4 locator directly.
+        if (frame is null)
+        {
+            error = new(
+                OcgForgePublicCandidateBridgeErrorCodeV1.InvalidPublicReference,
+                path);
+            return false;
+        }
+
+        return TryMapReference(frame, locator, path, out reference, out error);
+    }
+
+    internal static bool TryValidateExactI6DReferences(
+        PerspectiveSafeFrameV1 frame,
+        FlatPromptPublicContextV1 decision,
+        IReadOnlyList<FlatPublicCandidateDescriptorV1> candidates,
+        out string missingHandoffPath)
+    {
+        missingHandoffPath = "candidates";
+        for (int index = 0; index < candidates.Count; index++)
+        {
+            if (!TryGetCandidateReference(
+                    decision,
+                    candidates[index],
+                    out PublicSemanticLocatorV1? locator) ||
+                locator is null)
+            {
+                continue;
+            }
+
+            string path = $"candidates[{index}].source_reference";
+            if (!TryMapReference(
+                    frame,
+                    locator,
+                    path,
+                    out _,
+                    out _))
+            {
+                missingHandoffPath = path;
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryGetCandidateReference(
+        FlatPromptPublicContextV1 decision,
+        FlatPublicCandidateDescriptorV1 candidate,
+        out PublicSemanticLocatorV1? locator)
+    {
+        locator = candidate switch
+        {
+            FlatChainEntryPublicCandidateDescriptorBaseV1 chain =>
+                chain.PublicSemanticCardLocator,
+            FlatBattleActivatablePublicCandidateBaseV1 activate =>
+                activate.PublicSemanticCardLocator,
+            FlatBattleAttackPublicCandidateBaseV1 attack =>
+                attack.PublicSemanticCardLocator,
+            FlatIdleCardActionPublicCandidateBaseV1 idle =>
+                idle.PublicSemanticCardLocator,
+            FlatIdleActivatablePublicCandidateBaseV1 idleActivate =>
+                idleActivate.PublicSemanticCardLocator,
+            FlatPromptCardSelectionLocatorCandidateV1 cardSelection =>
+                cardSelection.PublicSemanticCardLocator,
+            FlatPromptCardSelectionLocatorPromptCodeCandidateV1
+                cardSelectionPromptCode =>
+                cardSelectionPromptCode.PublicSemanticCardLocator,
+            FlatPromptTributeSelectionLocatorCandidateV1 tributeSelection =>
+                tributeSelection.PublicSemanticCardLocator,
+            FlatPromptTributeSelectionLocatorPromptCodeCandidateV1
+                tributeSelectionPromptCode =>
+                tributeSelectionPromptCode.PublicSemanticCardLocator,
+            FlatPromptSelectUnselectLocatorCandidateV1 selectUnselect =>
+                selectUnselect.PublicSemanticCardLocator,
+            FlatPromptSelectUnselectLocatorPromptCodeCandidateV1
+                selectUnselectPromptCode =>
+                selectUnselectPromptCode.PublicSemanticCardLocator,
+            FlatPromptSortLocatorPublicCandidateV1 sort =>
+                sort.PublicSemanticCardLocator,
+            FlatPromptSortLocatorPromptCodePublicCandidateV1 sortPromptCode =>
+                sortPromptCode.PublicSemanticCardLocator,
+            FlatEffectYnPublicCandidateDescriptorV1
+                when decision is FlatPromptEffectYnPublicContextBaseV1 effect =>
+                effect.EffectCardLocator,
+            FlatPromptCounterAmountPublicCandidateV1 counter
+                when decision is FlatPromptCounterSelectionPublicContextV1
+                    counterContext &&
+                counter.SourceOrdinal >= 0 &&
+                counter.SourceOrdinal < counterContext.Sources.Count =>
+                counterContext.Sources[counter.SourceOrdinal]
+                    .PublicSemanticCardLocator,
+            _ => null
+        };
+        return locator is not null;
     }
 
     private static bool TryMapReference(

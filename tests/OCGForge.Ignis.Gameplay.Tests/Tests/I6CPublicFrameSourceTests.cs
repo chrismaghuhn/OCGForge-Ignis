@@ -34,19 +34,17 @@ internal static class I6CPublicFrameSourceTests
 
             OcgForgeAcceptedDecisionBoundaryProducerV1 noHandoffProducer =
                 new();
-            True(noHandoffProducer.TryAccept(
+            False(noHandoffProducer.TryAccept(
                     fixture.Composition.Frame,
                     fixture.PromptProjection,
                     null,
                     out OcgForgeAcceptedDecisionBoundaryV1? noHandoffBoundary,
                     out OcgForgeAcceptedDecisionBoundaryProducerErrorV1? noHandoffError),
-                noHandoffError?.ToString() ?? "legacy boundary rejected");
-            OcgForgePublicDecisionContextResultV1 noHandoffMapping =
-                OcgForgePublicCandidateBridgeV1.TryCreate(noHandoffBoundary);
-            False(noHandoffMapping.IsSuccess);
+                noHandoffError?.ToString() ?? "missing handoff was accepted");
+            Null(noHandoffBoundary);
             Equal(
-                OcgForgePublicCandidateBridgeErrorCodeV1.InvalidPublicReference,
-                noHandoffMapping.Error!.Value.Code);
+                OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1.HandoffRejected,
+                noHandoffError!.Value.Code);
 
             OcgForgeAcceptedDecisionBoundaryProducerV1 producer = new();
             True(producer.TryAccept(
@@ -74,6 +72,281 @@ internal static class I6CPublicFrameSourceTests
                 candidate.PublicActionKey.Contains(
                     "11223344",
                     StringComparison.Ordinal)));
+        }
+        finally
+        {
+            DisposeI6C5Session(fixture.Session, fixture.Consumer);
+        }
+    }
+
+    internal static void TestI6DSameOccurrenceCanHaveMultipleActions()
+    {
+        I6DCompositionFixture fixture = CreateI6DCompositionFixture(
+            promptMessage: SameOccurrenceMultipleIdleActionsMessage(
+                0x11223344));
+        try
+        {
+            Equal(2, fixture.PromptProjection.Candidates!.Count);
+            Equal(
+                fixture.PromptProjection.Candidates[0]
+                    .I4LocalCandidateKey,
+                "MSG_SELECT_IDLECMD:SUMMON:0");
+            Equal(
+                fixture.PromptProjection.Candidates[1]
+                    .I4LocalCandidateKey,
+                "MSG_SELECT_IDLECMD:MSET:0");
+
+            OcgForgePublicDecisionContextResultV1 mapped =
+                CreateMappedI6DContext(fixture);
+            True(mapped.IsSuccess,
+                mapped.Error?.ToString() ?? "same-occurrence bridge rejected");
+            NotNull(mapped.Context);
+            Equal(2, mapped.Context!.Candidates.Count);
+            Equal(
+                "p0:HAND:0",
+                mapped.Context.Candidates[0].Descriptor.SourceReference!
+                    .Value.ObservationLocator);
+            Equal(
+                "p0:HAND:0",
+                mapped.Context.Candidates[1].Descriptor.SourceReference!
+                    .Value.ObservationLocator);
+            NotEqual(
+                mapped.Context.Candidates[0].PublicActionKey,
+                mapped.Context.Candidates[1].PublicActionKey);
+        }
+        finally
+        {
+            DisposeI6C5Session(fixture.Session, fixture.Consumer);
+        }
+    }
+
+    internal static void TestI6DNonIdleLocatorFamiliesUseHandoff()
+    {
+        I6DCompositionFixture fixture = CreateI6DCompositionFixture();
+        try
+        {
+            PublicSemanticLocatorV1 i4Locator =
+                fixture.I4Projection.PrivateOccurrenceSidecar!
+                    .Entries.Single(entry => entry.SourceSequence == 0)
+                    .AcceptedI4PublicLocator;
+
+            (FlatPromptPublicContextV1 Context,
+                FlatPublicCandidateDescriptorV1 Candidate,
+                string Key,
+                string ExpectedActionKind)[] cases =
+            {
+                (
+                    new FlatPromptEffectYnPublicContextV1(
+                        0,
+                        i4Locator,
+                        42),
+                    new FlatEffectYnPublicCandidateDescriptorV1(
+                        FlatPromptKeyV1.EffectYnNo,
+                        FlatPromptChoiceKindV1.No),
+                    FlatPromptKeyV1.EffectYnNo,
+                    "yes_no"),
+                (
+                    new FlatPromptChainPublicContextV1(
+                        0,
+                        0,
+                        true,
+                        0,
+                        0),
+                    new FlatChainPublicCandidateDescriptorV1(
+                        "MSG_SELECT_CHAIN:CHAIN_ENTRY:0",
+                        0,
+                        i4Locator,
+                        42,
+                        0),
+                    "MSG_SELECT_CHAIN:CHAIN_ENTRY:0",
+                    "chain"),
+                (
+                    new FlatPromptBattlePublicContextV1(0),
+                    new FlatBattleActivatablePublicCandidateV1(
+                        "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+                        0,
+                        i4Locator,
+                        42,
+                        0),
+                    "MSG_SELECT_BATTLECMD:ACTIVATE:0",
+                    "battle_command"),
+                (
+                    new FlatPromptCardSelectionPublicContextV1(
+                        0,
+                        1,
+                        1,
+                        false),
+                    new FlatPromptCardSelectionLocatorCandidateV1(
+                        FlatPromptKeyV1.SelectCardPickPrefix + "0",
+                        0,
+                        i4Locator),
+                    FlatPromptKeyV1.SelectCardPickPrefix + "0",
+                    "card_selection"),
+                (
+                    new FlatPromptTributeSelectionPublicContextV1(
+                        0,
+                        1,
+                        1,
+                        false),
+                    new FlatPromptTributeSelectionLocatorCandidateV1(
+                        FlatPromptKeyV1.SelectTributePickPrefix + "0",
+                        0,
+                        i4Locator),
+                    FlatPromptKeyV1.SelectTributePickPrefix + "0",
+                    "pick"),
+                (
+                    new FlatPromptSelectUnselectCardPublicContextV1(
+                        0,
+                        true,
+                        true,
+                        1,
+                        1,
+                        1,
+                        0),
+                    new FlatPromptSelectUnselectLocatorCandidateV1(
+                        FlatPromptKeyV1.SelectUnselectSelectPrefix + "0",
+                        FlatPromptChoiceKindV1.Select,
+                        FlatPromptSourceSectionV1.Selectable,
+                        0,
+                        i4Locator),
+                    FlatPromptKeyV1.SelectUnselectSelectPrefix + "0",
+                    "card_selection"),
+                (
+                    new FlatPromptSortSelectionPublicContextV1(
+                        0,
+                        FlatPromptSortKindV1.SortCard,
+                        new FlatPromptSortSourcePublicDescriptorBaseV1[]
+                        {
+                            new FlatPromptSortSourceLocatorPublicDescriptorV1(
+                                0,
+                                i4Locator)
+                        }),
+                    new FlatPromptSortLocatorPublicCandidateV1(
+                        FlatPromptKeyV1.SortCardPlacePrefix + "0",
+                        FlatPromptFamilyValueV1.MsgSortCard,
+                        0,
+                        i4Locator),
+                    FlatPromptKeyV1.SortCardPlacePrefix + "0",
+                    "pick"),
+                (
+                    new FlatPromptCounterSelectionPublicContextV1(
+                        0,
+                        1,
+                        1,
+                        new FlatPromptCounterSourcePublicDescriptorV1[]
+                        {
+                            new FlatPromptCounterSourcePublicDescriptorV1(
+                                0,
+                                1,
+                                i4Locator)
+                        }),
+                    new FlatPromptCounterAmountPublicCandidateV1(
+                        FlatPromptKeyV1.SelectCounterAssignAmountPrefix + "0:1",
+                        0,
+                        1),
+                    FlatPromptKeyV1.SelectCounterAssignAmountPrefix + "0:1",
+                    "assign_amount")
+            };
+
+            foreach ((FlatPromptPublicContextV1 Context,
+                         FlatPublicCandidateDescriptorV1 Candidate,
+                         string Key,
+                         string ExpectedActionKind) testCase in cases)
+            {
+                FlatPromptProjectionResultV1 projection =
+                    FlatPromptProjectionResultV1.Success(
+                        testCase.Context,
+                        new[] { testCase.Candidate });
+                True(fixture.Session.TryGetCurrentFrameAuthority(
+                        out PrivateGameplayFrameAuthorityV1? authority));
+                NotNull(authority);
+                True(CurrentFlatPromptBindingV1.TryCreate(
+                        99,
+                        testCase.Context.PromptFamily,
+                        new[] { testCase.Candidate },
+                        new[] { testCase.Key },
+                        new[] { 0 },
+                    out CurrentFlatPromptBindingV1? binding,
+                    out FlatPromptErrorCodeV1 bindingError,
+                    frameAuthority: authority,
+                    acceptedProjection: projection),
+                    $"{testCase.Context.PromptFamily}/{testCase.Key}: " +
+                    bindingError);
+                NotNull(binding);
+
+                PrivateI6DFrameCompositionResultV1 source =
+                    PerspectiveSafePublicFrameSourceV1.TryCreateI6DFrame(
+                        fixture.Session.Mirror,
+                        CreateValidI6C5MatchContext(),
+                        fixture.Provider);
+                True(source.FrameResult.IsSuccess,
+                    source.FrameResult.Error?.ToString() ??
+                    "I6C5 source rejected");
+                True(I6DPrivateCrossLocatorBindingHandoffV1.TryCreate(
+                        authority!,
+                        binding!,
+                        projection,
+                        fixture.I4Projection,
+                        source.FrameResult.Frame!,
+                        authority!.MirrorSnapshot,
+                        source.LocatorMap!,
+                        out I6DPrivateCrossLocatorBindingHandoffV1? handoff,
+                        out I6DPrivateCrossLocatorHandoffErrorV1? handoffError),
+                    handoffError?.ToString() ??
+                    "locator-family handoff rejected");
+                NotNull(handoff);
+
+                OcgForgeAcceptedDecisionBoundaryProducerV1 noHandoffProducer =
+                    new();
+                False(noHandoffProducer.TryAccept(
+                        source.FrameResult.Frame,
+                        projection,
+                        null,
+                        out OcgForgeAcceptedDecisionBoundaryV1?
+                            noHandoffBoundary,
+                        out OcgForgeAcceptedDecisionBoundaryProducerErrorV1?
+                            noHandoffError));
+                Null(noHandoffBoundary);
+                Equal(
+                    OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1
+                        .HandoffRejected,
+                    noHandoffError!.Value.Code);
+
+                True(noHandoffProducer.TryAccept(
+                        source.FrameResult.Frame,
+                        projection,
+                        handoff,
+                        out OcgForgeAcceptedDecisionBoundaryV1?
+                            recoveredBoundary,
+                        out OcgForgeAcceptedDecisionBoundaryProducerErrorV1?
+                            recoveredError),
+                    recoveredError?.ToString() ??
+                    "handoff retry was rejected");
+                Equal(0ul, recoveredBoundary!.DecisionIndex);
+
+                OcgForgeAcceptedDecisionBoundaryProducerV1 producer = new();
+                True(producer.TryAccept(
+                        source.FrameResult.Frame,
+                        projection,
+                        handoff,
+                        out OcgForgeAcceptedDecisionBoundaryV1? boundary,
+                        out OcgForgeAcceptedDecisionBoundaryProducerErrorV1?
+                            boundaryError),
+                    boundaryError?.ToString() ??
+                    "locator-family boundary rejected");
+                OcgForgePublicDecisionContextResultV1 mapped =
+                    OcgForgePublicCandidateBridgeV1.TryCreate(boundary);
+                True(mapped.IsSuccess,
+                    mapped.Error?.ToString() ??
+                    "locator-family bridge rejected");
+                Equal(
+                    testCase.ExpectedActionKind,
+                    mapped.Context!.Candidates[0].Descriptor.ActionKind);
+                Equal(
+                    "p0:HAND:0",
+                    mapped.Context.Candidates[0].Descriptor.SourceReference!
+                        .Value.ObservationLocator);
+            }
         }
         finally
         {
@@ -257,6 +530,31 @@ internal static class I6CPublicFrameSourceTests
             Equal(
                 I6DPrivateCrossLocatorHandoffErrorCodeV1.AmbiguousBinding,
                 ambiguousError!.Value.Code);
+
+            MirrorCardSnapshotV1[] ownHandCards = currentSnapshot.Cards
+                .Where(card => card.Zone == MirrorZoneV1.Hand)
+                .ToArray();
+            Equal(2, ownHandCards.Length);
+            True(PrivateI6C3LocatorMapV1.TryCreate(
+                    ownHandCards.ToDictionary(
+                        card => card.EntityId,
+                        _ => "p0:HAND:0"),
+                    out PrivateI6C3LocatorMapV1? collidingLocatorMap));
+            False(I6DPrivateCrossLocatorBindingHandoffV1.TryCreate(
+                    authority!,
+                    currentBinding,
+                    fixture.PromptProjection,
+                    fixture.I4Projection,
+                    sourceFrame,
+                    currentSnapshot,
+                    collidingLocatorMap!,
+                    out I6DPrivateCrossLocatorBindingHandoffV1?
+                        collidingHandoff,
+                    out I6DPrivateCrossLocatorHandoffErrorV1? collidingError));
+            Null(collidingHandoff);
+            Equal(
+                I6DPrivateCrossLocatorHandoffErrorCodeV1.AmbiguousBinding,
+                collidingError!.Value.Code);
 
             PerspectiveSafeEntityV1 shadowI4Locator = new(
                 "p0:HAND:public:287454020:0",
@@ -532,8 +830,212 @@ internal static class I6CPublicFrameSourceTests
         }
     }
 
+    internal static void TestI6DBoundaryAcceptanceWinsAgainstPromptInvalidation() =>
+        TestBoundaryAcceptanceWinsAgainstPromptInvalidation();
+
+    internal static void TestI6DPromptInvalidationWinsAgainstBoundaryAcceptance() =>
+        TestPromptInvalidationWinsAgainstBoundaryAcceptance();
+
+    private static void TestBoundaryAcceptanceWinsAgainstPromptInvalidation()
+    {
+        I6DCompositionFixture fixture = CreateI6DCompositionFixture();
+        PrivateFlatPromptBindingLifetimeAuthorityV1? promptAuthority = null;
+        TaskCompletionSource<bool>? acceptancePromptLeaseHeld = null;
+        TaskCompletionSource<bool>? releaseAcceptance = null;
+        TaskCompletionSource<bool>? invalidationAttempted = null;
+        Task<(bool Success,
+            OcgForgeAcceptedDecisionBoundaryV1? Boundary,
+            OcgForgeAcceptedDecisionBoundaryProducerErrorV1? Error)>?
+            acceptanceTask = null;
+        Task? invalidationTask = null;
+        CancellationTokenSource? cleanup = null;
+        try
+        {
+            promptAuthority = GetCurrentPromptAuthority(fixture);
+            acceptancePromptLeaseHeld = NewSignal();
+            releaseAcceptance = NewSignal();
+            invalidationAttempted = NewSignal();
+            promptAuthority.SetTestLeaseAcquisitionHook(acquired =>
+            {
+                if (acquired)
+                {
+                    acceptancePromptLeaseHeld.TrySetResult(true);
+                    releaseAcceptance.Task.GetAwaiter().GetResult();
+                }
+            });
+            promptAuthority.SetTestInvalidationHook(attempted =>
+            {
+                if (!attempted)
+                {
+                    invalidationAttempted.TrySetResult(true);
+                }
+            });
+
+            cleanup = NewCleanupCancellation();
+            OcgForgeAcceptedDecisionBoundaryProducerV1 producer = new();
+            acceptanceTask = Task.Factory.StartNew(
+                () =>
+                {
+                    bool success = producer.TryAccept(
+                        fixture.Composition.Frame,
+                        fixture.PromptProjection,
+                        fixture.Composition.Handoff,
+                        out OcgForgeAcceptedDecisionBoundaryV1? boundary,
+                        out OcgForgeAcceptedDecisionBoundaryProducerErrorV1?
+                            error);
+                    return (success, boundary, error);
+                },
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+
+            acceptancePromptLeaseHeld.Task.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult();
+            invalidationTask = Task.Factory.StartNew(
+                promptAuthority.Invalidate,
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+            invalidationAttempted.Task.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult();
+            False(promptAuthority.IsLeaseAvailableForTest());
+
+            releaseAcceptance.TrySetResult(true);
+            (bool Success,
+                OcgForgeAcceptedDecisionBoundaryV1? Boundary,
+                OcgForgeAcceptedDecisionBoundaryProducerErrorV1? Error)
+                outcome = acceptanceTask.WaitAsync(cleanup.Token)
+                    .GetAwaiter()
+                    .GetResult();
+            True(outcome.Success, outcome.Error?.ToString() ??
+                "boundary acceptance lost to prompt invalidation");
+            NotNull(outcome.Boundary);
+            invalidationTask.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult();
+        }
+        finally
+        {
+            releaseAcceptance?.TrySetResult(true);
+            promptAuthority?.SetTestLeaseAcquisitionHook(null);
+            promptAuthority?.SetTestInvalidationHook(null);
+            cleanup?.Cancel();
+            DisposeI6C5Session(fixture.Session, fixture.Consumer);
+        }
+    }
+
+    private static void TestPromptInvalidationWinsAgainstBoundaryAcceptance()
+    {
+        I6DCompositionFixture fixture = CreateI6DCompositionFixture();
+        PrivateFlatPromptBindingLifetimeAuthorityV1? promptAuthority = null;
+        TaskCompletionSource<bool>? invalidationLeaseHeld = null;
+        TaskCompletionSource<bool>? releaseInvalidation = null;
+        TaskCompletionSource<bool>? acceptancePromptAttempted = null;
+        Task<(bool Success,
+            OcgForgeAcceptedDecisionBoundaryV1? Boundary,
+            OcgForgeAcceptedDecisionBoundaryProducerErrorV1? Error)>?
+            acceptanceTask = null;
+        Task? invalidationTask = null;
+        CancellationTokenSource? cleanup = null;
+        try
+        {
+            promptAuthority = GetCurrentPromptAuthority(fixture);
+            invalidationLeaseHeld = NewSignal();
+            releaseInvalidation = NewSignal();
+            acceptancePromptAttempted = NewSignal();
+            promptAuthority.SetTestInvalidationHook(acquired =>
+            {
+                if (acquired)
+                {
+                    invalidationLeaseHeld.TrySetResult(true);
+                    releaseInvalidation.Task.GetAwaiter().GetResult();
+                }
+            });
+            promptAuthority.SetTestLeaseAcquisitionHook(acquired =>
+            {
+                if (!acquired)
+                {
+                    acceptancePromptAttempted.TrySetResult(true);
+                }
+            });
+
+            cleanup = NewCleanupCancellation();
+            invalidationTask = Task.Factory.StartNew(
+                promptAuthority.Invalidate,
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+            invalidationLeaseHeld.Task.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult();
+
+            OcgForgeAcceptedDecisionBoundaryProducerV1 producer = new();
+            acceptanceTask = Task.Factory.StartNew(
+                () =>
+                {
+                    bool success = producer.TryAccept(
+                        fixture.Composition.Frame,
+                        fixture.PromptProjection,
+                        fixture.Composition.Handoff,
+                        out OcgForgeAcceptedDecisionBoundaryV1? boundary,
+                        out OcgForgeAcceptedDecisionBoundaryProducerErrorV1?
+                            error);
+                    return (success, boundary, error);
+                },
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+            acceptancePromptAttempted.Task.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult();
+            False(promptAuthority.IsLeaseAvailableForTest());
+
+            releaseInvalidation.TrySetResult(true);
+            invalidationTask.WaitAsync(cleanup.Token)
+                .GetAwaiter()
+                .GetResult();
+            (bool Success,
+                OcgForgeAcceptedDecisionBoundaryV1? Boundary,
+                OcgForgeAcceptedDecisionBoundaryProducerErrorV1? Error)
+                outcome = acceptanceTask.WaitAsync(cleanup.Token)
+                    .GetAwaiter()
+                    .GetResult();
+            False(outcome.Success);
+            Null(outcome.Boundary);
+            Equal(
+                OcgForgeAcceptedDecisionBoundaryProducerErrorCodeV1.HandoffRejected,
+                outcome.Error!.Value.Code);
+
+            True(producer.TryAccept(
+                    fixture.Composition.Frame,
+                    fixture.PromptProjection,
+                    out OcgForgeAcceptedDecisionBoundaryV1? retryBoundary,
+                    out OcgForgeAcceptedDecisionBoundaryProducerErrorV1?
+                        retryError),
+                retryError?.ToString() ?? "legacy retry was rejected");
+            Equal(0ul, retryBoundary!.DecisionIndex);
+        }
+        finally
+        {
+            releaseInvalidation?.TrySetResult(true);
+            promptAuthority?.SetTestLeaseAcquisitionHook(null);
+            promptAuthority?.SetTestInvalidationHook(null);
+            cleanup?.Cancel();
+            DisposeI6C5Session(fixture.Session, fixture.Consumer);
+        }
+    }
+
     private static TaskCompletionSource<bool> NewSignal() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private static CancellationTokenSource NewCleanupCancellation()
+    {
+        CancellationTokenSource cleanup = new();
+        cleanup.CancelAfter(TimeSpan.FromSeconds(5));
+        return cleanup;
+    }
 
     private static PrivateGameplayFrameAuthorityV1 GetCurrentFrame(
         GameplayMirrorSessionV1 session)
@@ -541,6 +1043,22 @@ internal static class I6CPublicFrameSourceTests
         True(session.TryGetCurrentFrameAuthority(
                 out PrivateGameplayFrameAuthorityV1? authority));
         return authority!;
+    }
+
+    private static PrivateFlatPromptBindingLifetimeAuthorityV1
+        GetCurrentPromptAuthority(I6DCompositionFixture fixture)
+    {
+        True(fixture.Session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? authority));
+        NotNull(authority);
+        True(fixture.Prompt.TryGetCurrentFrameOwnedBinding(
+                authority!,
+                fixture.PromptProjection,
+                out CurrentFlatPromptBindingV1? binding));
+        NotNull(binding);
+        return binding!.PromptLifetimeAuthority ??
+            throw new InvalidOperationException(
+                "frame-owned prompt has no lifetime authority");
     }
 
     internal static void TestI6C1SourceContainer()
@@ -595,8 +1113,75 @@ internal static class I6CPublicFrameSourceTests
             new byte[] { 0, 0, 0 });
     }
 
+    private static byte[] SameOccurrenceMultipleIdleActionsMessage(
+        uint cardCode)
+    {
+        ModernLocInfoV1 occurrence = new(0, 0x02, 0, 0);
+        return IdleMessage(
+            0,
+            new[] { new IdleSimpleSpec(cardCode, occurrence) },
+            Array.Empty<IdleSimpleSpec>(),
+            Array.Empty<IdleSimpleSpec>(),
+            new[] { new IdleSimpleSpec(cardCode, occurrence) },
+            Array.Empty<IdleSimpleSpec>(),
+            Array.Empty<IdleActivationSpec>(),
+            0,
+            0,
+            0);
+    }
+
+    private static byte[] IdleMessage(
+        byte player,
+        IReadOnlyList<IdleSimpleSpec> summon,
+        IReadOnlyList<IdleSimpleSpec> specialSummon,
+        IReadOnlyList<IdleSimpleSpec> reposition,
+        IReadOnlyList<IdleSimpleSpec> mset,
+        IReadOnlyList<IdleSimpleSpec> sset,
+        IReadOnlyList<IdleActivationSpec> activatable,
+        byte toBattlePhase,
+        byte toEndPhase,
+        byte shuffleHand)
+    {
+        List<byte[]> parts = new()
+        {
+            new[] { (byte)11, player }
+        };
+        AddIdleSimpleSection(parts, summon, wideSequence: true);
+        AddIdleSimpleSection(parts, specialSummon, wideSequence: true);
+        AddIdleSimpleSection(parts, reposition, wideSequence: false);
+        AddIdleSimpleSection(parts, mset, wideSequence: true);
+        AddIdleSimpleSection(parts, sset, wideSequence: true);
+        parts.Add(U32((uint)activatable.Count));
+        parts.AddRange(activatable.Select(entry => Join(
+            U32(entry.CardCode),
+            new[] { entry.Location.Controller, entry.Location.Location },
+            U32(entry.Location.Sequence),
+            U64(entry.Description),
+            new[] { entry.ClientMode })));
+        parts.Add(new[] { toBattlePhase, toEndPhase, shuffleHand });
+        return Join(parts.ToArray());
+    }
+
+    private static void AddIdleSimpleSection(
+        List<byte[]> parts,
+        IReadOnlyList<IdleSimpleSpec> entries,
+        bool wideSequence)
+    {
+        parts.Add(U32((uint)entries.Count));
+        foreach (IdleSimpleSpec entry in entries)
+        {
+            parts.Add(Join(
+                U32(entry.CardCode),
+                new[] { entry.Location.Controller, entry.Location.Location },
+                wideSequence
+                    ? U32(entry.Location.Sequence)
+                    : new[] { checked((byte)entry.Location.Sequence) }));
+        }
+    }
+
     private static I6DCompositionFixture CreateI6DCompositionFixture(
-        uint duplicateCardCode = 0x11223344)
+        uint duplicateCardCode = 0x11223344,
+        byte[]? promptMessage = null)
     {
         PerspectiveSafePrintedProviderV1 printedProvider =
             CreatePrintedProviderForCodes(new[] { duplicateCardCode });
@@ -640,7 +1225,8 @@ internal static class I6CPublicFrameSourceTests
             FlatPromptSessionV1 promptSession = new();
             FlatPromptProjectionResultV1 acceptedPrompt =
                 promptSession.TryAcceptFrameOwnedPrompt(
-                    DuplicateOwnHandIdleMessage(duplicateCardCode),
+                    promptMessage ?? DuplicateOwnHandIdleMessage(
+                        duplicateCardCode),
                     frameAuthority,
                     acceptedI4Projection);
             True(acceptedPrompt.IsSuccess, acceptedPrompt.Error.ToString());
@@ -4336,6 +4922,16 @@ internal static class I6CPublicFrameSourceTests
         BinaryPrimitives.WriteInt32BigEndian(bytes, value);
         stream.Write(bytes);
     }
+
+    private readonly record struct IdleSimpleSpec(
+        uint CardCode,
+        ModernLocInfoV1 Location);
+
+    private readonly record struct IdleActivationSpec(
+        uint CardCode,
+        ModernLocInfoV1 Location,
+        ulong Description,
+        byte ClientMode);
 
     private readonly record struct SyntheticPrintedRow(
         uint Code,

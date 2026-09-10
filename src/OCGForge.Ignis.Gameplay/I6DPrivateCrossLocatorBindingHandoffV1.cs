@@ -346,6 +346,7 @@ public sealed class I6DPrivateCrossLocatorBindingHandoffV1
         {
             if (!TryBuildBindings(
                     acceptedProjection.Candidates,
+                    acceptedProjection.Context!,
                     acceptedI4Projection,
                     acceptedPublicFrame,
                     mirrorSnapshot,
@@ -444,6 +445,7 @@ public sealed class I6DPrivateCrossLocatorBindingHandoffV1
 
     private static bool TryBuildBindings(
         IReadOnlyList<FlatPublicCandidateDescriptorV1> candidates,
+        FlatPromptPublicContextV1 decision,
         PublicStateProjectionResultV1 acceptedI4Projection,
         PerspectiveSafeFrameV1 acceptedPublicFrame,
         MirrorSnapshotV1 mirrorSnapshot,
@@ -455,7 +457,9 @@ public sealed class I6DPrivateCrossLocatorBindingHandoffV1
         error = null;
         PrivateI4OccurrencePublicLocatorSidecarV1 sidecar =
             acceptedI4Projection.PrivateOccurrenceSidecar!;
-        HashSet<string> mappedTargetLocators =
+        Dictionary<string, PrivateI4OccurrenceKeyV1> mappedTargetOccurrences =
+            new(StringComparer.Ordinal);
+        HashSet<string> mappedCandidateKeys =
             new(StringComparer.Ordinal);
         foreach (FlatPublicCandidateDescriptorV1 candidate in candidates)
         {
@@ -463,9 +467,18 @@ public sealed class I6DPrivateCrossLocatorBindingHandoffV1
                     candidate,
                     out PublicSemanticLocatorV1? i4Locator,
                     out FlatPromptSourceSectionV1 sourceSection,
-                    out int sourceOrdinal))
+                    out int sourceOrdinal,
+                    decision))
             {
                 continue;
+            }
+
+            if (!mappedCandidateKeys.Add(candidate.I4LocalCandidateKey))
+            {
+                error = Failure(
+                    I6DPrivateCrossLocatorHandoffErrorCodeV1.AmbiguousBinding,
+                    "candidate.i4_local_candidate_key");
+                return false;
             }
 
             PrivateI4OccurrencePublicLocatorSidecarEntryV1[] entries = sidecar
@@ -474,6 +487,22 @@ public sealed class I6DPrivateCrossLocatorBindingHandoffV1
                 .ToArray();
             if (entries.Length == 0)
             {
+                if (!TryFindUniqueFrameLocator(
+                        acceptedPublicFrame,
+                        i4Locator!,
+                        out _,
+                        out bool exactLocatorAmbiguous))
+                {
+                    error = Failure(
+                        exactLocatorAmbiguous
+                            ? I6DPrivateCrossLocatorHandoffErrorCodeV1
+                                .AmbiguousBinding
+                            : I6DPrivateCrossLocatorHandoffErrorCodeV1
+                                .MissingBinding,
+                        "candidate.source_reference");
+                    return false;
+                }
+
                 continue;
             }
 
@@ -521,28 +550,25 @@ public sealed class I6DPrivateCrossLocatorBindingHandoffV1
                 return false;
             }
 
-            if (!mappedTargetLocators.Add(target.Value))
+            if (mappedTargetOccurrences.TryGetValue(
+                    target.Value,
+                    out PrivateI4OccurrenceKeyV1 existingOccurrence) &&
+                existingOccurrence != entry.OccurrenceKey)
             {
                 error = Failure(
                     I6DPrivateCrossLocatorHandoffErrorCodeV1.AmbiguousBinding,
                     "candidate.target_reference");
                 return false;
             }
+
+            // A single current occurrence may support several distinct legal
+            // actions. Only a target reused by a different occurrence is a
+            // mapping collision.
+            mappedTargetOccurrences[target.Value] = entry.OccurrenceKey;
 
             if (target.Equals(i4Locator))
             {
                 continue;
-            }
-
-            if (bindings.Any(existing =>
-                    existing.TargetLocator.Equals(target) ||
-                    existing.I4LocalCandidateKey ==
-                        candidate.I4LocalCandidateKey))
-            {
-                error = Failure(
-                    I6DPrivateCrossLocatorHandoffErrorCodeV1.AmbiguousBinding,
-                    "candidate.target_reference");
-                return false;
             }
 
             bindings.Add(
@@ -562,7 +588,8 @@ public sealed class I6DPrivateCrossLocatorBindingHandoffV1
         FlatPublicCandidateDescriptorV1 candidate,
         out PublicSemanticLocatorV1? locator,
         out FlatPromptSourceSectionV1 sourceSection,
-        out int sourceOrdinal)
+        out int sourceOrdinal,
+        FlatPromptPublicContextV1 context)
     {
         sourceSection = default;
         sourceOrdinal = default;
@@ -580,6 +607,107 @@ public sealed class I6DPrivateCrossLocatorBindingHandoffV1
                     activate.PublicSemanticCardLocator,
                     activate.SourceSection,
                     activate.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatChainEntryPublicCandidateDescriptorBaseV1 chain =>
+                SetCandidateCoordinates(
+                    chain.PublicSemanticCardLocator,
+                    chain.SourceSection,
+                    chain.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatBattleActivatablePublicCandidateBaseV1 battleActivate =>
+                SetCandidateCoordinates(
+                    battleActivate.PublicSemanticCardLocator,
+                    battleActivate.SourceSection,
+                    battleActivate.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatBattleAttackPublicCandidateBaseV1 battleAttack =>
+                SetCandidateCoordinates(
+                    battleAttack.PublicSemanticCardLocator,
+                    battleAttack.SourceSection,
+                    battleAttack.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatPromptCardSelectionLocatorCandidateV1 cardSelection =>
+                SetCandidateCoordinates(
+                    cardSelection.PublicSemanticCardLocator,
+                    cardSelection.SourceSection,
+                    cardSelection.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatPromptCardSelectionLocatorPromptCodeCandidateV1
+                cardSelectionPromptCode =>
+                SetCandidateCoordinates(
+                    cardSelectionPromptCode.PublicSemanticCardLocator,
+                    cardSelectionPromptCode.SourceSection,
+                    cardSelectionPromptCode.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatPromptTributeSelectionLocatorCandidateV1 tributeSelection =>
+                SetCandidateCoordinates(
+                    tributeSelection.PublicSemanticCardLocator,
+                    tributeSelection.SourceSection,
+                    tributeSelection.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatPromptTributeSelectionLocatorPromptCodeCandidateV1
+                tributeSelectionPromptCode =>
+                SetCandidateCoordinates(
+                    tributeSelectionPromptCode.PublicSemanticCardLocator,
+                    tributeSelectionPromptCode.SourceSection,
+                    tributeSelectionPromptCode.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatPromptSelectUnselectLocatorCandidateV1 selectUnselect =>
+                SetCandidateCoordinates(
+                    selectUnselect.PublicSemanticCardLocator,
+                    selectUnselect.SourceSection,
+                    selectUnselect.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatPromptSelectUnselectLocatorPromptCodeCandidateV1
+                selectUnselectPromptCode =>
+                SetCandidateCoordinates(
+                    selectUnselectPromptCode.PublicSemanticCardLocator,
+                    selectUnselectPromptCode.SourceSection,
+                    selectUnselectPromptCode.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatPromptSortLocatorPublicCandidateV1 sort =>
+                SetCandidateCoordinates(
+                    sort.PublicSemanticCardLocator,
+                    sort.SourceSection,
+                    sort.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatPromptSortLocatorPromptCodePublicCandidateV1
+                sortPromptCode =>
+                SetCandidateCoordinates(
+                    sortPromptCode.PublicSemanticCardLocator,
+                    sortPromptCode.SourceSection,
+                    sortPromptCode.SourceOrdinal,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatEffectYnPublicCandidateDescriptorV1
+                when context is FlatPromptEffectYnPublicContextBaseV1 effect =>
+                SetCandidateCoordinates(
+                    effect.EffectCardLocator,
+                    FlatPromptSourceSectionV1.Activatable,
+                    0,
+                    out sourceSection,
+                    out sourceOrdinal),
+            FlatPromptCounterAmountPublicCandidateV1 counter
+                when context is FlatPromptCounterSelectionPublicContextV1
+                    counterContext &&
+                counter.SourceOrdinal >= 0 &&
+                counter.SourceOrdinal < counterContext.Sources.Count =>
+                SetCandidateCoordinates(
+                    counterContext.Sources[counter.SourceOrdinal]
+                        .PublicSemanticCardLocator,
+                    FlatPromptSourceSectionV1.CounterSources,
+                    counter.SourceOrdinal,
                     out sourceSection,
                     out sourceOrdinal),
             _ => null

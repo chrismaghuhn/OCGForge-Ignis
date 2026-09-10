@@ -324,6 +324,12 @@ var tests = new (string Name, Action Body)[]
     ("I6D frame-owned cross-locator implementation",
         I6CPublicFrameSourceTests.TestI6DFrameOwnedCrossLocatorImplementation),
 
+    ("I6D same occurrence may map to multiple actions",
+        I6CPublicFrameSourceTests.TestI6DSameOccurrenceCanHaveMultipleActions),
+
+    ("I6D non-idle locator families use handoff",
+        I6CPublicFrameSourceTests.TestI6DNonIdleLocatorFamiliesUseHandoff),
+
     ("I6D handoff currentness and atomicity",
         I6CPublicFrameSourceTests.TestI6DBoundaryHandoffCurrentnessAndAtomicity),
 
@@ -339,6 +345,14 @@ var tests = new (string Name, Action Body)[]
 
     ("I6D frame advance wins against boundary acceptance",
         I6CPublicFrameSourceTests.TestI6DFrameAdvanceWinsAgainstBoundaryAcceptance),
+
+    ("I6D boundary acceptance wins against prompt invalidation",
+        I6CPublicFrameSourceTests
+            .TestI6DBoundaryAcceptanceWinsAgainstPromptInvalidation),
+
+    ("I6D prompt invalidation wins against boundary acceptance",
+        I6CPublicFrameSourceTests
+            .TestI6DPromptInvalidationWinsAgainstBoundaryAcceptance),
 
     ("I6C6-1 native oracle RED contract",
         I6C6NativeOracleTests.TestI6C6_1RedContract),
