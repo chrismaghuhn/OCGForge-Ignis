@@ -49,17 +49,18 @@ counts are retained in the diagnostic result; no raw protocol address,
 
 | Case | I4 form | I6C5/OCGForge form | Safe current match | Characterization |
 | --- | --- | --- | ---: | --- |
-| own Hand, unique code | public ordinal | indexed | 1 | unique safe current match; implementation decision pending |
+| own Hand, unique code | public ordinal | indexed | 1 | unique safe attribute match; not mapping authority |
 | own Hand, duplicate same code | public ordinal | indexed | 2 | ambiguous; reject |
 | opponent public Hand | public ordinal | public ordinal | 1 exact | exact public token |
 | isolated Extra Deck | public ordinal | public ordinal | 1 exact | exact public token |
-| same code across Hand + Extra | per-zone ordinal | shared ordinal | 1, no exact token | unique safe current match; implementation decision pending |
+| same code across Hand + Extra | per-zone ordinal | shared ordinal | 1, no exact token | unique safe attribute match; not mapping authority |
 | hidden opponent identity | no safe candidate identity | no safe identity proof | 0 | no safe public proof; reject |
 | stale frame binding | any | any | not authoritative | stale; reject |
 | missing current entity | any | none | 0 | missing; reject |
 
-The unique-match rows are observations about available safe information, not an
-approval to search by guessed sequence or card identity. The duplicate row
+The unique-match rows are observations about available safe attributes, not an
+approved mapping authority and not an approval to search by guessed sequence
+or card identity. The duplicate row
 proves that `(player, zone, known public code)` is not sufficient to identify
 an own-hand occurrence when multiplicity is greater than one.
 
@@ -74,8 +75,9 @@ proof boundary. A permissible proof would have to be one of:
 
 ```text
 1. exact equality with the current I6C5/OCGForge public locator; or
-2. a uniquely proven current public match whose resulting OCGForge locator is
-   obtained from the accepted current safe frame; or
+2. a uniquely proven current public attribute match whose resulting OCGForge
+   locator is obtained from the accepted current safe frame; this remains a
+   characterization result, not an accepted authority; or
 3. a separately accepted private frame-local source-occurrence binding whose
    private data never enters the public descriptor, public key, or model input.
 ```
@@ -117,9 +119,11 @@ PUBLIC_OPPONENT_HAND_CASE=CHARACTERIZED
 EXTRA_DECK_CASE=CHARACTERIZED
 CROSS_PILE_SHARED_ORDINAL_CASE=CHARACTERIZED
 
-MAPPING_COLLISION_FAILS_CLOSED=PASS
-AMBIGUOUS_MAPPING_FAILS_CLOSED=PASS
-MISSING_MAPPING_FAILS_CLOSED=PASS
+MAPPING_COLLISION_REJECTION_REQUIREMENT=CHARACTERIZED
+AMBIGUOUS_MAPPING_REJECTION_REQUIREMENT=CHARACTERIZED
+MISSING_MAPPING_REJECTION_REQUIREMENT=CHARACTERIZED
+STALE_MAPPING_REJECTION_REQUIREMENT=CHARACTERIZED
+UNIQUE_MATCH_IS_MAPPING_AUTHORITY=NO
 
 HIDDEN_IDENTITY_USED=NO
 MIRROR_ENTITY_ID_USED_AS_PUBLIC_PROOF=NO

@@ -13,11 +13,12 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
         I6DCrossLocatorMappingObservationV1 ownUnique =
             Analyze(OwnHandUnique(), 0);
         Equal(
-            I6DCrossLocatorMappingProofKindV1.UniqueSafeCurrentEntity,
+            I6DCrossLocatorMappingProofKindV1.UniqueSafeAttributeMatch,
             ownUnique.ProofKind);
         Equal(I6DCrossLocatorFormV1.PublicOrdinal, ownUnique.I4LocatorForm);
         Equal(I6DCrossLocatorFormV1.Indexed, ownUnique.I6C5LocatorForm);
         Equal(1, ownUnique.I6C5SafeCurrentMatchCount);
+        False(ownUnique.UniqueMatchIsMappingAuthority);
 
         I6DCrossLocatorMappingObservationV1[] ownDuplicate =
             OwnHandDuplicate();
@@ -48,19 +49,27 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
         I6DCrossLocatorMappingObservationV1 crossPile =
             Analyze(CrossPile(), 0);
         Equal(
-            I6DCrossLocatorMappingProofKindV1.UniqueSafeCurrentEntity,
+            I6DCrossLocatorMappingProofKindV1.UniqueSafeAttributeMatch,
             crossPile.ProofKind);
         Equal(0, crossPile.I6C5ExactLocatorMatchCount);
         Equal(1, crossPile.I6C5SafeCurrentMatchCount);
         Equal(I6DCrossLocatorFormV1.PublicOrdinal, crossPile.I4LocatorForm);
         Equal(I6DCrossLocatorFormV1.PublicOrdinal, crossPile.I6C5LocatorForm);
 
-        I6DCrossLocatorMappingResultV1 hidden =
-            I6DCrossLocatorMappingAuthorityCharacterizationV1.Characterize(
-                null,
-                HiddenOpponentHand().PublicState,
-                HiddenOpponentHand().I6C5Entities);
-        False(hidden.IsSuccess);
+        I6DCrossLocatorCaseV1 hiddenCase = HiddenOpponentHand();
+        False(hiddenCase.PublicState.Cards.Any(card =>
+            card.AbsolutePlayer == 1 &&
+            card.Zone == PublicSemanticZoneV1.Hand &&
+            card.CardCode.HasValue));
+        False(hiddenCase.PublicState.Cards.Any(card =>
+            card.AbsolutePlayer == 1 &&
+            card.Zone == PublicSemanticZoneV1.Hand &&
+            card.Locator.Value.Contains(":public:", StringComparison.Ordinal)));
+        False(hiddenCase.I6C5Entities.Any(entity =>
+            entity.Controller == 1 &&
+            entity.Zone == PerspectiveSafeSemanticZoneV1.Hand &&
+            entity.IdentityKnown &&
+            entity.Passcode.HasValue));
 
         I6DCrossLocatorMappingObservationV1 missing =
             Analyze(OwnHandUnique(), 0, Array.Empty<PerspectiveSafeEntityV1>());

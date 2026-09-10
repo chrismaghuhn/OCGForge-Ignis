@@ -4,7 +4,7 @@ internal enum I6DCrossLocatorMappingProofKindV1 : byte
 {
     None = 0,
     ExactPublicToken = 1,
-    UniqueSafeCurrentEntity = 2,
+    UniqueSafeAttributeMatch = 2,
     AmbiguousSafeCurrentEntities = 3,
     MissingSafeCurrentEntity = 4,
     StaleFrame = 5,
@@ -31,6 +31,7 @@ internal readonly record struct I6DCrossLocatorMappingObservationV1(
     int I6C5ExactLocatorMatchCount,
     int I6C5SafeCurrentMatchCount,
     bool SafePublicIdentityAvailable,
+    bool UniqueMatchIsMappingAuthority,
     bool UsesHiddenIdentity,
     bool UsesMirrorEntityIdentity,
     bool UsesRawProtocolAddress,
@@ -105,7 +106,7 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationV1
                 : !i4Card.CardCode.HasValue
                 ? I6DCrossLocatorMappingProofKindV1.NoSafePublicIdentity
                 : safeMatches.Length == 1
-                ? I6DCrossLocatorMappingProofKindV1.UniqueSafeCurrentEntity
+                ? I6DCrossLocatorMappingProofKindV1.UniqueSafeAttributeMatch
                 : safeMatches.Length > 1
                 ? I6DCrossLocatorMappingProofKindV1.AmbiguousSafeCurrentEntities
                 : I6DCrossLocatorMappingProofKindV1.MissingSafeCurrentEntity;
@@ -123,6 +124,7 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationV1
                 exactLocatorMatchCount,
                 safeMatches.Length,
                 i4Card.CardCode.HasValue,
+                false,
                 false,
                 false,
                 false,
