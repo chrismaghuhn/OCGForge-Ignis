@@ -34,6 +34,41 @@ internal sealed class PrivateI4OccurrencePublicLocatorSidecarV1
     internal IReadOnlyList<PrivateI4OccurrencePublicLocatorSidecarEntryV1>
         Entries => entriesView;
 
+    internal bool IsEquivalentTo(
+        PrivateI4OccurrencePublicLocatorSidecarV1? other)
+    {
+        if (other is null ||
+            FrameInstanceOrdinal != other.FrameInstanceOrdinal ||
+            !string.Equals(
+                AcceptedPublicProjectionId,
+                other.AcceptedPublicProjectionId,
+                StringComparison.Ordinal) ||
+            entries.Length != other.entries.Length)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < entries.Length; index++)
+        {
+            PrivateI4OccurrencePublicLocatorSidecarEntryV1 left =
+                entries[index];
+            PrivateI4OccurrencePublicLocatorSidecarEntryV1 right =
+                other.entries[index];
+            if (left.AbsoluteController != right.AbsoluteController ||
+                left.NormalizedZone != right.NormalizedZone ||
+                left.SourceSequence != right.SourceSequence ||
+                left.IsOverlay != right.IsOverlay ||
+                left.OverlayIndex != right.OverlayIndex ||
+                left.AcceptedI4PublicLocator !=
+                    right.AcceptedI4PublicLocator)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     internal bool TryGet(
         byte absoluteController,
         MirrorZoneV1 normalizedZone,

@@ -489,6 +489,22 @@ var tests = new (string Name, Action Body)[]
         I4PrivateOccurrenceSidecarTests
             .TestMixedNullAndKnownPositionOrdering),
 
+    ("I4 duplicate own-hand prompt uses sidecar correlation",
+        I4PrivateOccurrenceSidecarTests
+            .TestDuplicateOwnHandPromptUsesSidecarCorrelation),
+
+    ("I4 sidecar projection identity mismatch fails closed",
+        I4PrivateOccurrenceSidecarTests
+            .TestSidecarProjectionIdentityMismatchFailsClosed),
+
+    ("I4 detached sidecar mapping fails closed",
+        I4PrivateOccurrenceSidecarTests
+            .TestDetachedSidecarMappingFailsClosed),
+
+    ("I4 sidecar occurrence and target validation fail closed",
+        I4PrivateOccurrenceSidecarTests
+            .TestSidecarOccurrenceAndTargetValidationFailClosed),
+
     ("I4 hidden opponent hand emits no sidecar entry",
         I4PrivateOccurrenceSidecarTests
             .TestHiddenOpponentHandEmitsNoSidecarEntry),

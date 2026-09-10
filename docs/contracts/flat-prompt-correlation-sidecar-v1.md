@@ -1,6 +1,6 @@
 # OCGForge-Ignis I4 Private Prompt Correlation Sidecar V1
 
-Status: `ACCEPTED_DESIGN_FREEZE`; projection implementation 01 pending review
+Status: `ACCEPTED_DESIGN_FREEZE`; projection/correlation implementation pending independent review
 Contract ID: `ocgforge-ignis.flat-prompt-correlation-sidecar.v1`
 Parent public contract: `ocgforge-ignis.flat-prompt-projection.v1`
 Date: 2026-09-10
@@ -11,10 +11,10 @@ I4_PUBLICSTATE_BYTES=UNCHANGED
 I4_PUBLICSTATE_IDENTITY=UNCHANGED
 I4_AUTHORITATIVE_CONTRACT_RECONCILED=YES_BY_EXPLICIT_VERSION_TRANSITION
 I4_V1_IN_PLACE_AMENDMENT=FORBIDDEN
-I4_PRIVATE_CORRELATION_SIDECAR=IMPLEMENTED_PROJECTION_ONLY
+I4_PRIVATE_CORRELATION_SIDECAR=IMPLEMENTED_PROJECTION_AND_CORRELATION_PENDING_REVIEW
 I4_PRIVATE_CORRELATION_SIDECAR_ACCEPTED=YES_FOR_DESIGN_ONLY
-I4_PRIVATE_CORRELATION_SIDECAR_IMPLEMENTED=YES_PROJECTION_ONLY
-I4_PRIVATE_CORRELATION_ENABLEMENT=NO
+I4_PRIVATE_CORRELATION_SIDECAR_IMPLEMENTED=YES_PROJECTION_AND_CORRELATION
+I4_PRIVATE_CORRELATION_ENABLEMENT=IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
 I6B_BUNDLE_ENTRY=NO
 ```
 
@@ -41,11 +41,11 @@ for which the same accepted public projection has already emitted the public
 ordinal. Main Deck, hidden opponent Hand, unknown CardCode, and any source
 occurrence without an exact current mirror resolution remain fail-closed.
 
-Implementation 01 builds the sidecar only through an internal frame-owned
-projection path that receives the session's `FrameInstanceOrdinal`. The
-existing two-argument public-state projection path remains unchanged and
-does not expose or consume a sidecar. Prompt-correlation enablement is a
-separate later operation.
+The sidecar is built only through an internal frame-owned projection path that
+receives the session's `FrameInstanceOrdinal`. The existing two-argument
+public-state projection path remains unchanged and does not expose or consume
+a sidecar. The separately authorized correlation implementation consumes the
+sidecar only when its projection identity and same-mirror re-projection match.
 
 ## 2. Sidecar record
 
@@ -131,11 +131,11 @@ domain is accepted.
 
 ## 4. I4 prompt-correlation use
 
-When a prompt supplies an exact current occurrence, the future
-`FlatPromptCardCorrelationV1` pile path may consume the sidecar entry and
-return its existing accepted I4 public locator. It must also preserve the
-existing accepted-snapshot CardCode/provenance checks. The sidecar does not
-make a new locator and does not make a hidden card public.
+When a prompt supplies an exact current occurrence, the
+`FlatPromptCardCorrelationV1` pile path consumes the sidecar entry and returns
+its existing accepted I4 public locator. It also preserves the existing
+accepted-snapshot CardCode/provenance checks. The sidecar does not make a new
+locator and does not make a hidden card public.
 
 ```text
 exact sidecar key -> exactly one existing I4 public locator -> candidate
@@ -232,13 +232,13 @@ The required transition is:
 ```text
 frozen flat-prompt-projection.v1
     + explicit private flat-prompt-correlation-sidecar.v1
-    -> future I4/I6D implementation authorization
+    -> authorized I4 correlation implementation
 ```
 
-Until prompt-correlation enablement is separately authorized and verified,
-duplicate same-code own-Hand prompts remain unsupported and fail closed. The
-accepted design transition changes neither public-state canonical bytes nor
-public-state identity:
+The correlation implementation is now present pending independent review.
+Duplicate same-code own-Hand prompts use the current frame-owned sidecar;
+missing or detached sidecars still fail closed. This transition changes
+neither public-state canonical bytes nor public-state identity:
 
 ```text
 NEW_GAMEPLAY_SEMANTICS=NO
@@ -250,5 +250,5 @@ PUBLICSTATE_BYTES_CHANGED=NO
 PUBLICSTATE_IDENTITY_CHANGED=NO
 ```
 
-This slice does not authorize prompt-correlation enablement, I6D mapping
-implementation, Counter retry, Link capture, or fresh-process A/B.
+This implementation does not authorize I6D mapping implementation, Counter
+retry, Link capture, or fresh-process A/B.

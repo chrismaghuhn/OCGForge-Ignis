@@ -8,7 +8,9 @@ internal static class FlatPromptCardCorrelationV1
         uint sourceCardCode,
         ModernLocInfoV1 sourceLocation,
         out FlatPromptCardCorrelationResultV1? result,
-        out FlatPromptErrorCodeV1 error)
+        out FlatPromptErrorCodeV1 error,
+        PrivateI4OccurrencePublicLocatorSidecarV1?
+            privateOccurrenceSidecar = null)
     {
         ArgumentNullException.ThrowIfNull(capturedMirror);
         ArgumentNullException.ThrowIfNull(acceptedSnapshot);
@@ -64,6 +66,7 @@ internal static class FlatPromptCardCorrelationV1
                     normalized.Zone,
                     resolvedCard,
                     sourceCardCode,
+                    privateOccurrenceSidecar,
                     out result,
                     out error),
             MirrorZoneV1.MainDeck => Fail(
@@ -89,7 +92,9 @@ internal static class FlatPromptCardCorrelationV1
         byte location,
         byte sequence,
         out FlatPromptCardCorrelationResultV1? result,
-        out FlatPromptErrorCodeV1 error)
+        out FlatPromptErrorCodeV1 error,
+        PrivateI4OccurrencePublicLocatorSidecarV1?
+            privateOccurrenceSidecar = null)
     {
         if ((location & 0x80) != 0)
         {
@@ -104,7 +109,8 @@ internal static class FlatPromptCardCorrelationV1
             sourceCardCode,
             new ModernLocInfoV1(controller, location, sequence, 0),
             out result,
-            out error);
+            out error,
+            privateOccurrenceSidecar);
     }
 
     internal static bool TryCorrelateSort(
@@ -115,7 +121,9 @@ internal static class FlatPromptCardCorrelationV1
         byte location,
         uint sequence,
         out FlatPromptCardCorrelationResultV1? result,
-        out FlatPromptErrorCodeV1 error)
+        out FlatPromptErrorCodeV1 error,
+        PrivateI4OccurrencePublicLocatorSidecarV1?
+            privateOccurrenceSidecar = null)
     {
         if ((location & 0x80) != 0)
         {
@@ -130,7 +138,8 @@ internal static class FlatPromptCardCorrelationV1
             sourceCardCode,
             new ModernLocInfoV1(controller, location, sequence, 0),
             out result,
-            out error);
+            out error,
+            privateOccurrenceSidecar);
     }
 
     private static bool TryCorrelateIndexed(
@@ -176,6 +185,8 @@ internal static class FlatPromptCardCorrelationV1
         MirrorZoneV1 mirrorZone,
         MirrorCardSnapshotV1 resolvedCard,
         uint sourceCardCode,
+        PrivateI4OccurrencePublicLocatorSidecarV1?
+            privateOccurrenceSidecar,
         out FlatPromptCardCorrelationResultV1? result,
         out FlatPromptErrorCodeV1 error)
     {
@@ -192,6 +203,39 @@ internal static class FlatPromptCardCorrelationV1
         PublicSemanticZoneV1 publicZone = mirrorZone == MirrorZoneV1.Hand
             ? PublicSemanticZoneV1.Hand
             : PublicSemanticZoneV1.ExtraDeck;
+        if (privateOccurrenceSidecar is not null)
+        {
+            if (!privateOccurrenceSidecar.TryGet(
+                    absolutePlayer,
+                    mirrorZone,
+                    resolvedCard.Sequence,
+                    isOverlay: false,
+                    overlayIndex: null,
+                    out PrivateI4OccurrencePublicLocatorSidecarEntryV1?
+                        sidecarEntry) ||
+                sidecarEntry is null)
+            {
+                return Fail(
+                    FlatPromptErrorCodeV1.UnprovenPublicReference,
+                    out result,
+                    out error);
+            }
+
+            List<PublicCardStateV1> sidecarMatches = acceptedSnapshot.Cards
+                .Where(card =>
+                    card.AbsolutePlayer == absolutePlayer &&
+                    card.Zone == publicZone &&
+                    card.CardCode.HasValue &&
+                    card.CardCode.Value == resolvedCard.CardCode.Value &&
+                    card.Locator == sidecarEntry.AcceptedI4PublicLocator)
+                .ToList();
+            return CompleteCorrelation(
+                sidecarMatches,
+                sourceCardCode,
+                out result,
+                out error);
+        }
+
         List<PublicCardStateV1> matches = acceptedSnapshot.Cards
             .Where(card =>
                 card.AbsolutePlayer == absolutePlayer &&

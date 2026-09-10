@@ -2287,7 +2287,8 @@ internal static class FlatPromptProjectionV1
                     entry.Location,
                     entry.Sequence,
                     out FlatPromptCardCorrelationResultV1? correlation,
-                    out error) ||
+                    out error,
+                    authority.PrivateOccurrenceSidecar) ||
                 correlation is null)
             {
                 return false;
@@ -2354,7 +2355,8 @@ internal static class FlatPromptProjectionV1
                     entry.Location,
                     entry.Sequence,
                     out FlatPromptCardCorrelationResultV1? correlation,
-                    out _))
+                    out _,
+                    authority.PrivateOccurrenceSidecar))
             {
                 acceptedLocator = correlation?.AcceptedLocator;
             }
@@ -2723,7 +2725,8 @@ internal static class FlatPromptProjectionV1
                 sourceCardCode,
                 sourceLocation,
                 out FlatPromptCardCorrelationResultV1? correlation,
-                out FlatPromptErrorCodeV1 correlationError);
+                out FlatPromptErrorCodeV1 correlationError,
+                authority.PrivateOccurrenceSidecar);
             if (correlationRequired &&
                 (!correlated || correlation is null))
             {
@@ -3734,7 +3737,8 @@ internal static class FlatPromptProjectionV1
                 wire.SourceCardCode,
                 wire.SourceLocation,
                 out FlatPromptCardCorrelationResultV1? correlation,
-                out error) ||
+                out error,
+                authority.PrivateOccurrenceSidecar) ||
             correlation is null)
         {
             return false;
@@ -3797,7 +3801,8 @@ internal static class FlatPromptProjectionV1
                     entry.SourceCardCode,
                     entry.SourceLocation,
                     out FlatPromptCardCorrelationResultV1? correlation,
-                    out error) ||
+                    out error,
+                    authority.PrivateOccurrenceSidecar) ||
                 correlation is null)
             {
                 if (error == FlatPromptErrorCodeV1.None)
@@ -4390,7 +4395,8 @@ internal static class FlatPromptProjectionV1
             sourceCardCode,
             new ModernLocInfoV1(controller, location, sequence, 0),
             out correlation,
-            out error);
+            out error,
+            authority.PrivateOccurrenceSidecar);
     }
 
     private static bool TryValidatePrivateLocation(

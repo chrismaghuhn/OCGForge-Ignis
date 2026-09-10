@@ -3145,7 +3145,9 @@ internal sealed record FlatPromptChainWireDraftV1
 
 internal sealed record FlatPromptCardAuthorityContextV1(
     MirrorSnapshotV1 CapturedMirror,
-    PublicStateSnapshotV1 AcceptedSnapshot);
+    PublicStateSnapshotV1 AcceptedSnapshot,
+    PrivateI4OccurrencePublicLocatorSidecarV1? PrivateOccurrenceSidecar =
+        null);
 
 internal readonly record struct FlatPromptBattleActivatableWireEntryV1(
     uint SourceCardCode,

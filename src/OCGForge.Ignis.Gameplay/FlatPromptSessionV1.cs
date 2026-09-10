@@ -48,11 +48,30 @@ public sealed class FlatPromptSessionV1
 
         MirrorSnapshotV1 capturedMirror = mirror.Snapshot;
         PublicStateSnapshotV1 acceptedSnapshot = acceptedProjection.Snapshot;
+        PrivateI4OccurrencePublicLocatorSidecarV1?
+            acceptedSidecar = acceptedProjection.PrivateOccurrenceSidecar;
+        if (acceptedSidecar is not null &&
+            !string.Equals(
+                acceptedSidecar.AcceptedPublicProjectionId,
+                acceptedProjection.PublicProjectionId,
+                StringComparison.Ordinal))
+        {
+            currentBinding = null;
+            return FlatPromptProjectionResultV1.Failure(
+                FlatPromptErrorCodeV1.AuthorityMismatch);
+        }
+
         PublicStateProjectionResultV1 recomputedProjection =
-            PublicStateProjectionV1.TryProject(
-                capturedMirror,
-                new PublicStateProjectionContextV1(
-                    acceptedSnapshot.DuelFlags));
+            acceptedSidecar is null
+                ? PublicStateProjectionV1.TryProject(
+                    capturedMirror,
+                    new PublicStateProjectionContextV1(
+                        acceptedSnapshot.DuelFlags))
+                : PublicStateProjectionV1.TryProject(
+                    capturedMirror,
+                    new PublicStateProjectionContextV1(
+                        acceptedSnapshot.DuelFlags),
+                    acceptedSidecar.FrameInstanceOrdinal);
         ReadOnlyMemory<byte> acceptedCanonicalBytes =
             acceptedProjection.CanonicalBytes;
         ReadOnlyMemory<byte> recomputedCanonicalBytes =
@@ -68,7 +87,11 @@ public sealed class FlatPromptSessionV1
             !string.Equals(
                 recomputedProjection.PublicProjectionId,
                 acceptedProjection.PublicProjectionId,
-                StringComparison.Ordinal))
+                StringComparison.Ordinal) ||
+            (acceptedSidecar is not null &&
+             (recomputedProjection.PrivateOccurrenceSidecar is null ||
+              !acceptedSidecar.IsEquivalentTo(
+                  recomputedProjection.PrivateOccurrenceSidecar))))
         {
             currentBinding = null;
             return FlatPromptProjectionResultV1.Failure(
@@ -79,7 +102,8 @@ public sealed class FlatPromptSessionV1
                 wireDraft,
                 new FlatPromptCardAuthorityContextV1(
                     capturedMirror,
-                    acceptedSnapshot),
+                    acceptedSnapshot,
+                    recomputedProjection.PrivateOccurrenceSidecar),
                 out FlatPromptProjectionDraftV1? projected,
                 out FlatPromptErrorCodeV1 projectionError) ||
             projected is null)
@@ -145,11 +169,30 @@ public sealed class FlatPromptSessionV1
 
         MirrorSnapshotV1 capturedMirror = mirror.Snapshot;
         PublicStateSnapshotV1 acceptedSnapshot = acceptedProjection.Snapshot;
+        PrivateI4OccurrencePublicLocatorSidecarV1?
+            acceptedSidecar = acceptedProjection.PrivateOccurrenceSidecar;
+        if (acceptedSidecar is not null &&
+            !string.Equals(
+                acceptedSidecar.AcceptedPublicProjectionId,
+                acceptedProjection.PublicProjectionId,
+                StringComparison.Ordinal))
+        {
+            currentBinding = null;
+            return FlatPromptProjectionResultV1.Failure(
+                FlatPromptErrorCodeV1.AuthorityMismatch);
+        }
+
         PublicStateProjectionResultV1 recomputedProjection =
-            PublicStateProjectionV1.TryProject(
-                capturedMirror,
-                new PublicStateProjectionContextV1(
-                    acceptedSnapshot.DuelFlags));
+            acceptedSidecar is null
+                ? PublicStateProjectionV1.TryProject(
+                    capturedMirror,
+                    new PublicStateProjectionContextV1(
+                        acceptedSnapshot.DuelFlags))
+                : PublicStateProjectionV1.TryProject(
+                    capturedMirror,
+                    new PublicStateProjectionContextV1(
+                        acceptedSnapshot.DuelFlags),
+                    acceptedSidecar.FrameInstanceOrdinal);
         if (!recomputedProjection.IsSuccess ||
             recomputedProjection.Snapshot is null ||
             !recomputedProjection.CanonicalBytes.Span.SequenceEqual(
@@ -161,7 +204,11 @@ public sealed class FlatPromptSessionV1
             !string.Equals(
                 recomputedProjection.PublicProjectionId,
                 acceptedProjection.PublicProjectionId,
-                StringComparison.Ordinal))
+                StringComparison.Ordinal) ||
+            (acceptedSidecar is not null &&
+             (recomputedProjection.PrivateOccurrenceSidecar is null ||
+              !acceptedSidecar.IsEquivalentTo(
+                  recomputedProjection.PrivateOccurrenceSidecar))))
         {
             currentBinding = null;
             return FlatPromptProjectionResultV1.Failure(
@@ -172,7 +219,8 @@ public sealed class FlatPromptSessionV1
                 wireDraft,
                 new FlatPromptCardAuthorityContextV1(
                     capturedMirror,
-                    acceptedSnapshot),
+                    acceptedSnapshot,
+                    recomputedProjection.PrivateOccurrenceSidecar),
                 out FlatPromptProjectionDraftV1? projected,
                 out FlatPromptErrorCodeV1 projectionError) ||
             projected is null)
