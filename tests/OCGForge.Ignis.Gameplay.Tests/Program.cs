@@ -481,6 +481,10 @@ var tests = new (string Name, Action Body)[]
         I4PrivateOccurrenceSidecarTests
             .TestDuplicateSidecarPairingIsInsertionOrderIndependent),
 
+    ("I4 null-position duplicate pairing is insertion-order independent",
+        I4PrivateOccurrenceSidecarTests
+            .TestNullPositionDuplicatePairingIsInsertionOrderIndependent),
+
     ("I4 hidden opponent hand emits no sidecar entry",
         I4PrivateOccurrenceSidecarTests
             .TestHiddenOpponentHandEmitsNoSidecarEntry),

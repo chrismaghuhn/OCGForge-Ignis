@@ -1070,23 +1070,27 @@ internal static class PublicStateProjectionV1
 
         internal static int Compare(KnownPileCard left, KnownPileCard right)
         {
-            if (!left.Position.HasValue)
+            if (!left.Position.HasValue && right.Position.HasValue)
             {
-                return right.Position.HasValue ? -1 : 0;
+                return -1;
             }
 
-            if (!right.Position.HasValue)
+            if (left.Position.HasValue && !right.Position.HasValue)
             {
                 return 1;
             }
 
-            int result = left.Position.Value.CompareTo(right.Position.Value);
-            if (result != 0)
+            if (left.Position.HasValue && right.Position.HasValue)
             {
-                return result;
+                int positionResult = left.Position.Value.CompareTo(
+                    right.Position.Value);
+                if (positionResult != 0)
+                {
+                    return positionResult;
+                }
             }
 
-            result = left.AbsoluteController.CompareTo(right.AbsoluteController);
+            int result = left.AbsoluteController.CompareTo(right.AbsoluteController);
             if (result != 0)
             {
                 return result;

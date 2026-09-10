@@ -120,6 +120,61 @@ internal static class I4PrivateOccurrenceSidecarTests
         True(forwardPublicLocators.SequenceEqual(reversePublicLocators));
     }
 
+    internal static void TestNullPositionDuplicatePairingIsInsertionOrderIndependent()
+    {
+        PublicStateProjectionResultV1 forward =
+            PublicStateProjectionV1.TryProject(
+                CreateDuplicateOwnHandSnapshot(
+                    reverseInsertionOrder: false,
+                    unknownPositions: true),
+                new PublicStateProjectionContextV1(0),
+                frameInstanceOrdinal: 0);
+        PublicStateProjectionResultV1 reverse =
+            PublicStateProjectionV1.TryProject(
+                CreateDuplicateOwnHandSnapshot(
+                    reverseInsertionOrder: true,
+                    unknownPositions: true),
+                new PublicStateProjectionContextV1(0),
+                frameInstanceOrdinal: 0);
+        True(forward.IsSuccess, forward.Error.ToString());
+        True(reverse.IsSuccess, reverse.Error.ToString());
+        BytesEqual(forward.CanonicalBytes.Span, reverse.CanonicalBytes.Span);
+        Equal(forward.PublicProjectionId, reverse.PublicProjectionId);
+        NotNull(forward.PrivateOccurrenceSidecar);
+        NotNull(reverse.PrivateOccurrenceSidecar);
+
+        PrivateI4OccurrencePublicLocatorSidecarEntryV1[] forwardEntries =
+            forward.PrivateOccurrenceSidecar!.Entries
+                .OrderBy(entry => entry.SourceSequence)
+                .ToArray();
+        PrivateI4OccurrencePublicLocatorSidecarEntryV1[] reverseEntries =
+            reverse.PrivateOccurrenceSidecar!.Entries
+                .OrderBy(entry => entry.SourceSequence)
+                .ToArray();
+        Equal(2, forwardEntries.Length);
+        Equal(2, reverseEntries.Length);
+        Equal(0u, forwardEntries[0].SourceSequence);
+        Equal(1u, forwardEntries[1].SourceSequence);
+        True(forwardEntries.Select(entry =>
+                entry.SourceSequence + ":" + entry.AcceptedI4PublicLocator.Value)
+            .SequenceEqual(reverseEntries.Select(entry =>
+                entry.SourceSequence + ":" + entry.AcceptedI4PublicLocator.Value)));
+        True(PublicSemanticLocatorV1.TryCreatePublicOrdinal(
+            0,
+            PublicSemanticZoneV1.Hand,
+            0x11223344,
+            0,
+            out PublicSemanticLocatorV1? expectedFirstLocator));
+        True(PublicSemanticLocatorV1.TryCreatePublicOrdinal(
+            0,
+            PublicSemanticZoneV1.Hand,
+            0x11223344,
+            1,
+            out PublicSemanticLocatorV1? expectedSecondLocator));
+        Equal(expectedFirstLocator, forwardEntries[0].AcceptedI4PublicLocator);
+        Equal(expectedSecondLocator, forwardEntries[1].AcceptedI4PublicLocator);
+    }
+
     internal static void TestHiddenOpponentHandEmitsNoSidecarEntry()
     {
         (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
@@ -175,7 +230,8 @@ internal static class I4PrivateOccurrenceSidecarTests
     }
 
     private static MirrorSnapshotV1 CreateDuplicateOwnHandSnapshot(
-        bool reverseInsertionOrder)
+        bool reverseInsertionOrder,
+        bool unknownPositions = false)
     {
         const uint duplicateCardCode = 0x11223344;
         (PerspectiveStateMirrorV1 mirror, GameplayMessageDecoderV1 decoder) =
@@ -199,12 +255,46 @@ internal static class I4PrivateOccurrenceSidecarTests
         }
 
         MirrorSnapshotV1 snapshot = mirror.Snapshot;
+        IEnumerable<MirrorCardSnapshotV1> cards = snapshot.Cards;
+        if (unknownPositions)
+        {
+            cards = cards.Select(card => new MirrorCardSnapshotV1(
+                card.EntityId,
+                card.Controller,
+                card.Owner,
+                card.Zone,
+                card.Sequence,
+                card.IsOverlay,
+                card.OverlayIndex,
+                MirrorValueV1.Unknown<uint>(),
+                card.CardCode,
+                card.QueryFields));
+        }
+
         if (reverseInsertionOrder)
         {
             snapshot = new MirrorSnapshotV1(
                 snapshot.Perspective,
                 snapshot.Participants,
-                snapshot.Cards.Reverse(),
+                cards.Reverse(),
+                snapshot.TurnCount,
+                snapshot.TurnPlayer,
+                snapshot.Phase,
+                snapshot.Terminal,
+                snapshot.PendingChain,
+                snapshot.Chains,
+                snapshot.TargetRelations,
+                snapshot.ChainTargetRelations,
+                snapshot.EquipmentRelations,
+                snapshot.OverlayRelations,
+                snapshot.PendingChainSource);
+        }
+        else if (unknownPositions)
+        {
+            snapshot = new MirrorSnapshotV1(
+                snapshot.Perspective,
+                snapshot.Participants,
+                cards,
                 snapshot.TurnCount,
                 snapshot.TurnPlayer,
                 snapshot.Phase,
