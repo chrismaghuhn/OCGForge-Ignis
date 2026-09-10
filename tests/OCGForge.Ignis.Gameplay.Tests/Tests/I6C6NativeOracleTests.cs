@@ -14,7 +14,7 @@ internal static class I6C6NativeOracleTests
                 RuntimeExecutablePath:
                     @"C:\Users\chris\.config\superpowers\worktrees\edopro\i6c6-edopro-server-only-v1\bin\release\ygoprodll.exe",
                 RuntimeExecutableSha256:
-                    "ebb959d087ed0dd26a2b891f4db42ff5afc79f73e3aeadce06dac10fb49b504e",
+                    "c27ec4530cc12d2641b1d79b844eac81662f92550cf93da4276a4168fe9d5380",
                 AssetRoot: @"C:\ProjectIgnis",
                 DatabaseSha256:
                     "c49a077285e1d999f32056cb65303b75e311e859b4486c48f41772a193069225",
@@ -44,6 +44,27 @@ internal static class I6C6NativeOracleTests
                     "7500ad5f75fe31910427343d65672b871e8a7c092f75f121ef57831ce4b0c31f",
                 ServerBootstrapRuntimeExecutableSha256:
                     "ebb959d087ed0dd26a2b891f4db42ff5afc79f73e3aeadce06dac10fb49b504e",
+                TimerGuardParent:
+                    "690d031c9b882a36ffd1ea167af80d0ef9cf791b",
+                TimerGuardCommit:
+                    "2f728fd80e82eb952baeb7ffe9968c7086dca9d0",
+                TimerGuardPatchsetSha256:
+                    "35613a11761aa76a770d9400186895c38f1aa9bf041739e4b2109bcd47f2a9a1",
+                TimerGuardRuntimeExecutableSha256:
+                    "7f0433b62660e9c1dae3054ca07a446c07a7d112d005e988d575deba64930f66",
+                RngParent:
+                    "2f728fd80e82eb952baeb7ffe9968c7086dca9d0",
+                RngImplementationCommit:
+                    "c5cd78d282c220b557df5cafe30cd6a6aed80c26",
+                RngKatCommit:
+                    "4e1f93683d4ccec76558d06a5483f4090e30113c",
+                RngCombinedPatchsetSha256:
+                    "d5f4fdde30cd1fb427d92d07304806f95974f138a2bc94928f65e6885541d1a8",
+                EvidenceRngId:
+                    "ocgforge-ignis.i6c6.evidence-rng.v1",
+                EvidenceRngRoot: 0x2e43fb46490a681dUL,
+                FinalRuntimeExecutableSha256:
+                    "c27ec4530cc12d2641b1d79b844eac81662f92550cf93da4276a4168fe9d5380",
                 LinkScenario: new(
                     "projectignis.tactical-try.cyber-dragon.v1",
                     @"C:\ProjectIgnis\deck\[Tactical-Try Deck] Decisive Strike Cyber Dragon.ydk",
@@ -142,6 +163,78 @@ internal static class I6C6NativeOracleTests
                 });
         Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
             wrongBootstrapRuntime.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongTimerParent =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { TimerGuardParent = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongTimerParent.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongTimerCommit =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { TimerGuardCommit = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongTimerCommit.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongTimerPatchset =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { TimerGuardPatchsetSha256 = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongTimerPatchset.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongTimerRuntime =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { TimerGuardRuntimeExecutableSha256 = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongTimerRuntime.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongRngParent =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { RngParent = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongRngParent.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongRngImplementation =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { RngImplementationCommit = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongRngImplementation.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongRngKat =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { RngKatCommit = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongRngKat.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongRngPatchset =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { RngCombinedPatchsetSha256 = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongRngPatchset.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongRngId =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { EvidenceRngId = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongRngId.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongRngRoot =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { EvidenceRngRoot = 1 });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongRngRoot.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongFinalRuntime =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { FinalRuntimeExecutableSha256 = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongFinalRuntime.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongRuntimeSha =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { RuntimeExecutableSha256 = "wrong" });
+        Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongRuntimeSha.ErrorCode);
 
         I6C6ClosureHarnessValidationResultV1 forbiddenExecutable =
             I6C6ClosureHarnessV1.ValidateConfiguration(

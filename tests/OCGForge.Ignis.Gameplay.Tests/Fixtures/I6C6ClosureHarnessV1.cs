@@ -60,6 +60,17 @@ internal sealed record I6C6ClosureHarnessConfigurationV1(
     string ServerBootstrapPatchCommit,
     string ServerBootstrapPatchsetSha256,
     string ServerBootstrapRuntimeExecutableSha256,
+    string TimerGuardParent,
+    string TimerGuardCommit,
+    string TimerGuardPatchsetSha256,
+    string TimerGuardRuntimeExecutableSha256,
+    string RngParent,
+    string RngImplementationCommit,
+    string RngKatCommit,
+    string RngCombinedPatchsetSha256,
+    string EvidenceRngId,
+    ulong EvidenceRngRoot,
+    string FinalRuntimeExecutableSha256,
     I6C6ClosureScenarioConfigurationV1 LinkScenario,
     I6C6ClosureScenarioConfigurationV1 CounterScenario);
 
@@ -2693,8 +2704,28 @@ internal static class I6C6ClosureHarnessV1
         ExpectedRuntimeHead;
     private const string ExpectedStartupCompatPatchsetSha256 =
         "83bf958fd115b6f85e4dee744dfc4685d5612d1c9d795480adc01831e7e33b49";
-    private const string ExpectedRuntimeExecutableSha256 =
+    private const string ExpectedServerBootstrapRuntimeExecutableSha256 =
         "ebb959d087ed0dd26a2b891f4db42ff5afc79f73e3aeadce06dac10fb49b504e";
+    private const string ExpectedTimerGuardParent =
+        ExpectedServerBootstrapPatchCommit;
+    private const string ExpectedTimerGuardCommit =
+        "2f728fd80e82eb952baeb7ffe9968c7086dca9d0";
+    private const string ExpectedTimerGuardPatchsetSha256 =
+        "35613a11761aa76a770d9400186895c38f1aa9bf041739e4b2109bcd47f2a9a1";
+    private const string ExpectedTimerGuardRuntimeExecutableSha256 =
+        "7f0433b62660e9c1dae3054ca07a446c07a7d112d005e988d575deba64930f66";
+    private const string ExpectedRngParent = ExpectedTimerGuardCommit;
+    private const string ExpectedRngImplementationCommit =
+        "c5cd78d282c220b557df5cafe30cd6a6aed80c26";
+    private const string ExpectedRngKatCommit =
+        "4e1f93683d4ccec76558d06a5483f4090e30113c";
+    private const string ExpectedRngCombinedPatchsetSha256 =
+        "d5f4fdde30cd1fb427d92d07304806f95974f138a2bc94928f65e6885541d1a8";
+    private const string ExpectedEvidenceRngId =
+        "ocgforge-ignis.i6c6.evidence-rng.v1";
+    private const ulong ExpectedEvidenceRngRoot = 0x2e43fb46490a681dUL;
+    private const string ExpectedFinalRuntimeExecutableSha256 =
+        "c27ec4530cc12d2641b1d79b844eac81662f92550cf93da4276a4168fe9d5380";
     private const string ExpectedLoopbackHostPatchParent =
         ExpectedRuntimeHead;
     private const string ExpectedLoopbackHostPatchCommit =
@@ -2776,11 +2807,52 @@ internal static class I6C6ClosureHarnessV1
                 StringComparison.Ordinal) ||
             !string.Equals(
                 configuration.ServerBootstrapRuntimeExecutableSha256,
-                ExpectedRuntimeExecutableSha256,
+                ExpectedServerBootstrapRuntimeExecutableSha256,
                 StringComparison.Ordinal) ||
             !string.Equals(
+                configuration.TimerGuardParent,
+                ExpectedTimerGuardParent,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.TimerGuardCommit,
+                ExpectedTimerGuardCommit,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.TimerGuardPatchsetSha256,
+                ExpectedTimerGuardPatchsetSha256,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.TimerGuardRuntimeExecutableSha256,
+                ExpectedTimerGuardRuntimeExecutableSha256,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.RngParent,
+                ExpectedRngParent,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.RngImplementationCommit,
+                ExpectedRngImplementationCommit,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.RngKatCommit,
+                ExpectedRngKatCommit,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.RngCombinedPatchsetSha256,
+                ExpectedRngCombinedPatchsetSha256,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.EvidenceRngId,
+                ExpectedEvidenceRngId,
+                StringComparison.Ordinal) ||
+            configuration.EvidenceRngRoot != ExpectedEvidenceRngRoot ||
+            !string.Equals(
                 configuration.RuntimeExecutableSha256,
-                ExpectedRuntimeExecutableSha256,
+                ExpectedFinalRuntimeExecutableSha256,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.FinalRuntimeExecutableSha256,
+                ExpectedFinalRuntimeExecutableSha256,
                 StringComparison.Ordinal) ||
             !string.Equals(
                 configuration.DatabaseSha256,
@@ -3317,9 +3389,15 @@ internal static class I6C6ClosureHarnessV1
             return I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable;
         }
 
+        string actualRuntimeHash =
+            HashFile(configuration.RuntimeExecutablePath);
         if (!string.Equals(
-                HashFile(configuration.RuntimeExecutablePath),
+                actualRuntimeHash,
                 configuration.RuntimeExecutableSha256,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                actualRuntimeHash,
+                configuration.FinalRuntimeExecutableSha256,
                 StringComparison.Ordinal))
         {
             return I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch;
