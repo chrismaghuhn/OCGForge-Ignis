@@ -64,13 +64,41 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
             I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
                 .HandoffToBoundary);
         Equal(
-            "TryGetValidatedTarget returns only safe target locator or structured error",
+            "TryGetValidatedTarget(accepted public candidate, current accepted public frame, out safe target, out structured error)",
             I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
                 .HandoffOperation);
         Equal(
-            "FrameInstanceOrdinal + PublicProjectionId + prompt/continuation + candidate cross-checks",
+            "stored frame/prompt lifetime authorities + public candidate/frame cross-checks before boundary creation",
             I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
                 .HandoffValidation);
+        Equal(
+            "private retained PrivateGameplayFrameAuthorityV1 or exact revocable equivalent",
+            I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+                .FrameLifetimeAuthority);
+        Equal(
+            "private retained revocable FlatPromptSession/current-binding capability",
+            I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+                .PromptLifetimeAuthority);
+        Equal(
+            "accepted public candidate + current accepted public frame only",
+            I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+                .PublicConsumerInputs);
+        Equal(
+            "opaque handoff validates frame/projection/prompt atomically before accepted boundary creation",
+            I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+                .BoundaryValidation);
+        Equal(
+            "FRAME lifetime lease -> PROMPT lifetime lease; release in reverse order",
+            I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+                .LeaseAcquisitionOrder);
+        Equal(
+            "FlatPromptSessionV1/current frame-bound binding",
+            I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+                .PromptLifetimeOwner);
+        Equal(
+            "stored revocable authorities, not caller coordinates, prove currentness",
+            I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+                .HandoffCurrentnessRule);
         Equal(
             "existing boundary overload remains unchanged; non-equal locator mapping requires handoff",
             I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
@@ -102,6 +130,26 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
             .HandoffReturnsPrivateOccurrence);
         True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
             .HandoffReturnsOnlySafeTarget);
+        True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+            .HandoffStoresFrameLifetimeAuthority);
+        True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+            .HandoffStoresPromptLifetimeAuthority);
+        True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+            .HandoffCoordinatesAreDiagnosticOnly);
+        False(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+            .FrameOrdinalCallerAuthority);
+        False(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+            .PromptOrdinalCallerAuthority);
+        False(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+            .ContinuationStepCallerAuthority);
+        False(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+            .PublicConsumerNeedsPrivateCoordinates);
+        True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+            .BoundaryValidationIsAtomic);
+        True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+            .MismatchedHandoffRejectedBeforeBoundary);
+        True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
+            .StaleHandoffRejected);
         True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
             .ExactTokenPathMayOmitHandoff);
         True(I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
@@ -176,6 +224,16 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationTests
                 BindingFlags.NonPublic)
             .Any(constructor => constructor.GetParameters().Any(parameter =>
                 ContainsI6DPrivateHandoffName(parameter.ParameterType.Name))));
+
+        Type publicPromptContextType = typeof(FlatPromptPublicContextV1);
+        False(publicPromptContextType.GetProperties(
+                BindingFlags.Instance |
+                BindingFlags.Public |
+                BindingFlags.NonPublic)
+            .Any(property => property.Name is
+                "FrameInstanceOrdinal" or
+                "PromptInstanceOrdinal" or
+                "ContinuationStep"));
 
         Type producerType = typeof(OcgForgeAcceptedDecisionBoundaryProducerV1);
         False(producerType.GetMethods(

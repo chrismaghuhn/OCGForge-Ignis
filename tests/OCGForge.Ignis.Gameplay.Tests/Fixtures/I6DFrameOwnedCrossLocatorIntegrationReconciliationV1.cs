@@ -38,10 +38,31 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
         "OcgForgeAcceptedDecisionBoundaryV1 stores one opaque handoff internally";
 
     internal const string HandoffOperation =
-        "TryGetValidatedTarget returns only safe target locator or structured error";
+        "TryGetValidatedTarget(accepted public candidate, current accepted public frame, out safe target, out structured error)";
 
     internal const string HandoffValidation =
-        "FrameInstanceOrdinal + PublicProjectionId + prompt/continuation + candidate cross-checks";
+        "stored frame/prompt lifetime authorities + public candidate/frame cross-checks before boundary creation";
+
+    internal const string FrameLifetimeAuthority =
+        "private retained PrivateGameplayFrameAuthorityV1 or exact revocable equivalent";
+
+    internal const string PromptLifetimeAuthority =
+        "private retained revocable FlatPromptSession/current-binding capability";
+
+    internal const string PublicConsumerInputs =
+        "accepted public candidate + current accepted public frame only";
+
+    internal const string BoundaryValidation =
+        "opaque handoff validates frame/projection/prompt atomically before accepted boundary creation";
+
+    internal const string LeaseAcquisitionOrder =
+        "FRAME lifetime lease -> PROMPT lifetime lease; release in reverse order";
+
+    internal const string PromptLifetimeOwner =
+        "FlatPromptSessionV1/current frame-bound binding";
+
+    internal const string HandoffCurrentnessRule =
+        "stored revocable authorities, not caller coordinates, prove currentness";
 
     internal const string LegacyBoundaryBehavior =
         "existing boundary overload remains unchanged; non-equal locator mapping requires handoff";
@@ -70,6 +91,26 @@ internal static class I6DFrameOwnedCrossLocatorIntegrationReconciliationV1
     internal const bool HandoffReturnsPrivateOccurrence = false;
 
     internal const bool HandoffReturnsOnlySafeTarget = true;
+
+    internal const bool HandoffStoresFrameLifetimeAuthority = true;
+
+    internal const bool HandoffStoresPromptLifetimeAuthority = true;
+
+    internal const bool HandoffCoordinatesAreDiagnosticOnly = true;
+
+    internal const bool FrameOrdinalCallerAuthority = false;
+
+    internal const bool PromptOrdinalCallerAuthority = false;
+
+    internal const bool ContinuationStepCallerAuthority = false;
+
+    internal const bool PublicConsumerNeedsPrivateCoordinates = false;
+
+    internal const bool BoundaryValidationIsAtomic = true;
+
+    internal const bool MismatchedHandoffRejectedBeforeBoundary = true;
+
+    internal const bool StaleHandoffRejected = true;
 
     internal const bool ExactTokenPathMayOmitHandoff = true;
 

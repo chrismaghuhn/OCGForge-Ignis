@@ -129,6 +129,25 @@ accepted I6C5 public frame
 No detached sidecar list or caller-supplied map may be attached after the
 boundary has been accepted.
 
+The prompt-side authority is a separate private revocable capability owned by
+`FlatPromptSessionV1` and its current frame-bound binding. It is created only
+for the accepted frame-owned I4 binding and is invalidated when the current
+prompt binding is replaced, its continuation step changes, terminal selection
+consumes it, or the boundary fails. The frame and prompt authorities are
+acquired in this fixed order:
+
+```text
+FRAME lifetime lease
+    -> PROMPT/binding lifetime lease
+    -> validate and consume
+    -> release PROMPT/binding lease
+    -> release FRAME lease
+```
+
+No implementation may acquire them in the reverse order. A handoff with a
+matching integer coordinate but an unavailable stored authority is stale and
+must fail closed.
+
 ## Controlled Gameplay-to-Model handoff
 
 The project dependency remains:
@@ -151,20 +170,20 @@ Its only public operation is safe-target retrieval:
 
 ```text
 TryGetValidatedTarget(
-    prompt_instance_ordinal,
-    continuation_step,
-    frame_instance_ordinal,
-    accepted_public_projection_id,
-    i4_local_candidate_key,
-    source_section,
-    source_ordinal,
+    accepted_public_candidate,
     current_accepted_public_frame,
     out accepted_i6c5_target_locator,
     out structured_error)
 ```
 
-The capability validates its private frame/prompt binding and the current
-public frame before returning a target. It returns no source occurrence,
+The capability privately retains the exact revocable
+`PrivateGameplayFrameAuthorityV1` (or an explicitly derived equivalent) and
+a separate revocable prompt/binding lifetime capability. It acquires those
+authorities in one fixed order, validates the accepted public candidate and
+public frame while both leases are held, and returns no target if either
+authority is stale. `FrameInstanceOrdinal`, `PromptInstanceOrdinal`, and
+`ContinuationStep` are private diagnostic/cross-check values only; they are
+not caller-supplied proof. The operation returns no source occurrence,
 CardCode, sequence, MirrorEntityId, raw address, or sidecar storage. It is
 invalid after frame replacement, prompt/continuation mismatch, terminal
 selection, session disposal, or boundary failure.
@@ -183,11 +202,27 @@ Gameplay frame-owned composition
     -> existing OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)
 ```
 
-The existing producer overload without the handoff remains unchanged. The
-public bridge constructs descriptors only from OCGForge-safe fields; only the
+The producer validates the opaque handoff atomically against the supplied
+accepted public frame and projection before constructing the accepted
+decision boundary. Thus `FRAME_A + PROJECTION_A + HANDOFF_B` and stale prompt
+or continuation combinations are rejected before a boundary exists. The
+existing producer overload without the handoff remains unchanged. The public
+bridge constructs descriptors only from OCGForge-safe fields; only the
 validated target locator may feed the existing reference mapping. There is no
-public binding-list argument and no broad
+public lifecycle-coordinate argument, public binding-list argument, or broad
 `InternalsVisibleTo("OCGForge.Ignis.Model")`.
+
+The acceptance rule is therefore:
+
+```text
+MISMATCHED_FRAME_HANDOFF       -> reject before accepted boundary
+MISMATCHED_PROJECTION_HANDOFF  -> reject before accepted boundary
+STALE_FRAME_HANDOFF            -> reject
+STALE_PROMPT_HANDOFF           -> reject
+STALE_CONTINUATION_HANDOFF     -> reject
+DETACHED_BINDING_LIST          -> not accepted
+CALLER_PRIVATE_MAPPING         -> not accepted
+```
 
 ## Frozen non-alias and privacy rules
 
@@ -207,6 +242,18 @@ private occurrence in model input               -> NO
 private occurrence in replay identity           -> NO
 ```
 
+The handoff's private lifetime authorities are mandatory:
+
+```text
+HANDOFF_STORES_FRAME_LIFETIME_AUTHORITY       = YES
+HANDOFF_STORES_PROMPT_LIFETIME_AUTHORITY     = YES
+FRAME_ORDINAL_CALLER_AUTHORITY                = NO
+PROMPT_ORDINAL_CALLER_AUTHORITY               = NO
+CONTINUATION_STEP_CALLER_AUTHORITY            = NO
+PUBLIC_CONSUMER_NEEDS_PRIVATE_COORDINATES     = NO
+BOUNDARY_VALIDATES_HANDOFF_BEFORE_CREATION    = YES
+```
+
 Paired-world equality is required whenever the accepted safe target and all
 other public semantics are equal. If frozen OCGForge public semantics make
 the safe target itself different, the public result may differ; private source
@@ -223,6 +270,7 @@ I6C3_MAP_IS_TRANSIENT                      = PASS
 PUBLIC_SOURCE_HAS_NO_PRIVATE_MAP           = PASS
 CURRENT_I6D_HANDOFF_IS_ABSENT              = PASS
 CURRENT_MODEL_BOUNDARY_HAS_NO_HANDOFF      = PASS
+PUBLIC_CONSUMER_NEEDS_PRIVATE_COORDINATES  = PASS
 PUBLICSTATE_BYTES_CHANGED                  = NO
 PUBLICSTATE_IDENTITY_CHANGED               = NO
 PRODUCTION_MAPPING_IMPLEMENTATION          = NO

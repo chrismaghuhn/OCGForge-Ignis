@@ -207,7 +207,7 @@ internal static class I6DCrossLocatorMappingAuthorityCharacterizationTests
             I6DPrivateSourceOccurrenceBindingDesignV1
                 .AssemblyBoundaryHandoffArgument);
         Equal(
-            "public opaque TryGetValidatedTarget(prompt_instance, continuation_step, frame_instance, projection_id, local_key, source_section, source_ordinal, current_frame, out safe_target, out error)",
+            "public opaque TryGetValidatedTarget(accepted_public_candidate, current_accepted_public_frame, out safe_target, out error)",
             I6DPrivateSourceOccurrenceBindingDesignV1
                 .AssemblyHandoffSignature);
         string[] expectedSidecarFields =

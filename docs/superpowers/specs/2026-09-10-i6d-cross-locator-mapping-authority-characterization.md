@@ -207,14 +207,8 @@ through one opaque capability. The conceptual cross-assembly interface is:
 ```text
 public opaque I6DPrivateCrossLocatorBindingHandoffV1
     TryGetValidatedTarget(
-        prompt_instance,
-        continuation_step,
-        frame_instance,
-        projection_id,
-        local_key,
-        source_section,
-        source_ordinal,
-        current_frame,
+        accepted_public_candidate,
+        current_accepted_public_frame,
         out safe_target,
         out error)
 ```
@@ -223,8 +217,14 @@ public opaque I6DPrivateCrossLocatorBindingHandoffV1
 public list. It contains exactly one binding for every candidate that needs a
 non-equal locator mapping, no binding for non-card candidates, and no unknown
 or duplicate lookup keys. The opaque capability is the only value that can
-cross from Gameplay to Model; its operation returns only an already validated
-safe target or a structured failure. The existing public
+cross from Gameplay to Model. It privately retains the revocable current
+`PrivateGameplayFrameAuthorityV1` and the revocable current prompt/binding
+lifetime authority. The prompt authority is owned by
+`FlatPromptSessionV1`/the current frame-bound binding. Its operation acquires
+the frame lifetime lease first, then the prompt lifetime lease, validates the
+accepted public candidate/frame, releases the leases in reverse order, and
+returns only an already validated safe target or a structured failure. The
+existing public
 `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)` remains the only
 public consumption interface; it consumes the capability through the accepted
 decision boundary's internal member. A caller cannot pass a second list after
@@ -234,11 +234,13 @@ must reject any non-equal mapping that arrives without the complete internal
 set.
 
 The internal Gameplay-side capability factory validates the set atomically
-against the complete projection before returning the opaque value. The I6D
-bridge then uses the exact-token path where possible and otherwise calls the
-single safe-target operation, checks the frame/projection coordinates and
-candidate cross-checks, verifies the target in the current frame, and only
-then emits the existing OCGForge descriptor. No private field is added to
+against the complete projection before returning the opaque value. Before the
+accepted decision boundary is constructed, the Model producer atomically asks
+the capability to validate the accepted public frame/projection and complete
+binding set. A mismatch or stale frame/prompt therefore rejects before a
+boundary exists. The I6D bridge then uses the exact-token path where possible
+and otherwise calls the single safe-target operation before emitting the
+existing OCGForge descriptor. No private field is added to
 `FlatPromptProjectionResultV1` or to a public candidate type.
 
 ### Lookup, consumption, and lifecycle
@@ -524,25 +526,22 @@ The only permitted operation across that seam is conceptually:
 
 ```text
 public opaque TryGetValidatedTarget(
-    prompt_instance_ordinal,
-    continuation_step,
-    frame_instance_ordinal,
-    accepted_public_projection_id,
-    i4_local_candidate_key,
-    source_section,
-    source_ordinal,
-    current_accepted_frame,
+    accepted_public_candidate,
+    current_accepted_public_frame,
     out accepted_i6c5_target_locator,
     out error)
 ```
 
 The operation returns only the already accepted safe target or a structured
-failure. It does not return the source occurrence, mirror snapshot, mirror
-ID, raw address, prompt CardCode, or sidecar storage. The Model bridge must
-not call any other Gameplay-internal member. If this opaque capability cannot
-be made non-forgeable with an internal-only constructor and safe-target-only
-operation, the implementation must stop and request a separate assembly
-design rather than adding a friend assembly.
+failure. It does not require the Model caller to provide
+`FrameInstanceOrdinal`, `PromptInstanceOrdinal`, `ContinuationStep`, or a
+projection ID as authority. Those values remain private diagnostics and
+cross-checks inside the capability. It does not return the source occurrence,
+mirror snapshot, mirror ID, raw address, prompt CardCode, or sidecar storage.
+The Model bridge must not call any other Gameplay-internal member. If this
+opaque capability cannot be made non-forgeable with an internal-only
+constructor and safe-target-only operation, the implementation must stop and
+request a separate assembly design rather than adding a friend assembly.
 
 The public `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)`
 interface remains unchanged. Its accepted decision boundary stores the

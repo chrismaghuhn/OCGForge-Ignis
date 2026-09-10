@@ -194,29 +194,37 @@ Its only cross-assembly operation is:
 
 ```text
 TryGetValidatedTarget(
-    prompt_instance,
-    continuation_step,
-    frame_instance,
-    accepted_public_projection_id,
-    i4_local_candidate_key,
-    source_section,
-    source_ordinal,
-    current_accepted_frame,
+    accepted_public_candidate,
+    current_accepted_public_frame,
     out accepted_i6c5_target_locator,
     out structured_error)
 ```
 
 The operation returns only the safe target locator or a structured failure.
-The public `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)`
-entry remains unchanged and receives no detached mapping list.
+All lifecycle coordinates remain private inside the capability: it retains the
+exact revocable `PrivateGameplayFrameAuthorityV1` (or an equivalent derived
+revocation capability) and a revocable current-binding lifetime capability.
+`FrameInstanceOrdinal`, `PromptInstanceOrdinal`, and `ContinuationStep` are
+private diagnostics/cross-checks, never caller authority. The capability
+acquires the stored frame lease and then the prompt-binding lease, validates
+the public candidate/frame while both are held, releases them in reverse
+order, and returns no target after either lease is stale. The prompt-binding
+lease is owned by `FlatPromptSessionV1`/the current frame-bound binding and is
+revoked on prompt replacement, continuation transition, terminal selection, or
+boundary failure.
+
+The public `OcgForgePublicCandidateBridgeV1.TryCreate(acceptedDecision)` entry
+remains unchanged as the final consumer and receives no detached mapping list.
 
 ## 6. Lifecycle and rejection
 
 The sidecar and opaque capability are in-memory, immutable, and scoped to one
-accepted frame and prompt instance. They are discarded on prompt replacement,
-continuation-step transition, frame replacement, terminal selection, session
-disposal, or any boundary failure. A new continuation step requires a new
-sidecar/binding set from the new accepted frame.
+accepted frame and prompt instance. The opaque capability privately retains
+both revocable lifetime authorities. It is discarded or becomes unusable on
+prompt replacement, continuation-step transition, frame replacement,
+terminal selection, session disposal, or any boundary failure. A new
+continuation step requires a new sidecar/binding set from the new accepted
+frame.
 
 The complete candidate boundary rejects on:
 
@@ -224,6 +232,8 @@ The complete candidate boundary rejects on:
 missing sidecar entry
 ambiguous sidecar entry
 stale frame/projection/prompt/continuation coordinates
+stored frame lifetime unavailable
+stored prompt lifetime unavailable
 source section or source ordinal mismatch
 duplicate lookup key
 duplicate source-occurrence key
@@ -233,6 +243,15 @@ target missing or non-unique in the current I6C5 frame
 
 No candidate is dropped, substituted, sorted by policy, or repaired after a
 sidecar failure.
+
+Boundary creation is atomic with respect to the opaque handoff. The future
+Model producer receives only the accepted public frame, accepted public
+projection, and one opaque handoff. Before constructing
+`OcgForgeAcceptedDecisionBoundaryV1`, it asks the handoff to validate those
+public values against its privately retained frame/prompt authorities. A
+mismatched frame, projection, prompt, continuation, or binding set therefore
+rejects before an accepted boundary exists. The producer does not accept a
+public coordinate argument as proof of currentness.
 
 ## 7. Explicit transition and non-effects
 
