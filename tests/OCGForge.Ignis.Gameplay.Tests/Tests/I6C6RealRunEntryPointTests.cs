@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using OCGForge.Ignis.Client;
 using OCGForge.Ignis.Gameplay;
@@ -222,6 +224,21 @@ internal static class I6C6RealRunEntryPointTests
             I6C6ClosureHarnessExecutionStageV1.ExternalRuntimeStart,
             runtimeStart.Stage);
         Equal(I2ErrorCode.None, runtimeStart.I2ErrorCode);
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.None,
+            runtimeStart.Readiness);
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1 readinessFailure =
+            I6C6ClosureHarnessExecutionDiagnosticsV1.ExternalRuntimeStart(
+                I6C6ExternalRuntimeReadinessResultV1.ProcessExited);
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.ProcessExited,
+            readinessFailure.Readiness);
+        I6C6ExternalRuntimeReadinessException startedReadinessFailure =
+            new(
+                I6C6ExternalRuntimeReadinessResultV1.DeadlineExpired,
+                processStarted: true);
+        True(startedReadinessFailure.ProcessStarted);
 
         I6C6ClosureHarnessExecutionDiagnosticsV1 deckLoad =
             I6C6ClosureHarnessExecutionDiagnosticsV1.DeckLoad();
@@ -269,6 +286,14 @@ internal static class I6C6RealRunEntryPointTests
         Equal(
             I6C6ClosureHarnessPreDuelFailureStageV1.PumpRead,
             cancelledPreDuel.PreDuelStage);
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1 cancelledReadiness =
+            I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled(
+                readiness:
+                    I6C6ExternalRuntimeReadinessResultV1.Cancelled);
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.Cancelled,
+            cancelledReadiness.Readiness);
 
         I6C6ClosureHarnessExecutionDiagnosticsV1 unexpected =
             I6C6ClosureHarnessExecutionDiagnosticsV1.UnexpectedException();
@@ -610,6 +635,293 @@ internal static class I6C6RealRunEntryPointTests
         {
             transport.ReleaseEmptyRead();
             runner.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestExternalRuntimeListenerReadinessBarrier()
+    {
+        IPEndPoint expectedListener = new(IPAddress.Loopback, 7911);
+        Queue<IReadOnlyList<IPEndPoint>> laterSnapshots = new(
+            new IReadOnlyList<IPEndPoint>[]
+            {
+                Array.Empty<IPEndPoint>(),
+                new[] { expectedListener }
+            });
+        I6C6ExternalRuntimeReadinessResultV1 later =
+            I6C6ExternalRuntimeProcessOwnerV1
+                .WaitForListenerForTestAsync(
+                    () => laterSnapshots.Count == 0
+                        ? new[] { expectedListener }
+                        : laterSnapshots.Dequeue(),
+                    () => true,
+                    7911,
+                    TimeSpan.FromSeconds(1),
+                    CancellationToken.None,
+                    TimeSpan.Zero)
+                .GetAwaiter()
+                .GetResult();
+        Equal(I6C6ExternalRuntimeReadinessResultV1.Ready, later);
+
+        I6C6ExternalRuntimeReadinessResultV1 wrongPort =
+            I6C6ExternalRuntimeProcessOwnerV1
+                .WaitForListenerForTestAsync(
+                    () => new[]
+                    {
+                        new IPEndPoint(IPAddress.Loopback, 7912)
+                    },
+                    () => true,
+                    7911,
+                    TimeSpan.Zero,
+                    CancellationToken.None,
+                    TimeSpan.Zero)
+                .GetAwaiter()
+                .GetResult();
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.DeadlineExpired,
+            wrongPort);
+
+        I6C6ExternalRuntimeReadinessResultV1 wildcard =
+            I6C6ExternalRuntimeProcessOwnerV1
+                .WaitForListenerForTestAsync(
+                    () => new[]
+                    {
+                        new IPEndPoint(IPAddress.Any, 7911)
+                    },
+                    () => true,
+                    7911,
+                    TimeSpan.Zero,
+                    CancellationToken.None,
+                    TimeSpan.Zero)
+                .GetAwaiter()
+                .GetResult();
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.DeadlineExpired,
+            wildcard);
+
+        I6C6ExternalRuntimeReadinessResultV1 conflicting =
+            I6C6ExternalRuntimeProcessOwnerV1
+                .WaitForListenerForTestAsync(
+                    () => new[]
+                    {
+                        expectedListener,
+                        new IPEndPoint(IPAddress.Any, 7911)
+                    },
+                    () => true,
+                    7911,
+                    TimeSpan.Zero,
+                    CancellationToken.None,
+                    TimeSpan.Zero)
+                .GetAwaiter()
+                .GetResult();
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.DeadlineExpired,
+            conflicting);
+
+        I6C6ExternalRuntimeReadinessResultV1 exited =
+            I6C6ExternalRuntimeProcessOwnerV1
+                .WaitForListenerForTestAsync(
+                    () => Array.Empty<IPEndPoint>(),
+                    () => false,
+                    7911,
+                    TimeSpan.FromSeconds(1),
+                    CancellationToken.None,
+                    TimeSpan.Zero)
+                .GetAwaiter()
+                .GetResult();
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.ProcessExited,
+            exited);
+
+        I6C6ExternalRuntimeReadinessResultV1 ownedListener =
+            I6C6ExternalRuntimeProcessOwnerV1
+                .WaitForListenerForTestAsync(
+                    () => new[] { expectedListener },
+                    () => true,
+                    7911,
+                    TimeSpan.FromSeconds(1),
+                    CancellationToken.None,
+                    TimeSpan.Zero,
+                    _ => I6C6ExternalRuntimeListenerOwnershipResultV1.Owned)
+                .GetAwaiter()
+                .GetResult();
+        Equal(I6C6ExternalRuntimeReadinessResultV1.Ready, ownedListener);
+
+        I6C6ExternalRuntimeReadinessResultV1 foreignListener =
+            I6C6ExternalRuntimeProcessOwnerV1
+                .WaitForListenerForTestAsync(
+                    () => new[] { expectedListener },
+                    () => true,
+                    7911,
+                    TimeSpan.FromSeconds(1),
+                    CancellationToken.None,
+                    TimeSpan.Zero,
+                    _ => I6C6ExternalRuntimeListenerOwnershipResultV1.NotOwned)
+                .GetAwaiter()
+                .GetResult();
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.ListenerOwnershipMismatch,
+            foreignListener);
+
+        I6C6ExternalRuntimeReadinessResultV1 unavailableOwnership =
+            I6C6ExternalRuntimeProcessOwnerV1
+                .WaitForListenerForTestAsync(
+                    () => new[] { expectedListener },
+                    () => true,
+                    7911,
+                    TimeSpan.FromSeconds(1),
+                    CancellationToken.None,
+                    TimeSpan.Zero,
+                    _ => I6C6ExternalRuntimeListenerOwnershipResultV1.Unavailable)
+                .GetAwaiter()
+                .GetResult();
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.ObservationFailed,
+            unavailableOwnership);
+
+        if (OperatingSystem.IsWindows())
+        {
+            TcpListener listener = new(IPAddress.Loopback, 0);
+            listener.Start();
+            try
+            {
+                IPEndPoint ownedEndpoint =
+                    (IPEndPoint)listener.LocalEndpoint;
+                Equal(
+                    I6C6ExternalRuntimeListenerOwnershipResultV1.Owned,
+                    I6C6ExternalRuntimeProcessOwnerV1
+                        .GetListenerOwnershipForTest(
+                            ownedEndpoint,
+                            Process.GetCurrentProcess().Id));
+                Equal(
+                    I6C6ExternalRuntimeListenerOwnershipResultV1.NotOwned,
+                    I6C6ExternalRuntimeProcessOwnerV1
+                        .GetListenerOwnershipForTest(ownedEndpoint, -1));
+            }
+            finally
+            {
+                listener.Stop();
+            }
+        }
+
+        I6C6ExternalRuntimeReadinessResultV1 deadline =
+            I6C6ExternalRuntimeProcessOwnerV1
+                .WaitForListenerForTestAsync(
+                    () => Array.Empty<IPEndPoint>(),
+                    () => true,
+                    7911,
+                    TimeSpan.Zero,
+                    CancellationToken.None,
+                    TimeSpan.Zero)
+                .GetAwaiter()
+                .GetResult();
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.DeadlineExpired,
+            deadline);
+
+        using CancellationTokenSource cancelled = new();
+        cancelled.Cancel();
+        I6C6ExternalRuntimeReadinessResultV1 cancellation =
+            I6C6ExternalRuntimeProcessOwnerV1
+                .WaitForListenerForTestAsync(
+                    () => Array.Empty<IPEndPoint>(),
+                    () => true,
+                    7911,
+                    TimeSpan.FromSeconds(1),
+                    cancelled.Token,
+                    TimeSpan.Zero)
+                .GetAwaiter()
+                .GetResult();
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.Cancelled,
+            cancellation);
+
+        I6C6ExternalRuntimeReadinessResultV1 observationFailure =
+            I6C6ExternalRuntimeProcessOwnerV1
+                .WaitForListenerForTestAsync(
+                    () => throw new InvalidOperationException(),
+                    () => true,
+                    7911,
+                    TimeSpan.FromSeconds(1),
+                    CancellationToken.None,
+                    TimeSpan.Zero)
+                .GetAwaiter()
+                .GetResult();
+        Equal(
+            I6C6ExternalRuntimeReadinessResultV1.ObservationFailed,
+            observationFailure);
+
+    }
+
+    internal static void TestExternalRuntimeReadinessGatesI2Start()
+    {
+        using CancellationTokenSource cancellation = new();
+        TaskCompletionSource<bool> runtimeStartEntered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<bool> releaseRuntimeStart =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        CountingTransport transport = new();
+        I2SessionRunner runner = new(transport);
+
+        try
+        {
+            Task<I2Result> sequence =
+                I6C6ExternalRuntimeStartupSequenceV1
+                    .RunAsync(
+                        async token =>
+                        {
+                            runtimeStartEntered.TrySetResult(true);
+                            await releaseRuntimeStart.Task.WaitAsync(token)
+                                .ConfigureAwait(false);
+                            return new object();
+                        },
+                        (_, token) => runner.StartAsync(
+                            PreDuelTestConnection(),
+                            token),
+                        cancellation.Token)
+                    .AsTask();
+
+            runtimeStartEntered.Task.GetAwaiter().GetResult();
+            Equal(0, transport.ConnectCount);
+
+            releaseRuntimeStart.TrySetResult(true);
+            I2Result started = sequence.GetAwaiter().GetResult();
+            True(started.IsSuccess);
+            Equal(1, transport.ConnectCount);
+        }
+        finally
+        {
+            runner.DisposeAsync().GetAwaiter().GetResult();
+        }
+
+        CountingTransport failedTransport = new();
+        I2SessionRunner failedRunner = new(failedTransport);
+        try
+        {
+            try
+            {
+                I6C6ExternalRuntimeStartupSequenceV1
+                    .RunAsync<object, I2Result>(
+                        _ => throw new InvalidOperationException(
+                            "runtime readiness failed"),
+                        (_, token) => failedRunner.StartAsync(
+                            PreDuelTestConnection(),
+                            token),
+                        CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+                throw new InvalidOperationException(
+                    "failed runtime startup was accepted");
+            }
+            catch (InvalidOperationException exception)
+                when (exception.Message == "runtime readiness failed")
+            {
+            }
+
+            Equal(0, failedTransport.ConnectCount);
+        }
+        finally
+        {
+            failedRunner.DisposeAsync().GetAwaiter().GetResult();
         }
     }
 
@@ -1332,6 +1644,42 @@ internal static class I6C6RealRunEntryPointTests
 
             return ValueTask.CompletedTask;
         }
+
+        public ValueTask DisposeAsync() => CloseAsync();
+    }
+
+    private sealed class CountingTransport : IByteTransport
+    {
+        internal int ConnectCount { get; private set; }
+
+        public ValueTask ConnectAsync(
+            string host,
+            int port,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConnectCount++;
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<int> ReadAsync(
+            Memory<byte> destination,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(0);
+        }
+
+        public ValueTask WriteAsync(
+            ReadOnlyMemory<byte> source,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask CloseAsync() => ValueTask.CompletedTask;
 
         public ValueTask DisposeAsync() => CloseAsync();
     }

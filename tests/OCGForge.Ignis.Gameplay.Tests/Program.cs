@@ -373,6 +373,14 @@ var tests = new (string Name, Action Body)[]
         I6C6RealRunEntryPointTests
             .TestPreDuelDuelStartRequiresAllLobbyPredicates),
 
+    ("I6G external runtime listener readiness is fail closed",
+        I6C6RealRunEntryPointTests
+            .TestExternalRuntimeListenerReadinessBarrier),
+
+    ("I6G external runtime readiness gates I2 start",
+        I6C6RealRunEntryPointTests
+            .TestExternalRuntimeReadinessGatesI2Start),
+
     ("I6G capture preserves frame-source failure diagnostics",
         I6C6RealRunEntryPointTests.TestCaptureFailureDiagnosticsExposeSourceError),
 

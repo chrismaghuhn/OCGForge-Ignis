@@ -1,6 +1,11 @@
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using OCGForge.Ignis.Client;
 using OCGForge.Ignis.Gameplay;
@@ -63,11 +68,16 @@ internal readonly record struct I6C6ClosureHarnessExecutionDiagnosticsV1(
     I6C6ClosureHarnessExecutionStageV1 Stage,
     I2ErrorCode I2ErrorCode = I2ErrorCode.None,
     I6C6ClosureHarnessPreDuelFailureStageV1 PreDuelStage =
-        I6C6ClosureHarnessPreDuelFailureStageV1.None)
+        I6C6ClosureHarnessPreDuelFailureStageV1.None,
+    I6C6ExternalRuntimeReadinessResultV1 Readiness =
+        I6C6ExternalRuntimeReadinessResultV1.None)
 {
-    internal static I6C6ClosureHarnessExecutionDiagnosticsV1
-        ExternalRuntimeStart() =>
-        new(I6C6ClosureHarnessExecutionStageV1.ExternalRuntimeStart);
+    internal static I6C6ClosureHarnessExecutionDiagnosticsV1 ExternalRuntimeStart(
+        I6C6ExternalRuntimeReadinessResultV1 readiness =
+            I6C6ExternalRuntimeReadinessResultV1.None) =>
+        new(
+            I6C6ClosureHarnessExecutionStageV1.ExternalRuntimeStart,
+            Readiness: readiness);
 
     internal static I6C6ClosureHarnessExecutionDiagnosticsV1
         SessionStart(I2ErrorCode error) =>
@@ -96,11 +106,14 @@ internal readonly record struct I6C6ClosureHarnessExecutionDiagnosticsV1(
         Cancelled(
             I2ErrorCode error = I2ErrorCode.Cancelled,
             I6C6ClosureHarnessPreDuelFailureStageV1 stage =
-                I6C6ClosureHarnessPreDuelFailureStageV1.None) =>
+                I6C6ClosureHarnessPreDuelFailureStageV1.None,
+            I6C6ExternalRuntimeReadinessResultV1 readiness =
+                I6C6ExternalRuntimeReadinessResultV1.None) =>
         new(
             I6C6ClosureHarnessExecutionStageV1.Cancelled,
             error,
-            stage);
+            stage,
+            readiness);
 
     internal static I6C6ClosureHarnessExecutionDiagnosticsV1
         UnexpectedException() =>
@@ -2625,8 +2638,65 @@ internal static class I6C6CounterPropertyEvidenceExtractorV1
             Array.Empty<I6C6CounterTransitionEvidenceV1>());
 }
 
+internal enum I6C6ExternalRuntimeReadinessResultV1 : byte
+{
+    None = 0,
+    Ready = 1,
+    ProcessExited = 2,
+    DeadlineExpired = 3,
+    Cancelled = 4,
+    ObservationFailed = 5,
+    PortOccupied = 6,
+    ListenerOwnershipMismatch = 7
+}
+
+internal enum I6C6ExternalRuntimeListenerOwnershipResultV1 : byte
+{
+    Owned = 0,
+    NotOwned = 1,
+    Unavailable = 2
+}
+
+internal sealed class I6C6ExternalRuntimeReadinessException : Exception
+{
+    internal I6C6ExternalRuntimeReadinessException(
+        I6C6ExternalRuntimeReadinessResultV1 result,
+        bool processStarted = false)
+    {
+        Result = result;
+        ProcessStarted = processStarted;
+    }
+
+    internal I6C6ExternalRuntimeReadinessResultV1 Result { get; }
+
+    internal bool ProcessStarted { get; }
+}
+
+internal static class I6C6ExternalRuntimeStartupSequenceV1
+{
+    internal static async ValueTask<TResult> RunAsync<TRuntime, TResult>(
+        Func<CancellationToken, ValueTask<TRuntime>> startRuntime,
+        Func<TRuntime, CancellationToken, ValueTask<TResult>> startNext,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(startRuntime);
+        ArgumentNullException.ThrowIfNull(startNext);
+        TRuntime runtime = await startRuntime(cancellationToken)
+            .ConfigureAwait(false);
+        return await startNext(runtime, cancellationToken)
+            .ConfigureAwait(false);
+    }
+}
+
 internal sealed class I6C6ExternalRuntimeProcessOwnerV1 : IAsyncDisposable
 {
+    private static readonly TimeSpan ListenerReadinessPollInterval =
+        TimeSpan.FromMilliseconds(25);
+
+    private const uint ErrorInsufficientBuffer = 122;
+    private const int AddressFamilyInterNetwork = 2;
+    private const int AddressFamilyInterNetworkV6 = 23;
+
     private readonly Process process;
 
     private I6C6ExternalRuntimeProcessOwnerV1(Process process)
@@ -2666,22 +2736,386 @@ internal sealed class I6C6ExternalRuntimeProcessOwnerV1 : IAsyncDisposable
         return startInfo;
     }
 
-    internal static I6C6ExternalRuntimeProcessOwnerV1 Start(
-        I6C6ClosureHarnessBindingV1 binding,
-        ConnectionConfigurationV1 connection)
+    internal static async ValueTask<I6C6ExternalRuntimeProcessOwnerV1>
+        StartAsync(
+            I6C6ClosureHarnessBindingV1 binding,
+            ConnectionConfigurationV1 connection,
+            CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(connection);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!TryGetLoopbackAddress(connection.Host, out IPAddress expectedAddress))
+        {
+            throw new I6C6ExternalRuntimeReadinessException(
+                I6C6ExternalRuntimeReadinessResultV1.ObservationFailed);
+        }
+
+        IReadOnlyList<IPEndPoint> initialListeners;
+        try
+        {
+            initialListeners = GetActiveListeners();
+        }
+        catch (Exception)
+        {
+            throw new I6C6ExternalRuntimeReadinessException(
+                I6C6ExternalRuntimeReadinessResultV1.ObservationFailed);
+        }
+
+        if (HasListenerOnPort(initialListeners, connection.Port))
+        {
+            throw new I6C6ExternalRuntimeReadinessException(
+                I6C6ExternalRuntimeReadinessResultV1.PortOccupied);
+        }
+
         ProcessStartInfo startInfo = CreateStartInfo(
             binding.Configuration,
             connection);
         Process started = Process.Start(startInfo) ??
             throw new InvalidOperationException(
                 "The external EDOPro process could not be started.");
-        return new(started);
+        I6C6ExternalRuntimeProcessOwnerV1 owner = new(started);
+
+        I6C6ExternalRuntimeReadinessResultV1 readiness =
+            await WaitForListenerAsync(
+                    GetActiveListeners,
+                    () => !owner.HasExited,
+                    connection.Port,
+                    connection.ConnectionTimeout,
+                    cancellationToken,
+                    ListenerReadinessPollInterval,
+                    expectedAddress,
+                    endpoint => GetListenerOwnership(
+                        endpoint,
+                        owner.process.Id))
+                .ConfigureAwait(false);
+        if (readiness != I6C6ExternalRuntimeReadinessResultV1.Ready)
+        {
+            await owner.DisposeAsync().ConfigureAwait(false);
+            throw new I6C6ExternalRuntimeReadinessException(
+                readiness,
+                processStarted: true);
+        }
+
+        return owner;
     }
 
+    internal static ValueTask<I6C6ExternalRuntimeReadinessResultV1>
+        WaitForListenerForTestAsync(
+            Func<IReadOnlyList<IPEndPoint>> listenerSnapshot,
+            Func<bool> processIsAlive,
+            int expectedPort,
+            TimeSpan timeout,
+            CancellationToken cancellationToken,
+            TimeSpan pollInterval,
+            Func<IPEndPoint, I6C6ExternalRuntimeListenerOwnershipResultV1>?
+                listenerOwnership = null) =>
+        WaitForListenerAsync(
+            listenerSnapshot,
+            processIsAlive,
+            expectedPort,
+            timeout,
+            cancellationToken,
+            pollInterval,
+            IPAddress.Loopback,
+            listenerOwnership);
+
+    internal static I6C6ExternalRuntimeListenerOwnershipResultV1
+        GetListenerOwnershipForTest(IPEndPoint endpoint, int processId) =>
+        GetListenerOwnership(endpoint, processId);
+
     internal bool HasExited => process.HasExited;
+
+    private static async ValueTask<I6C6ExternalRuntimeReadinessResultV1>
+        WaitForListenerAsync(
+            Func<IReadOnlyList<IPEndPoint>> listenerSnapshot,
+            Func<bool> processIsAlive,
+            int expectedPort,
+            TimeSpan timeout,
+            CancellationToken cancellationToken,
+            TimeSpan pollInterval,
+            IPAddress expectedAddress,
+            Func<IPEndPoint, I6C6ExternalRuntimeListenerOwnershipResultV1>?
+                listenerOwnership)
+    {
+        if (listenerSnapshot is null ||
+            processIsAlive is null ||
+            expectedAddress is null ||
+            expectedPort is < 1 or > 65535 ||
+            timeout < TimeSpan.Zero ||
+            pollInterval < TimeSpan.Zero)
+        {
+            return I6C6ExternalRuntimeReadinessResultV1.ObservationFailed;
+        }
+
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        while (true)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return I6C6ExternalRuntimeReadinessResultV1.Cancelled;
+            }
+
+            bool isAlive;
+            IReadOnlyList<IPEndPoint> listeners;
+            try
+            {
+                isAlive = processIsAlive();
+                listeners = listenerSnapshot();
+            }
+            catch (Exception)
+            {
+                return I6C6ExternalRuntimeReadinessResultV1
+                    .ObservationFailed;
+            }
+
+            if (!isAlive)
+            {
+                return I6C6ExternalRuntimeReadinessResultV1.ProcessExited;
+            }
+
+            IPEndPoint? exactListener = FindExactLoopbackListener(
+                listeners,
+                expectedAddress,
+                expectedPort);
+            if (exactListener is not null)
+            {
+                if (listenerOwnership is null)
+                {
+                    return I6C6ExternalRuntimeReadinessResultV1.Ready;
+                }
+
+                return listenerOwnership(exactListener) switch
+                {
+                    I6C6ExternalRuntimeListenerOwnershipResultV1.Owned =>
+                        I6C6ExternalRuntimeReadinessResultV1.Ready,
+                    I6C6ExternalRuntimeListenerOwnershipResultV1.NotOwned =>
+                        I6C6ExternalRuntimeReadinessResultV1
+                            .ListenerOwnershipMismatch,
+                    _ => I6C6ExternalRuntimeReadinessResultV1
+                        .ObservationFailed
+                };
+            }
+
+            TimeSpan elapsed = stopwatch.Elapsed;
+            if (elapsed >= timeout)
+            {
+                return I6C6ExternalRuntimeReadinessResultV1.DeadlineExpired;
+            }
+
+            TimeSpan remaining = timeout - elapsed;
+            TimeSpan delay = remaining < pollInterval
+                ? remaining
+                : pollInterval;
+            try
+            {
+                // This only schedules another passive OS listener observation;
+                // it never opens or retries a readiness connection.
+                await Task.Delay(delay, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                return I6C6ExternalRuntimeReadinessResultV1.Cancelled;
+            }
+        }
+    }
+
+    private static IReadOnlyList<IPEndPoint> GetActiveListeners() =>
+        IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
+
+    private static bool TryGetLoopbackAddress(
+        string host,
+        out IPAddress address)
+    {
+        switch (host)
+        {
+            case "127.0.0.1":
+                address = IPAddress.Loopback;
+                return true;
+            case "::1":
+                address = IPAddress.IPv6Loopback;
+                return true;
+            default:
+                address = IPAddress.None;
+                return false;
+        }
+    }
+
+    private static bool HasListenerOnPort(
+        IReadOnlyList<IPEndPoint> listeners,
+        int port) =>
+        listeners.Any(listener => listener.Port == port);
+
+    private static IPEndPoint? FindExactLoopbackListener(
+        IReadOnlyList<IPEndPoint> listeners,
+        IPAddress expectedAddress,
+        int expectedPort)
+    {
+        if (listeners is null || expectedAddress is null)
+        {
+            return null;
+        }
+
+        int matchingPortCount = 0;
+        IPEndPoint? matchingListener = null;
+        foreach (IPEndPoint listener in listeners)
+        {
+            if (listener.Port != expectedPort)
+            {
+                continue;
+            }
+
+            matchingPortCount++;
+            if (!expectedAddress.Equals(listener.Address))
+            {
+                return null;
+            }
+
+            matchingListener = listener;
+        }
+
+        return matchingPortCount == 1 ? matchingListener : null;
+    }
+
+    private static I6C6ExternalRuntimeListenerOwnershipResultV1
+        GetListenerOwnership(IPEndPoint endpoint, int processId)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return I6C6ExternalRuntimeListenerOwnershipResultV1.Unavailable;
+        }
+
+        int addressFamily = endpoint.AddressFamily switch
+        {
+            AddressFamily.InterNetwork => AddressFamilyInterNetwork,
+            AddressFamily.InterNetworkV6 => AddressFamilyInterNetworkV6,
+            _ => 0
+        };
+        if (addressFamily == 0)
+        {
+            return I6C6ExternalRuntimeListenerOwnershipResultV1.Unavailable;
+        }
+
+        try
+        {
+            int bufferSize = 0;
+            uint result = GetExtendedTcpTable(
+                IntPtr.Zero,
+                ref bufferSize,
+                sort: false,
+                addressFamily,
+                TcpTableClass.OwnerPidListener,
+                reserved: 0);
+            if (result != ErrorInsufficientBuffer ||
+                bufferSize <= sizeof(int))
+            {
+                return I6C6ExternalRuntimeListenerOwnershipResultV1
+                    .Unavailable;
+            }
+
+            IntPtr table = Marshal.AllocHGlobal(bufferSize);
+            try
+            {
+                result = GetExtendedTcpTable(
+                    table,
+                    ref bufferSize,
+                    sort: false,
+                    addressFamily,
+                    TcpTableClass.OwnerPidListener,
+                    reserved: 0);
+                if (result != 0)
+                {
+                    return I6C6ExternalRuntimeListenerOwnershipResultV1
+                        .Unavailable;
+                }
+
+                int rowCount = Marshal.ReadInt32(table);
+                int rowSize = addressFamily == AddressFamilyInterNetwork
+                    ? 24
+                    : 56;
+                if (rowCount < 0 ||
+                    rowCount > (bufferSize - sizeof(int)) / rowSize)
+                {
+                    return I6C6ExternalRuntimeListenerOwnershipResultV1
+                        .Unavailable;
+                }
+
+                IntPtr row = IntPtr.Add(table, sizeof(int));
+                for (int index = 0; index < rowCount; index++)
+                {
+                    if (MatchesListenerRow(
+                            row,
+                            endpoint,
+                            addressFamily,
+                            out int owningProcessId) &&
+                        owningProcessId == processId)
+                    {
+                        return I6C6ExternalRuntimeListenerOwnershipResultV1
+                            .Owned;
+                    }
+
+                    row = IntPtr.Add(row, rowSize);
+                }
+
+                return I6C6ExternalRuntimeListenerOwnershipResultV1
+                    .NotOwned;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(table);
+            }
+        }
+        catch (Exception)
+        {
+            return I6C6ExternalRuntimeListenerOwnershipResultV1.Unavailable;
+        }
+    }
+
+    private static bool MatchesListenerRow(
+        IntPtr row,
+        IPEndPoint endpoint,
+        int addressFamily,
+        out int owningProcessId)
+    {
+        if (addressFamily == AddressFamilyInterNetwork)
+        {
+            uint localAddress = unchecked((uint)Marshal.ReadInt32(row, 4));
+            uint localPort = unchecked((uint)Marshal.ReadInt32(row, 8));
+            owningProcessId = Marshal.ReadInt32(row, 20);
+            return endpoint.Port == DecodeNetworkPort(localPort) &&
+                endpoint.Address.Equals(
+                    new IPAddress(BitConverter.GetBytes(localAddress)));
+        }
+
+        byte[] localAddressBytes = new byte[16];
+        Marshal.Copy(row, localAddressBytes, 0, localAddressBytes.Length);
+        uint localScopeId = unchecked((uint)Marshal.ReadInt32(row, 16));
+        uint localPortV6 = unchecked((uint)Marshal.ReadInt32(row, 20));
+        owningProcessId = Marshal.ReadInt32(row, 52);
+        return endpoint.Port == DecodeNetworkPort(localPortV6) &&
+            endpoint.Address.Equals(
+                new IPAddress(localAddressBytes, localScopeId));
+    }
+
+    private static int DecodeNetworkPort(uint networkPort) =>
+        BinaryPrimitives.ReverseEndianness((ushort)(networkPort & 0xffff));
+
+    [DllImport("iphlpapi.dll", SetLastError = true)]
+    private static extern uint GetExtendedTcpTable(
+        IntPtr tcpTable,
+        ref int size,
+        [MarshalAs(UnmanagedType.Bool)] bool sort,
+        int addressFamily,
+        TcpTableClass tableClass,
+        uint reserved);
+
+    private enum TcpTableClass : int
+    {
+        OwnerPidListener = 3
+    }
 
     public ValueTask DisposeAsync()
     {
@@ -3155,11 +3589,62 @@ internal static class I6C6ClosureHarnessV1
         I6C6ExternalRuntimeProcessOwnerV1? processOwner = null;
         try
         {
+            await using I6C6TcpCaptureTransportV1 captureTransport =
+                new(new TcpClientTransport());
+            await using I2SessionRunner runner = new(captureTransport);
+
+            I2Result started;
             try
             {
-                processOwner = I6C6ExternalRuntimeProcessOwnerV1.Start(
-                    binding,
-                    connection);
+                started =
+                    await I6C6ExternalRuntimeStartupSequenceV1
+                        .RunAsync(
+                            token =>
+                                I6C6ExternalRuntimeProcessOwnerV1.StartAsync(
+                                    binding,
+                                    connection,
+                                    token),
+                            (owner, token) =>
+                            {
+                                processOwner = owner;
+                                return runner.StartAsync(connection, token);
+                            },
+                            cancellationToken)
+                        .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                return new(
+                    I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+                    false,
+                    false,
+                    Diagnostics:
+                        I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled());
+            }
+            catch (I6C6ExternalRuntimeReadinessException readinessException)
+            {
+                if (readinessException.Result ==
+                    I6C6ExternalRuntimeReadinessResultV1.Cancelled)
+                {
+                    return new(
+                        I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+                        readinessException.ProcessStarted,
+                        false,
+                        Diagnostics:
+                            I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled(
+                                readiness:
+                                    I6C6ExternalRuntimeReadinessResultV1
+                                        .Cancelled));
+                }
+
+                return new(
+                    I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+                    readinessException.ProcessStarted,
+                    false,
+                    Diagnostics:
+                        I6C6ClosureHarnessExecutionDiagnosticsV1.ExternalRuntimeStart(
+                            readinessException.Result));
             }
             catch
             {
@@ -3171,15 +3656,6 @@ internal static class I6C6ClosureHarnessV1
                         I6C6ClosureHarnessExecutionDiagnosticsV1
                             .ExternalRuntimeStart());
             }
-
-            await using I6C6TcpCaptureTransportV1 captureTransport =
-                new(new TcpClientTransport());
-            await using I2SessionRunner runner = new(captureTransport);
-
-            I2Result started = await runner.StartAsync(
-                    connection,
-                    cancellationToken)
-                .ConfigureAwait(false);
             if (!started.IsSuccess)
             {
                 I6C6ClosureHarnessExecutionDiagnosticsV1 diagnostics =
