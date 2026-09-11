@@ -6,16 +6,20 @@ Subsequent implementation status:
 
 ```text
 OPTION_B_PROVIDER_CODE_AUTHORIZED=YES
+OPTION_B_OPERATOR_LOCAL_PROVISIONING_GOVERNANCE=APPROVED_BOUNDARY_ONLY
+OPTION_B_OPERATOR_LOCAL_PROVISIONING_EXECUTION_AUTHORIZED=NO
 PRINTED_PROVIDER_IMPLEMENTATION_AUTHORIZED=YES
 PRINTED_PROVIDER_IMPLEMENTATION=FINAL_PASS
 ```
 
 Date: 2026-09-07
 
+Additive governance update: 2026-09-11 (Task 27A)
+
 Decision:
 
 ```text
-OPTION_B_GOVERNANCE_DECISION=APPROVE_PROVIDER_CODE_ONLY
+OPTION_B_GOVERNANCE_DECISION=APPROVE_PROVIDER_CODE_PLUS_OPERATOR_LOCAL_BOUNDARY
 ```
 
 This ADR is a repository-governance decision, not legal advice and not a
@@ -99,6 +103,11 @@ provider implementation has independently reached `FINAL_PASS`. This does not
 authorize any BabelCDB or derived-data redistribution, acquisition, generation,
 or real-data fixture path.
 
+This additive governance decision defines a narrow future operator-local
+provisioning boundary without authorizing its execution. It does not change
+the redistribution, acquisition, generation, release, or test-fixture
+prohibitions above.
+
 ## 4. Allowed boundary
 
 Future implementation MAY contain:
@@ -115,6 +124,23 @@ session/run binding
 synthetic contract tests
 explicit operator-supplied local artifact input
 ```
+
+A separately authorized operator-local provisioning operation MAY use the
+following already-present local inputs and sequence:
+
+```text
+explicitly selected local OCGForge source inputs
+    → exact pinned tools/prepare_card_data.py
+    → local pipe12 artifact and complete manifest outside Ignis
+    → exact hash/coverage/environment validation
+    → PerspectiveSafePrintedProviderV1.TryCreate()
+```
+
+This is a procedural boundary, not an execution authorization. The operator
+must provide explicit paths and verify the exact source, checkout,
+transformation, artifact, manifest, OCGForge semantic, and rules-bundle
+identities before the provider can be supplied to a run. The operation must
+fail closed on any missing input or mismatch.
 
 The configured artifact path MUST be explicit. Missing configuration or a
 missing artifact MUST return a structured fail-closed error.
@@ -147,6 +173,11 @@ provide real BabelCDB rows as test fixtures
 
 No artifact discovery is allowed. There is no implicit search path and no
 fallback database.
+
+In particular, this decision does not authorize an Ignis-owned generator,
+acquisition process, network access, ambient source search, or execution of a
+provisioning operation. Those remain separately gated and are not part of the
+27A documentation slice.
 
 ## 6. Test and release consequences
 
@@ -211,8 +242,13 @@ adding acquisition or generation tooling
 bundling an artifact in a release
 ```
 
+Executing the operator-local provisioning procedure is also a separate
+operational authorization. This ADR records its allowed shape only; it does
+not authorize execution in the current task.
+
 This ADR does not supersede the existing third-party policy. It records the
-narrow code-only exception authorized by the explicit I6C5 governance review.
+narrow provider-code exception and the bounded no-data operator-local
+provisioning boundary authorized by the explicit I6C5 governance review.
 
 ## 9. Consequence
 

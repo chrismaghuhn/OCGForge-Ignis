@@ -6,9 +6,13 @@ Contract status:
 FROZEN TECHNICAL CONTRACT
 THIRD-PARTY GOVERNANCE CLEARANCE=COMPLETE_FOR_PROVIDER_CODE_ONLY
 PRINTED_PROVIDER_IMPLEMENTATION=FINAL_PASS
+OPERATOR_LOCAL_PROVISIONING_GOVERNANCE=APPROVED_BOUNDARY_ONLY
+OPERATOR_LOCAL_PROVISIONING_EXECUTION=NOT_AUTHORIZED
 ```
 
 Date: 2026-09-07
+
+Additive governance update: 2026-09-11 (Task 27A)
 
 This contract freezes the technical boundary for the I6C5 Printed-card
 provider. It remains a technical contract: it does not authorize artifact
@@ -21,6 +25,11 @@ authorization were separate later decisions. The current status above records
 those later decisions and does not rewrite the historical sequence. This
 contract itself remains separate from all redistribution, acquisition, and
 generation authorization.
+
+The additive operator-local provisioning boundary in section 9 defines only
+the shape of a possible later, separately authorized local operation. It does
+not authorize that operation, generate an artifact, or acquire source data in
+the current contract revision.
 
 The contract is an Ignis source contract. OCGForge remains the semantic owner
 of Printed-card meaning and canonical OCGForge encodings.
@@ -451,6 +460,45 @@ external/local trusted provisioning process
 
 This is `OPTION_B_EXTERNAL_PROVISIONING`.
 
+### 9.1 Bounded operator-local provisioning boundary
+
+The following is the only permitted shape for a future operator-local
+provisioning operation. The operation itself requires a separate explicit
+execution authorization and is not authorized by this contract revision.
+
+```text
+already-present, explicitly selected local OCGForge source inputs
+    → exact pinned OCGForge transformation source
+    → local pipe12 source artifact and manifest outside the repository
+    → PerspectiveSafePrintedProviderV1.TryCreate()
+    → immutable provider supplied to an explicitly configured run
+```
+
+The future operator-local operation MUST satisfy all of the following:
+
+```text
+explicit source paths only
+exact source and checkout hashes
+exact OCGForge semantic commit
+exact rules-bundle identity
+exact transformation commit, path, and file hash
+exact source-artifact format and SHA-256
+complete manifest provenance fields
+provider validation before run construction
+artifact and manifest remain local and content-addressed
+```
+
+The operator MAY invoke the exact pinned OCGForge `prepare_card_data.py` only
+from an already-present, explicitly selected local source checkout whose
+identity and inputs are verified. The script MUST NOT be copied into Ignis,
+shipped as acquisition tooling, or used to discover or obtain source data.
+
+The resulting artifact and manifest MUST remain outside the Ignis repository
+and release. They MUST NOT be placed in tests or promoted into a public,
+semantic, replay, model, or dataset identity. A missing input, hash mismatch,
+manifest mismatch, missing coverage, or provider-validation failure MUST stop
+the operation before any run is constructed.
+
 OCGForge-Ignis MUST NOT:
 
 ```text
@@ -466,7 +514,9 @@ auto-update static data
 
 The Ignis repository and release do not contain BabelCDB or the generated
 provider artifact unless a later explicit governance decision authorizes that
-distribution. This contract does not authorize the provisioning workflow.
+distribution. This contract authorizes only the bounded governance boundary
+above; it does not authorize executing the provisioning workflow, acquiring
+source data, or generating an artifact in this task.
 
 ## 10. Provider lifetime and ownership
 
@@ -687,8 +737,11 @@ This technical contract records the current governance boundary:
 ```text
 TECHNICAL_CONTRACT_FROZEN=YES
 THIRD_PARTY_GOVERNANCE_CLEARED_FOR_PROVIDER_CODE_ONLY=YES
+OPERATOR_LOCAL_PROVISIONING_GOVERNANCE=APPROVED_BOUNDARY_ONLY
+OPERATOR_LOCAL_PROVISIONING_EXECUTION_AUTHORIZED=NO
 BABELCDB_REDISTRIBUTION_AUTHORIZED=NO
 DERIVED_DATA_REDISTRIBUTION_AUTHORIZED=NO
+DERIVED_ARTIFACT_GENERATION_AUTHORIZED=NO
 PRINTED_PROVIDER_IMPLEMENTATION_AUTHORIZED=YES
 PRINTED_PROVIDER_IMPLEMENTATION=FINAL_PASS
 ```
@@ -722,6 +775,10 @@ I7
 The provider implementation status above comes from a separate later
 authorization and acceptance decision; it is not backdated into this contract
 or its original freeze decision.
+
+The operator-local provisioning governance status above is likewise a bounded
+procedural decision only. It does not authorize execution, acquisition,
+generation, redistribution, release inclusion, or real-data test fixtures.
 
 ## 17. Implementation acceptance gates
 
