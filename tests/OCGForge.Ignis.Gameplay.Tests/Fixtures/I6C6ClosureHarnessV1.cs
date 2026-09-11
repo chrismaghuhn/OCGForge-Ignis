@@ -218,7 +218,8 @@ internal readonly record struct I6C6ClosureHarnessExecutionResultV1(
     bool ProcessStarted,
     bool GameplayCaptureSucceeded,
     I6C6LiveGameplayCaptureResultV1? Capture = null,
-    I6C6ClosureHarnessExecutionDiagnosticsV1? Diagnostics = null);
+    I6C6ClosureHarnessExecutionDiagnosticsV1? Diagnostics = null,
+    I6C6ClosureHarnessExecutionDiagnosticsV1? CleanupDiagnostics = null);
 
 internal readonly record struct I6C6ClosureEvidenceValidationResultV1(
     bool IsSuccess,
@@ -3602,6 +3603,17 @@ internal static class I6C6ClosureHarnessV1
             bool processStarted) =>
         UnexpectedExceptionResult(site, exception, processStarted);
 
+    internal static I6C6ClosureHarnessExecutionResultV1
+        PreserveCleanupFailureForTest(
+            I6C6ClosureHarnessExecutionResultV1 result,
+            I6C6ClosureHarnessExceptionSiteV1 cleanupSite,
+            Exception cleanupException) =>
+        PreserveCleanupFailure(
+            result,
+            I6C6ClosureHarnessExecutionDiagnosticsV1.UnexpectedException(
+                cleanupSite,
+                cleanupException));
+
     private static I6C6ClosureHarnessExecutionResultV1
         UnexpectedExceptionResult(
             I6C6ClosureHarnessExceptionSiteV1 site,
@@ -3615,6 +3627,30 @@ internal static class I6C6ClosureHarnessV1
                 I6C6ClosureHarnessExecutionDiagnosticsV1.UnexpectedException(
                     site,
                     exception));
+
+    private static I6C6ClosureHarnessExecutionResultV1
+        PreserveCleanupFailure(
+            I6C6ClosureHarnessExecutionResultV1 result,
+            I6C6ClosureHarnessExecutionDiagnosticsV1 cleanupDiagnostics)
+    {
+        if (result.ErrorCode != I6C6ClosureHarnessErrorCodeV1.None ||
+            !result.GameplayCaptureSucceeded ||
+            result.Diagnostics is not null)
+        {
+            return result with
+            {
+                CleanupDiagnostics = result.CleanupDiagnostics ??
+                    cleanupDiagnostics
+            };
+        }
+
+        return new(
+            I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+            result.ProcessStarted,
+            false,
+            result.Capture,
+            cleanupDiagnostics);
+    }
 
     internal static async ValueTask<I6C6ClosureHarnessExecutionResultV1>
         ExecuteAsync(
@@ -3689,10 +3725,12 @@ internal static class I6C6ClosureHarnessV1
         }
         catch (Exception exception)
         {
-            return UnexpectedExceptionResult(
-                I6C6ClosureHarnessExceptionSiteV1.ExternalRuntimeOwnerDisposal,
-                exception,
-                scope.ProcessOwner is not null);
+            return PreserveCleanupFailure(
+                result,
+                I6C6ClosureHarnessExecutionDiagnosticsV1.UnexpectedException(
+                    I6C6ClosureHarnessExceptionSiteV1
+                        .ExternalRuntimeOwnerDisposal,
+                    exception));
         }
 
         return result;
@@ -3735,6 +3773,11 @@ internal static class I6C6ClosureHarnessV1
         }
         catch (Exception exception)
         {
+            I6C6ClosureHarnessExecutionResultV1 constructionFailure =
+                UnexpectedExceptionResult(
+                    I6C6ClosureHarnessExceptionSiteV1.RunnerConstruction,
+                    exception,
+                    false);
             try
             {
                 scope.ExceptionSite =
@@ -3744,17 +3787,15 @@ internal static class I6C6ClosureHarnessV1
             }
             catch (Exception disposalException)
             {
-                return UnexpectedExceptionResult(
+                return PreserveCleanupFailure(
+                    constructionFailure,
+                    I6C6ClosureHarnessExecutionDiagnosticsV1.UnexpectedException(
                     I6C6ClosureHarnessExceptionSiteV1
                         .CaptureTransportDisposal,
-                    disposalException,
-                    false);
+                        disposalException));
             }
 
-            return UnexpectedExceptionResult(
-                I6C6ClosureHarnessExceptionSiteV1.RunnerConstruction,
-                exception,
-                false);
+            return constructionFailure;
         }
 
         I6C6ClosureHarnessExecutionResultV1 result;
@@ -3829,10 +3870,11 @@ internal static class I6C6ClosureHarnessV1
 
         return disposalExceptionToReport is null
             ? result
-            : UnexpectedExceptionResult(
-                disposalSite,
-                disposalExceptionToReport,
-                scope.ProcessOwner is not null);
+            : PreserveCleanupFailure(
+                result,
+                I6C6ClosureHarnessExecutionDiagnosticsV1.UnexpectedException(
+                    disposalSite,
+                    disposalExceptionToReport));
     }
 
     private static async ValueTask<I6C6ClosureHarnessExecutionResultV1>

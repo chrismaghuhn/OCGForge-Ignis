@@ -374,6 +374,10 @@ var tests = new (string Name, Action Body)[]
         I6C6RealRunEntryPointTests
             .TestUnexpectedExceptionDiagnosticsAreNonSemantic),
 
+    ("I6C6 cleanup failures preserve the first execution failure",
+        I6C6RealRunEntryPointTests
+            .TestCleanupFailuresPreserveFirstExecutionFailure),
+
     ("I6C6 pre-duel errors preserve exact I2 causes",
         I6C6RealRunEntryPointTests.TestPreDuelI2ErrorPropagation),
 

@@ -431,6 +431,157 @@ internal static class I6C6RealRunEntryPointTests
         Equal(before, after);
     }
 
+    internal static void TestCleanupFailuresPreserveFirstExecutionFailure()
+    {
+        I6C6ClosureHarnessExecutionResultV1 sessionFailure =
+            I6C6ClosureHarnessV1.UnexpectedExceptionResultForTest(
+                I6C6ClosureHarnessExceptionSiteV1.SessionStart,
+                new InvalidOperationException(),
+                processStarted: true);
+        I6C6ClosureHarnessExecutionResultV1 sessionWithCleanupFailure =
+            I6C6ClosureHarnessV1.PreserveCleanupFailureForTest(
+                sessionFailure,
+                I6C6ClosureHarnessExceptionSiteV1.RunnerDisposal,
+                new IOException());
+        AssertPrimaryAndCleanup(
+            sessionWithCleanupFailure,
+            I6C6ClosureHarnessExecutionStageV1.UnexpectedException,
+            I6C6ClosureHarnessExceptionSiteV1.SessionStart,
+            typeof(InvalidOperationException),
+            I6C6ClosureHarnessExceptionSiteV1.RunnerDisposal,
+            typeof(IOException));
+
+        I6C6ClosureHarnessExecutionResultV1 preDuelFailure = new(
+            I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+            true,
+            false,
+            Diagnostics:
+                I6C6ClosureHarnessExecutionDiagnosticsV1.PreDuelDrive(
+                    I2ErrorCode.InvalidStateTransition,
+                    I6C6ClosureHarnessPreDuelFailureStageV1.DuelStartRequest));
+        I6C6ClosureHarnessExecutionResultV1 preDuelWithCleanupFailure =
+            I6C6ClosureHarnessV1.PreserveCleanupFailureForTest(
+                preDuelFailure,
+                I6C6ClosureHarnessExceptionSiteV1.CaptureTransportDisposal,
+                new IOException());
+        AssertPrimaryAndCleanup(
+            preDuelWithCleanupFailure,
+            I6C6ClosureHarnessExecutionStageV1.PreDuelDrive,
+            I6C6ClosureHarnessExceptionSiteV1.None,
+            null,
+            I6C6ClosureHarnessExceptionSiteV1.CaptureTransportDisposal,
+            typeof(IOException));
+
+        I6C6LiveGameplayCaptureResultV1 capture =
+            CreateCaptureFailureForDiagnostics();
+        I6C6ClosureHarnessExecutionResultV1 gameplayFailure = new(
+            I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+            true,
+            false,
+            capture,
+            I6C6ClosureHarnessExecutionDiagnosticsV1.GameplayCapture());
+        I6C6ClosureHarnessExecutionResultV1 gameplayWithCleanupFailure =
+            I6C6ClosureHarnessV1.PreserveCleanupFailureForTest(
+                gameplayFailure,
+                I6C6ClosureHarnessExceptionSiteV1.ExternalRuntimeOwnerDisposal,
+                new ObjectDisposedException("owner"));
+        AssertPrimaryAndCleanup(
+            gameplayWithCleanupFailure,
+            I6C6ClosureHarnessExecutionStageV1.GameplayCapture,
+            I6C6ClosureHarnessExceptionSiteV1.None,
+            null,
+            I6C6ClosureHarnessExceptionSiteV1.ExternalRuntimeOwnerDisposal,
+            typeof(ObjectDisposedException));
+        True(ReferenceEquals(capture, gameplayWithCleanupFailure.Capture));
+
+        I6C6ClosureHarnessExecutionResultV1 constructionFailure =
+            I6C6ClosureHarnessV1.UnexpectedExceptionResultForTest(
+                I6C6ClosureHarnessExceptionSiteV1.RunnerConstruction,
+                new ArgumentException(),
+                processStarted: false);
+        I6C6ClosureHarnessExecutionResultV1 constructionWithCleanupFailure =
+            I6C6ClosureHarnessV1.PreserveCleanupFailureForTest(
+                constructionFailure,
+                I6C6ClosureHarnessExceptionSiteV1.CaptureTransportDisposal,
+                new IOException());
+        AssertPrimaryAndCleanup(
+            constructionWithCleanupFailure,
+            I6C6ClosureHarnessExecutionStageV1.UnexpectedException,
+            I6C6ClosureHarnessExceptionSiteV1.RunnerConstruction,
+            typeof(ArgumentException),
+            I6C6ClosureHarnessExceptionSiteV1.CaptureTransportDisposal,
+            typeof(IOException));
+
+        (I6C6ClosureHarnessExceptionSiteV1 Site, Type ExceptionType)[] cleanupOnly =
+        {
+            (
+                I6C6ClosureHarnessExceptionSiteV1.RunnerDisposal,
+                typeof(ObjectDisposedException)),
+            (
+                I6C6ClosureHarnessExceptionSiteV1.CaptureTransportDisposal,
+                typeof(IOException)),
+            (
+                I6C6ClosureHarnessExceptionSiteV1.ExternalRuntimeOwnerDisposal,
+                typeof(InvalidOperationException))
+        };
+        foreach ((I6C6ClosureHarnessExceptionSiteV1 site, Type exceptionType)
+                     in cleanupOnly)
+        {
+            I6C6ClosureHarnessExecutionResultV1 success = new(
+                I6C6ClosureHarnessErrorCodeV1.None,
+                true,
+                true,
+                capture);
+            Exception exception = (Exception)Activator.CreateInstance(
+                exceptionType,
+                exceptionType == typeof(ObjectDisposedException)
+                    ? new object?[] { "resource" }
+                    : Array.Empty<object>())!;
+            I6C6ClosureHarnessExecutionResultV1 cleanupFailure =
+                I6C6ClosureHarnessV1.PreserveCleanupFailureForTest(
+                    success,
+                    site,
+                    exception);
+            Equal(
+                I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+                cleanupFailure.ErrorCode);
+            False(cleanupFailure.GameplayCaptureSucceeded);
+            True(ReferenceEquals(capture, cleanupFailure.Capture));
+            NotNull(cleanupFailure.Diagnostics);
+            Equal(
+                I6C6ClosureHarnessExecutionStageV1.UnexpectedException,
+                cleanupFailure.Diagnostics!.Value.Stage);
+            Equal(site, cleanupFailure.Diagnostics!.Value.ExceptionSite);
+            Equal(
+                exceptionType.FullName,
+                cleanupFailure.Diagnostics!.Value.ExceptionType);
+            Null(cleanupFailure.CleanupDiagnostics);
+        }
+    }
+
+    private static void AssertPrimaryAndCleanup(
+        I6C6ClosureHarnessExecutionResultV1 result,
+        I6C6ClosureHarnessExecutionStageV1 primaryStage,
+        I6C6ClosureHarnessExceptionSiteV1 primarySite,
+        Type? primaryExceptionType,
+        I6C6ClosureHarnessExceptionSiteV1 cleanupSite,
+        Type cleanupExceptionType)
+    {
+        NotNull(result.Diagnostics);
+        Equal(primaryStage, result.Diagnostics!.Value.Stage);
+        Equal(primarySite, result.Diagnostics!.Value.ExceptionSite);
+        Equal(
+            primaryExceptionType?.FullName,
+            result.Diagnostics!.Value.ExceptionType);
+        NotNull(result.CleanupDiagnostics);
+        Equal(
+            cleanupSite,
+            result.CleanupDiagnostics!.Value.ExceptionSite);
+        Equal(
+            cleanupExceptionType.FullName,
+            result.CleanupDiagnostics!.Value.ExceptionType);
+    }
+
     private static I6C6LiveGameplayCaptureResultV1
         CreateCaptureFailureForDiagnostics()
     {
