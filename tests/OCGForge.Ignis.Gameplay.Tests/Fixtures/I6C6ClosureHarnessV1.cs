@@ -157,6 +157,7 @@ internal sealed record I6C6ClosureHarnessConfigurationV1(
     string EvidenceRngId,
     ulong EvidenceRngRoot,
     string FinalRuntimeExecutableSha256,
+    TimeSpan ExternalRuntimeReadinessTimeout,
     string ServerOnlyBootstrapFixParent,
     string ServerOnlyBootstrapFixCommit,
     string ServerOnlyBootstrapFixPatchsetSha256,
@@ -2782,7 +2783,7 @@ internal sealed class I6C6ExternalRuntimeProcessOwnerV1 : IAsyncDisposable
                     GetActiveListeners,
                     () => !owner.HasExited,
                     connection.Port,
-                    connection.ConnectionTimeout,
+                    binding.Configuration.ExternalRuntimeReadinessTimeout,
                     cancellationToken,
                     ListenerReadinessPollInterval,
                     expectedAddress,
@@ -3247,6 +3248,8 @@ internal static class I6C6ClosureHarnessV1
     private const ulong ExpectedEvidenceRngRoot = 0x2e43fb46490a681dUL;
     private const string ExpectedFinalRuntimeExecutableSha256 =
         "d57d9d705fb01ef2ba9d73eb89b29b6c438bf9d9c91e20daa8bca2fbf19babed";
+    private static readonly TimeSpan MaximumExternalRuntimeReadinessTimeout =
+        TimeSpan.FromMinutes(1);
     private const string ExpectedLoopbackHostPatchParent =
         ExpectedRuntimeHead;
     private const string ExpectedLoopbackHostPatchCommit =
@@ -3285,6 +3288,14 @@ internal static class I6C6ClosureHarnessV1
         bool requireLocalArtifacts = false)
     {
         if (configuration is null)
+        {
+            return Failure(
+                I6C6ClosureHarnessErrorCodeV1.ScenarioConfigurationInvalid);
+        }
+
+        if (configuration.ExternalRuntimeReadinessTimeout <= TimeSpan.Zero ||
+            configuration.ExternalRuntimeReadinessTimeout >
+                MaximumExternalRuntimeReadinessTimeout)
         {
             return Failure(
                 I6C6ClosureHarnessErrorCodeV1.ScenarioConfigurationInvalid);

@@ -74,6 +74,7 @@ internal static class I6C6NativeOracleTests
                     "5019259b4db733e4a38f285b45d0a4dea8b11a245047edee76fcb6234fa4bf79",
                 ServerOnlyBootstrapFixRuntimeExecutableSha256:
                     "d57d9d705fb01ef2ba9d73eb89b29b6c438bf9d9c91e20daa8bca2fbf19babed",
+                ExternalRuntimeReadinessTimeout: TimeSpan.FromSeconds(10),
                 LinkScenario: new(
                     "projectignis.tactical-try.cyber-dragon.v1",
                     @"C:\ProjectIgnis\deck\[Tactical-Try Deck] Decisive Strike Cyber Dragon.ydk",
@@ -100,6 +101,42 @@ internal static class I6C6NativeOracleTests
         False(valid.AllowsSyntheticEvidenceInRealMode);
         False(valid.AllowsSyntheticLinkEvidenceInRealMode);
         False(valid.AllowsSyntheticCounterEvidenceInRealMode);
+        Equal(
+            TimeSpan.FromSeconds(10),
+            configuration.ExternalRuntimeReadinessTimeout);
+
+        I6C6ClosureHarnessValidationResultV1 zeroReadinessTimeout =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with
+                {
+                    ExternalRuntimeReadinessTimeout = TimeSpan.Zero
+                });
+        Equal(
+            I6C6ClosureHarnessErrorCodeV1.ScenarioConfigurationInvalid,
+            zeroReadinessTimeout.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 negativeReadinessTimeout =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with
+                {
+                    ExternalRuntimeReadinessTimeout =
+                        TimeSpan.FromMilliseconds(-1)
+                });
+        Equal(
+            I6C6ClosureHarnessErrorCodeV1.ScenarioConfigurationInvalid,
+            negativeReadinessTimeout.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 unboundedReadinessTimeout =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with
+                {
+                    ExternalRuntimeReadinessTimeout =
+                        TimeSpan.FromMinutes(1).Add(
+                            TimeSpan.FromMilliseconds(1))
+                });
+        Equal(
+            I6C6ClosureHarnessErrorCodeV1.ScenarioConfigurationInvalid,
+            unboundedReadinessTimeout.ErrorCode);
 
         if (OperatingSystem.IsWindows())
         {
@@ -308,6 +345,9 @@ internal static class I6C6NativeOracleTests
             0,
             RoomPasswordV1.Create(string.Empty),
             TimeSpan.FromSeconds(1));
+        True(
+            configuration.ExternalRuntimeReadinessTimeout >
+            connection.ConnectionTimeout);
         ProcessStartInfo startInfo =
             I6C6ExternalRuntimeProcessOwnerV1.CreateStartInfo(
                 configuration,
