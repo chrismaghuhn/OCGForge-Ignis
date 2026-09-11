@@ -669,11 +669,31 @@ internal static class I6C6RealRunEntryPointTests
         const string expectedDeck =
             @"C:\ProjectIgnis\WindBot\Decks\AI_CyberDragon.ydk";
 
+        ProcessStartInfo canonical =
+            I6C6OpponentRuntimeParticipantLeaseV1.CreateStartInfo(
+                CounterScenario(),
+                7911);
+        Equal(3, canonical.ArgumentList.Count);
+        Equal($"DeckFile={expectedDeck}", canonical.ArgumentList[0]);
+        Equal("Port=7911", canonical.ArgumentList[1]);
+        Equal("Version=0x000B0029", canonical.ArgumentList[2]);
+        True(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasProcessInputForTest(
+                canonical,
+                expectedDeck));
+        True(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasPortInputForTest(
+                canonical,
+                7911));
+        True(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasVersionInputForTest(
+                canonical));
+
         ProcessStartInfo validArgumentList = new()
         {
             FileName = "WindBot.exe"
         };
-        validArgumentList.ArgumentList.Add($"DeckFile=\"{expectedDeck}\"");
+        validArgumentList.ArgumentList.Add($"DeckFile={expectedDeck}");
         validArgumentList.ArgumentList.Add("Port=7911");
         True(
             I6C6OpponentRuntimeParticipantLeaseV1.HasProcessInputForTest(
@@ -683,6 +703,61 @@ internal static class I6C6RealRunEntryPointTests
             I6C6OpponentRuntimeParticipantLeaseV1.HasPortInputForTest(
                 validArgumentList,
                 7911));
+
+        ProcessStartInfo literalQuotedArgumentList = new()
+        {
+            FileName = "WindBot.exe"
+        };
+        literalQuotedArgumentList.ArgumentList.Add($"DeckFile=\"{expectedDeck}\"");
+        literalQuotedArgumentList.ArgumentList.Add("Port=7911");
+        False(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasProcessInputForTest(
+                literalQuotedArgumentList,
+                expectedDeck));
+
+        ProcessStartInfo missingVersion = new()
+        {
+            FileName = "WindBot.exe"
+        };
+        missingVersion.ArgumentList.Add($"DeckFile={expectedDeck}");
+        missingVersion.ArgumentList.Add("Port=7911");
+        False(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasVersionInputForTest(
+                missingVersion));
+
+        ProcessStartInfo wrongVersion = new()
+        {
+            FileName = "WindBot.exe"
+        };
+        wrongVersion.ArgumentList.Add($"DeckFile={expectedDeck}");
+        wrongVersion.ArgumentList.Add("Port=7911");
+        wrongVersion.ArgumentList.Add("Version=0x000A0128");
+        False(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasVersionInputForTest(
+                wrongVersion));
+
+        ProcessStartInfo literalQuotedVersion = new()
+        {
+            FileName = "WindBot.exe"
+        };
+        literalQuotedVersion.ArgumentList.Add($"DeckFile={expectedDeck}");
+        literalQuotedVersion.ArgumentList.Add("Port=7911");
+        literalQuotedVersion.ArgumentList.Add("Version=\"0x000B0029\"");
+        False(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasVersionInputForTest(
+                literalQuotedVersion));
+
+        ProcessStartInfo duplicateVersion = new()
+        {
+            FileName = "WindBot.exe"
+        };
+        duplicateVersion.ArgumentList.Add($"DeckFile={expectedDeck}");
+        duplicateVersion.ArgumentList.Add("Port=7911");
+        duplicateVersion.ArgumentList.Add("Version=0x000B0029");
+        duplicateVersion.ArgumentList.Add("Version=0x000B0029");
+        False(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasVersionInputForTest(
+                duplicateVersion));
 
         ProcessStartInfo invalidArgumentList = new()
         {
@@ -702,7 +777,9 @@ internal static class I6C6RealRunEntryPointTests
         ProcessStartInfo validRawArguments = new()
         {
             FileName = "WindBot.exe",
-            Arguments = $"DeckFile=\"{expectedDeck}\" Port=7911"
+            Arguments =
+                $"DeckFile=\"{expectedDeck}\" Port=7911 " +
+                "Version=0x000B0029"
         };
         True(
             I6C6OpponentRuntimeParticipantLeaseV1.HasProcessInputForTest(
@@ -712,6 +789,9 @@ internal static class I6C6RealRunEntryPointTests
             I6C6OpponentRuntimeParticipantLeaseV1.HasPortInputForTest(
                 validRawArguments,
                 7911));
+        True(
+            I6C6OpponentRuntimeParticipantLeaseV1.HasVersionInputForTest(
+                validRawArguments));
 
         ProcessStartInfo invalidRawArguments = new()
         {

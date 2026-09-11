@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using OCGForge.Ignis.Client;
@@ -110,6 +111,13 @@ internal readonly record struct I6C6OpponentRuntimeParticipantLeaseResultV1(
 
 internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
 {
+    private const string ExpectedWindBotExecutablePath =
+        @"C:\ProjectIgnis\WindBot\WindBot.exe";
+    private const string ExpectedWindBotWorkingDirectory =
+        @"C:\ProjectIgnis\WindBot";
+    private const string ExpectedWindBotVersionArgument =
+        "Version=0x000B0029";
+
     private readonly Process process;
 
     private I6C6OpponentRuntimeParticipantLeaseV1(
@@ -130,6 +138,36 @@ internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
 
     internal bool IsForConnection(ConnectionConfigurationV1 connection) =>
         connection.Port == ConnectionPort;
+
+    internal static ProcessStartInfo CreateStartInfo(
+        I6C6ClosureScenarioConfigurationV1 scenario,
+        int connectionPort)
+    {
+        ArgumentNullException.ThrowIfNull(scenario);
+        if (connectionPort is < 1 or > 65535)
+        {
+            throw new ArgumentOutOfRangeException(nameof(connectionPort));
+        }
+
+        if (string.IsNullOrWhiteSpace(scenario.OpponentDeckPath) ||
+            scenario.OpponentDeckPath.Contains('"', StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "The WindBot deck path is not a valid argument value.");
+        }
+
+        ProcessStartInfo startInfo = new(ExpectedWindBotExecutablePath)
+        {
+            WorkingDirectory = ExpectedWindBotWorkingDirectory,
+            UseShellExecute = true,
+            CreateNoWindow = false
+        };
+        startInfo.ArgumentList.Add($"DeckFile={scenario.OpponentDeckPath}");
+        startInfo.ArgumentList.Add(
+            $"Port={connectionPort.ToString(CultureInfo.InvariantCulture)}");
+        startInfo.ArgumentList.Add(ExpectedWindBotVersionArgument);
+        return startInfo;
+    }
 
     internal static I6C6OpponentRuntimeParticipantLeaseResultV1
         TryCreateFromOwnedProcess(
@@ -180,10 +218,11 @@ internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
                 StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(
                 executablePath,
-                @"C:\ProjectIgnis\WindBot\WindBot.exe",
+                ExpectedWindBotExecutablePath,
                 StringComparison.OrdinalIgnoreCase) ||
             !HasProcessInput(process.StartInfo, actualParticipantDeckPath) ||
-            !HasPortInput(process.StartInfo, connectionPort))
+            !HasPortInput(process.StartInfo, connectionPort) ||
+            !HasVersionInput(process.StartInfo))
         {
             return new(
                 false,
@@ -242,6 +281,9 @@ internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
         int port) =>
         HasPortInput(startInfo, port);
 
+    internal static bool HasVersionInputForTest(ProcessStartInfo startInfo) =>
+        HasVersionInput(startInfo);
+
     private static bool HasProcessInput(
         ProcessStartInfo startInfo,
         string deckPath)
@@ -252,12 +294,12 @@ internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
         }
 
         string expectedDeckPath = NormalizeDeckPath(deckPath);
-        return GetEffectiveArgumentTokens(startInfo).Any(argument =>
-            TryReadExactAssignment(argument, "DeckFile", out string actualDeckPath) &&
-            string.Equals(
-                NormalizeDeckPath(actualDeckPath),
-                expectedDeckPath,
-                StringComparison.OrdinalIgnoreCase));
+        return HasSingleExactAssignment(
+            startInfo,
+            "DeckFile",
+            expectedDeckPath,
+            StringComparison.OrdinalIgnoreCase,
+            static value => NormalizeDeckPath(value));
     }
 
     private static bool HasPortInput(
@@ -269,9 +311,40 @@ internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
             return false;
         }
 
-        string expected = $"Port={port}";
-        return GetEffectiveArgumentTokens(startInfo).Any(argument =>
-            string.Equals(argument, expected, StringComparison.Ordinal));
+        return HasSingleExactAssignment(
+            startInfo,
+            "Port",
+            port.ToString(CultureInfo.InvariantCulture),
+            StringComparison.Ordinal,
+            static value => value);
+    }
+
+    private static bool HasVersionInput(ProcessStartInfo startInfo) =>
+        HasSingleExactAssignment(
+            startInfo,
+            "Version",
+            ExpectedWindBotVersionArgument["Version=".Length..],
+            StringComparison.Ordinal,
+            static value => value);
+
+    private static bool HasSingleExactAssignment(
+        ProcessStartInfo startInfo,
+        string key,
+        string expectedValue,
+        StringComparison comparison,
+        Func<string, string> normalize)
+    {
+        string prefix = key + "=";
+        string[] assignments = GetEffectiveArgumentTokens(startInfo)
+            .Where(argument =>
+                argument.StartsWith(prefix, StringComparison.Ordinal))
+            .ToArray();
+        return assignments.Length == 1 &&
+            TryReadExactAssignment(assignments[0], key, out string actualValue) &&
+            string.Equals(
+                normalize(actualValue),
+                expectedValue,
+                comparison);
     }
 
     private static IEnumerable<string> GetEffectiveArgumentTokens(
@@ -317,20 +390,7 @@ internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
             return false;
         }
 
-        if (rawValue[0] == '"')
-        {
-            if (rawValue.Length < 2 || rawValue[^1] != '"')
-            {
-                return false;
-            }
-
-            rawValue = rawValue[1..^1];
-            if (rawValue.Contains('"', StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-        else if (rawValue.Contains('"', StringComparison.Ordinal))
+        if (rawValue.Contains('"', StringComparison.Ordinal))
         {
             return false;
         }
@@ -346,15 +406,7 @@ internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
 
     private static string NormalizeDeckPath(string path)
     {
-        string normalized = path;
-        if (normalized.Length >= 2 &&
-            normalized[0] == '"' &&
-            normalized[^1] == '"')
-        {
-            normalized = normalized[1..^1];
-        }
-
-        return normalized
+        return path
             .Replace('/', '\\')
             .TrimEnd('\\');
     }
