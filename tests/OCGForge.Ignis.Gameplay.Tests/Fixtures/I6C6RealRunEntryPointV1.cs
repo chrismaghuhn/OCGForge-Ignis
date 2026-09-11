@@ -602,7 +602,7 @@ internal sealed record I6C6RealRunRequestV1(
     I6C6ClosureHarnessConfigurationV1 Configuration,
     I6C6ClosureScenarioKindV1 ScenarioKind,
     ConnectionConfigurationV1 Connection,
-    PerspectiveSafeMatchContextV1 MatchContext,
+    I6GRealRunMatchContextConfigurationV1 MatchContextConfiguration,
     PerspectiveSafePrintedProviderV1 PrintedProvider,
     int MaximumAdditionalMessages,
     byte RpsChoice,
@@ -617,7 +617,8 @@ internal readonly record struct I6C6RealRunEntryPointResultV1(
     bool LiveEvidenceProduced,
     string? SafeEvidenceSha256 = null,
     I6C6ClosureHarnessExecutionResultV1? Execution = null,
-    I6C6ClosureEvidenceValidationResultV1? Evidence = null);
+    I6C6ClosureEvidenceValidationResultV1? Evidence = null,
+    PerspectiveSafeMatchContextV1? MatchContext = null);
 
 internal static class I6C6RealRunEntryPointV1
 {
@@ -630,7 +631,7 @@ internal static class I6C6RealRunEntryPointV1
         if (request is null ||
             request.Configuration is null ||
             request.Connection is null ||
-            request.MatchContext is null ||
+            request.MatchContextConfiguration is null ||
             request.PrintedProvider is null ||
             request.Requirements is null ||
             request.OpponentRuntimeParticipant is null)
@@ -654,10 +655,22 @@ internal static class I6C6RealRunEntryPointV1
             !request.OpponentRuntimeParticipant.IsForConnection(
                 request.Connection) ||
             !request.OpponentRuntimeParticipant.Binding.Matches(scenario) ||
-            request.MatchContext.PerspectivePlayer > 1 ||
             !IsLoopback(request.Connection.Host) ||
             request.MaximumAdditionalMessages <= 0 ||
             !HasRequestedEvidence(request))
+        {
+            return Blocked();
+        }
+
+        I6GRealRunMatchContextBindingResultV1 contextResult =
+            request.ScenarioKind == I6C6ClosureScenarioKindV1.Counter
+                ? I6GRealRunMatchContextAuthorityV1.TryCreateCounter(
+                    scenario,
+                    request.MatchContextConfiguration)
+                : I6GRealRunMatchContextAuthorityV1.TryCreate(
+                    scenario,
+                    request.MatchContextConfiguration);
+        if (!contextResult.IsSuccess || contextResult.Context is null)
         {
             return Blocked();
         }
@@ -678,7 +691,8 @@ internal static class I6C6RealRunEntryPointV1
             true,
             "STATUS=I6C6_RUNTIME_INPUTS_READY",
             false,
-            false);
+            false,
+            MatchContext: contextResult.Context);
     }
 
     internal static async ValueTask<I6C6RealRunEntryPointResultV1> ExecuteAsync(
@@ -686,7 +700,9 @@ internal static class I6C6RealRunEntryPointV1
         CancellationToken cancellationToken)
     {
         I6C6RealRunEntryPointResultV1 prepared = TryPrepare(request);
-        if (!prepared.IsSuccess || request is null)
+        if (!prepared.IsSuccess ||
+            request is null ||
+            prepared.MatchContext is null)
         {
             return prepared;
         }
@@ -696,7 +712,7 @@ internal static class I6C6RealRunEntryPointV1
                     request.Configuration,
                     request.ScenarioKind,
                     request.Connection,
-                    request.MatchContext,
+                    prepared.MatchContext,
                     request.PrintedProvider,
                     request.MaximumAdditionalMessages,
                     request.RpsChoice,

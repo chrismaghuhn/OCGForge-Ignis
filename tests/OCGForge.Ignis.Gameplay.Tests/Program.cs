@@ -474,6 +474,30 @@ var tests = new (string Name, Action Body)[]
     ("I6G opponent participant start failures fail closed",
         I6C6RealRunEntryPointTests.TestOpponentParticipantStartFailuresFailClosed),
 
+    ("I6G Counter match context closes opponent knowledge",
+        I6GRealRunMatchContextAuthorityTests
+            .TestCounterContextBindsClosedOpponentKnowledge),
+
+    ("I6G match context binds the GameplayPerspective player type",
+        I6GRealRunMatchContextAuthorityTests
+            .TestPerspectiveUsesGameplayPerspectivePlayerType),
+
+    ("I6G match context inputs fail closed when missing",
+        I6GRealRunMatchContextAuthorityTests
+            .TestMissingContextInputsFailClosed),
+
+    ("I6G Counter cannot upgrade opponent knowledge",
+        I6GRealRunMatchContextAuthorityTests
+            .TestCounterCannotUpgradeOpponentKnowledge),
+
+    ("I6G known match-context decks remain fail closed",
+        I6GRealRunMatchContextAuthorityTests
+            .TestKnownDeckValidationRemainsFailClosed),
+
+    ("I6G real-run request carries context configuration",
+        I6GRealRunMatchContextAuthorityTests
+            .TestRealRunRequestCarriesConfigurationNotContext),
+
     ("I6G real I4 idle prompt boundary binds every candidate",
         I6GRealI4PromptBoundaryTests.TestExistingIdleBoundaryBindsEveryCandidate),
 
