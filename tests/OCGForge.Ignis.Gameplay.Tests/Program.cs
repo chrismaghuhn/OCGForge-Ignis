@@ -363,6 +363,9 @@ var tests = new (string Name, Action Body)[]
     ("I6G I6C6 real-run entry point requires bound inputs",
         I6C6RealRunEntryPointTests.TestMissingInputsFailClosed),
 
+    ("I6C6 execution failures retain bounded diagnostics",
+        I6C6RealRunEntryPointTests.TestExecutionFailureDiagnostics),
+
     ("I6G capture preserves frame-source failure diagnostics",
         I6C6RealRunEntryPointTests.TestCaptureFailureDiagnosticsExposeSourceError),
 

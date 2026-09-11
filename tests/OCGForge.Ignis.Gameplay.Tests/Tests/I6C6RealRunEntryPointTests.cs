@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using OCGForge.Ignis.Client;
 using OCGForge.Ignis.Gameplay;
 using OCGForge.Ignis.Protocol;
 using static OCGForge.Ignis.Gameplay.Tests.TestAssert;
@@ -203,6 +204,134 @@ internal static class I6C6RealRunEntryPointTests
             result.Status);
         False(result.ChildRuntimeStarted);
         False(result.LiveEvidenceProduced);
+    }
+
+    internal static void TestExecutionFailureDiagnostics()
+    {
+        PropertyInfo? diagnosticsProperty =
+            typeof(I6C6ClosureHarnessExecutionResultV1).GetProperty(
+                "Diagnostics",
+                BindingFlags.Instance |
+                BindingFlags.Public |
+                BindingFlags.NonPublic);
+        NotNull(diagnosticsProperty);
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1 runtimeStart =
+            I6C6ClosureHarnessExecutionDiagnosticsV1.ExternalRuntimeStart();
+        Equal(
+            I6C6ClosureHarnessExecutionStageV1.ExternalRuntimeStart,
+            runtimeStart.Stage);
+        Equal(I2ErrorCode.None, runtimeStart.I2ErrorCode);
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1 deckLoad =
+            I6C6ClosureHarnessExecutionDiagnosticsV1.DeckLoad();
+        Equal(
+            I6C6ClosureHarnessExecutionStageV1.DeckLoad,
+            deckLoad.Stage);
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1 sessionStart =
+            I6C6ClosureHarnessExecutionDiagnosticsV1.SessionStart(
+                I2ErrorCode.ConnectionTimeout);
+        Equal(
+            I6C6ClosureHarnessExecutionStageV1.SessionStart,
+            sessionStart.Stage);
+        Equal(I2ErrorCode.ConnectionTimeout, sessionStart.I2ErrorCode);
+        Equal(
+            I6C6ClosureHarnessPreDuelFailureStageV1.None,
+            sessionStart.PreDuelStage);
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1 preDuel =
+            I6C6ClosureHarnessExecutionDiagnosticsV1.PreDuelDrive(
+                I2ErrorCode.DeckRejected,
+                I6C6ClosureHarnessPreDuelFailureStageV1.DeckSubmission);
+        Equal(
+            I6C6ClosureHarnessExecutionStageV1.PreDuelDrive,
+            preDuel.Stage);
+        Equal(I2ErrorCode.DeckRejected, preDuel.I2ErrorCode);
+        Equal(
+            I6C6ClosureHarnessPreDuelFailureStageV1.DeckSubmission,
+            preDuel.PreDuelStage);
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1 cancelled =
+            I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled();
+        Equal(
+            I6C6ClosureHarnessExecutionStageV1.Cancelled,
+            cancelled.Stage);
+        Equal(I2ErrorCode.Cancelled, cancelled.I2ErrorCode);
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1 cancelledPreDuel =
+            I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled(
+                I2ErrorCode.Cancelled,
+                I6C6ClosureHarnessPreDuelFailureStageV1.PumpRead);
+        Equal(
+            I6C6ClosureHarnessExecutionStageV1.Cancelled,
+            cancelledPreDuel.Stage);
+        Equal(
+            I6C6ClosureHarnessPreDuelFailureStageV1.PumpRead,
+            cancelledPreDuel.PreDuelStage);
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1 unexpected =
+            I6C6ClosureHarnessExecutionDiagnosticsV1.UnexpectedException();
+        Equal(
+            I6C6ClosureHarnessExecutionStageV1.UnexpectedException,
+            unexpected.Stage);
+        Equal(I2ErrorCode.None, unexpected.I2ErrorCode);
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1 capture =
+            I6C6ClosureHarnessExecutionDiagnosticsV1.GameplayCapture();
+        I6C6LiveGameplayCaptureResultV1 captureObject =
+            CreateCaptureFailureForDiagnostics();
+        I6C6ClosureHarnessExecutionResultV1 captureFailure = new(
+            I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+            true,
+            false,
+            captureObject,
+            capture);
+        True(ReferenceEquals(captureObject, captureFailure.Capture));
+        Equal(
+            I6C6ClosureHarnessExecutionStageV1.GameplayCapture,
+            captureFailure.Diagnostics!.Value.Stage);
+        Equal(
+            I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+            captureFailure.ErrorCode);
+
+        I6C6ClosureHarnessExecutionResultV1 success = new(
+            I6C6ClosureHarnessErrorCodeV1.None,
+            true,
+            true);
+        Equal(I6C6ClosureHarnessErrorCodeV1.None, success.ErrorCode);
+        Null(success.Diagnostics);
+    }
+
+    private static I6C6LiveGameplayCaptureResultV1
+        CreateCaptureFailureForDiagnostics()
+    {
+        ConstructorInfo? constructor =
+            typeof(I6C6LiveGameplayCaptureResultV1).GetConstructors(
+                BindingFlags.Instance | BindingFlags.NonPublic)
+            .SingleOrDefault();
+        NotNull(constructor);
+        return (I6C6LiveGameplayCaptureResultV1)constructor!.Invoke(
+            new object?[]
+            {
+                false,
+                GameplayErrorCode.InvalidState,
+                null,
+                null,
+                Array.Empty<byte[]>(),
+                Array.Empty<I6C6LiveGameplayObservationV1>(),
+                null,
+                new I6C6FrameReadinessDiagnosticsV1(
+                    null,
+                    0,
+                    null,
+                    null,
+                    false,
+                    0,
+                    Array.Empty<GameplayMessageKindV1>(),
+                    null),
+                null
+            });
     }
 
     internal static void TestSafeEvidenceDigestExcludesTcpChunking()
