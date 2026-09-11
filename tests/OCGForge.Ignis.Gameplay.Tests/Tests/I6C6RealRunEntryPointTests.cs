@@ -651,15 +651,13 @@ internal static class I6C6RealRunEntryPointTests
     internal static void TestOpponentParticipantLeaseRequiresOwnedProcess()
     {
         I6C6OpponentRuntimeParticipantLeaseResultV1 result =
-            I6C6OpponentRuntimeParticipantLeaseV1.TryCreateFromOwnedProcess(
-                null,
+            I6C6OpponentRuntimeParticipantLeaseV1.TryStartOwnedProcess(
                 CounterScenario(),
-                CounterScenario().OpponentDeckPath,
-                7911);
+                0);
 
         False(result.IsSuccess);
         Equal(
-            I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
+            I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
             result.ErrorCode);
         Null(result.Lease);
     }
@@ -806,6 +804,152 @@ internal static class I6C6RealRunEntryPointTests
             I6C6OpponentRuntimeParticipantLeaseV1.HasPortInputForTest(
                 invalidRawArguments,
                 7911));
+    }
+
+    internal static void TestOpponentParticipantOwnsCanonicalLaunch()
+    {
+        const string expectedDeck =
+            @"C:\ProjectIgnis\WindBot\Decks\AI_CyberDragon.ydk";
+        Type leaseType =
+            typeof(I6C6OpponentRuntimeParticipantLeaseV1);
+        BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
+
+        MethodInfo? ownedStart = leaseType.GetMethod(
+            "TryStartOwnedProcess",
+            flags);
+        NotNull(ownedStart);
+
+        MethodInfo? legacyAdoption = leaseType.GetMethod(
+            "TryCreateFromOwnedProcess",
+            flags);
+        Null(legacyAdoption);
+
+        MethodInfo? validate = leaseType.GetMethod(
+            "ValidateStartInfoForTest",
+            flags);
+        NotNull(validate);
+
+        MethodInfo? factory = leaseType.GetMethods(flags)
+            .SingleOrDefault(method =>
+                method.Name == "CreateStartInfo" &&
+                method.GetParameters().Length == 2);
+        NotNull(factory);
+        ProcessStartInfo canonical = (ProcessStartInfo)factory!.Invoke(
+            null,
+            new object[] { CounterScenario(), 7911 })!;
+
+        bool IsValid(ProcessStartInfo value) =>
+            (bool)validate!.Invoke(
+                null,
+                new object[] { value, expectedDeck, 7911 })!;
+
+        True(IsValid(canonical));
+
+        ProcessStartInfo wrongExecutable = CloneStartInfo(canonical);
+        wrongExecutable.FileName =
+            @"C:\ProjectIgnis\WindBot\Other.exe";
+        False(IsValid(wrongExecutable));
+
+        ProcessStartInfo wrongWorkingDirectory = CloneStartInfo(canonical);
+        wrongWorkingDirectory.WorkingDirectory =
+            @"C:\ProjectIgnis";
+        False(IsValid(wrongWorkingDirectory));
+
+        ProcessStartInfo quotedDeck = CloneStartInfo(canonical);
+        quotedDeck.ArgumentList[0] =
+            $"DeckFile=\"{expectedDeck}\"";
+        False(IsValid(quotedDeck));
+
+        ProcessStartInfo wrongDeck = CloneStartInfo(canonical);
+        wrongDeck.ArgumentList[0] =
+            $"DeckFile={expectedDeck}.bak";
+        False(IsValid(wrongDeck));
+
+        ProcessStartInfo wrongPort = CloneStartInfo(canonical);
+        wrongPort.ArgumentList[1] = "Port=7912";
+        False(IsValid(wrongPort));
+
+        ProcessStartInfo missingVersion = CloneStartInfo(canonical);
+        missingVersion.ArgumentList.RemoveAt(2);
+        False(IsValid(missingVersion));
+
+        ProcessStartInfo wrongVersion = CloneStartInfo(canonical);
+        wrongVersion.ArgumentList[2] = "Version=0x000A0128";
+        False(IsValid(wrongVersion));
+
+        ProcessStartInfo duplicateVersion = CloneStartInfo(canonical);
+        duplicateVersion.ArgumentList.Add("Version=0x000B0029");
+        False(IsValid(duplicateVersion));
+    }
+
+    internal static void TestOpponentParticipantStartFailuresFailClosed()
+    {
+        Type leaseType =
+            typeof(I6C6OpponentRuntimeParticipantLeaseV1);
+        BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
+        MethodInfo? startForTest = leaseType.GetMethod(
+            "TryStartProcessForTest",
+            flags);
+        NotNull(startForTest);
+
+        ProcessStartInfo missingExecutable = new(
+            Path.Combine(
+                Path.GetTempPath(),
+                "ocgforge-ignis-missing-windbot.exe"))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        I6C6ClosureHarnessErrorCodeV1 startFailure =
+            (I6C6ClosureHarnessErrorCodeV1)startForTest!.Invoke(
+                null,
+                new object[] { missingExecutable })!;
+        Equal(
+            I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
+            startFailure);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        MethodInfo? classifyExitedForTest = leaseType.GetMethod(
+            "TryClassifyStartedProcessForTest",
+            flags);
+        NotNull(classifyExitedForTest);
+
+        ProcessStartInfo exitsImmediately = new("cmd.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        exitsImmediately.ArgumentList.Add("/c");
+        exitsImmediately.ArgumentList.Add("exit 0");
+        using Process exited = Process.Start(exitsImmediately)!;
+        True(exited.WaitForExit(5000));
+        I6C6ClosureHarnessErrorCodeV1 immediateExit =
+            (I6C6ClosureHarnessErrorCodeV1)classifyExitedForTest!.Invoke(
+                null,
+                new object[] { exited })!;
+        Equal(
+            I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
+            immediateExit);
+    }
+
+    private static ProcessStartInfo CloneStartInfo(ProcessStartInfo source)
+    {
+        ProcessStartInfo clone = new(source.FileName)
+        {
+            WorkingDirectory = source.WorkingDirectory,
+            UseShellExecute = source.UseShellExecute,
+            CreateNoWindow = source.CreateNoWindow
+        };
+        foreach (string argument in source.ArgumentList)
+        {
+            clone.ArgumentList.Add(argument);
+        }
+
+        return clone;
     }
 
     private static I6C6ClosureScenarioConfigurationV1 CounterScenario() =>

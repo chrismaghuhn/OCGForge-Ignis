@@ -109,6 +109,16 @@ internal readonly record struct I6C6OpponentRuntimeParticipantLeaseResultV1(
     I6C6ClosureHarnessErrorCodeV1 ErrorCode,
     I6C6OpponentRuntimeParticipantLeaseV1? Lease);
 
+internal sealed record I6C6OpponentRuntimeLaunchSpecificationV1(
+    string ExecutablePath,
+    string WorkingDirectory,
+    string DeckFile,
+    int Port,
+    string Version,
+    string ScenarioId,
+    string ActualParticipantDeckPath,
+    string ActualParticipantDeckSha256);
+
 internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
 {
     private const string ExpectedWindBotExecutablePath =
@@ -123,106 +133,33 @@ internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
     private I6C6OpponentRuntimeParticipantLeaseV1(
         Process process,
         I6C6OpponentRuntimeBindingV1 binding,
-        int connectionPort)
+        int connectionPort,
+        I6C6OpponentRuntimeLaunchSpecificationV1 launchSpecification)
     {
         this.process = process;
         Binding = binding;
         ConnectionPort = connectionPort;
+        LaunchSpecification = launchSpecification;
     }
 
     internal I6C6OpponentRuntimeBindingV1 Binding { get; }
 
     internal int ConnectionPort { get; }
 
+    internal I6C6OpponentRuntimeLaunchSpecificationV1
+        LaunchSpecification { get; }
+
     internal bool IsLive => !process.HasExited;
 
     internal bool IsForConnection(ConnectionConfigurationV1 connection) =>
         connection.Port == ConnectionPort;
 
-    internal static ProcessStartInfo CreateStartInfo(
-        I6C6ClosureScenarioConfigurationV1 scenario,
-        int connectionPort)
-    {
-        ArgumentNullException.ThrowIfNull(scenario);
-        if (connectionPort is < 1 or > 65535)
-        {
-            throw new ArgumentOutOfRangeException(nameof(connectionPort));
-        }
-
-        if (string.IsNullOrWhiteSpace(scenario.OpponentDeckPath) ||
-            scenario.OpponentDeckPath.Contains('"', StringComparison.Ordinal))
-        {
-            throw new InvalidDataException(
-                "The WindBot deck path is not a valid argument value.");
-        }
-
-        ProcessStartInfo startInfo = new(ExpectedWindBotExecutablePath)
-        {
-            WorkingDirectory = ExpectedWindBotWorkingDirectory,
-            UseShellExecute = true,
-            CreateNoWindow = false
-        };
-        startInfo.ArgumentList.Add($"DeckFile={scenario.OpponentDeckPath}");
-        startInfo.ArgumentList.Add(
-            $"Port={connectionPort.ToString(CultureInfo.InvariantCulture)}");
-        startInfo.ArgumentList.Add(ExpectedWindBotVersionArgument);
-        return startInfo;
-    }
-
     internal static I6C6OpponentRuntimeParticipantLeaseResultV1
-        TryCreateFromOwnedProcess(
-            Process? process,
+        TryStartOwnedProcess(
             I6C6ClosureScenarioConfigurationV1 scenario,
-            string actualParticipantDeckPath,
             int connectionPort)
     {
-        if (process is null || process.HasExited)
-        {
-            return new(
-                false,
-                I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
-                null);
-        }
-
-        if (connectionPort is < 1 or > 65535)
-        {
-            return new(
-                false,
-                I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
-                null);
-        }
-
-        string executablePath;
-        try
-        {
-            executablePath = process.MainModule?.FileName ?? string.Empty;
-        }
-        catch (InvalidOperationException)
-        {
-            return new(
-                false,
-                I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
-                null);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return new(
-                false,
-                I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
-                null);
-        }
-
-        if (!string.Equals(
-                Path.GetFileName(executablePath),
-                "WindBot.exe",
-                StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(
-                executablePath,
-                ExpectedWindBotExecutablePath,
-                StringComparison.OrdinalIgnoreCase) ||
-            !HasProcessInput(process.StartInfo, actualParticipantDeckPath) ||
-            !HasPortInput(process.StartInfo, connectionPort) ||
-            !HasVersionInput(process.StartInfo))
+        if (scenario is null || connectionPort is < 1 or > 65535)
         {
             return new(
                 false,
@@ -233,20 +170,219 @@ internal sealed class I6C6OpponentRuntimeParticipantLeaseV1 : IAsyncDisposable
         I6C6OpponentRuntimeBindingResultV1 binding =
             I6C6OpponentRuntimeBindingV1.TryCreateFromActualParticipant(
                 scenario,
-                actualParticipantDeckPath,
+                scenario.OpponentDeckPath,
                 "windbot.deckfile.v1");
         if (!binding.IsSuccess || binding.Binding is null)
         {
             return new(false, binding.ErrorCode, null);
         }
 
+        I6C6OpponentRuntimeLaunchSpecificationV1 launchSpecification;
+        try
+        {
+            launchSpecification = CreateLaunchSpecification(
+                scenario,
+                connectionPort,
+                binding.Binding.OpponentDeckSha256);
+        }
+        catch (ArgumentException)
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
+                null);
+        }
+        catch (InvalidDataException)
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
+                null);
+        }
+
+        ProcessStartInfo startInfo = CreateStartInfo(launchSpecification);
+        if (!ValidateStartInfo(
+                startInfo,
+                launchSpecification.ActualParticipantDeckPath,
+                launchSpecification.Port))
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
+                null);
+        }
+
+        I6C6ClosureHarnessErrorCodeV1 startError = TryStartProcess(
+            startInfo,
+            out Process? started);
+        if (startError != I6C6ClosureHarnessErrorCodeV1.None ||
+            started is null)
+        {
+            return new(
+                false,
+                I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable,
+                null);
+        }
+
         return new(
             true,
             I6C6ClosureHarnessErrorCodeV1.None,
             new I6C6OpponentRuntimeParticipantLeaseV1(
-                process,
+                started,
                 binding.Binding,
-                connectionPort));
+                connectionPort,
+                launchSpecification));
+    }
+
+    internal static I6C6ClosureHarnessErrorCodeV1 TryStartProcessForTest(
+        ProcessStartInfo startInfo)
+    {
+        I6C6ClosureHarnessErrorCodeV1 result = TryStartProcess(
+            startInfo,
+            out Process? started);
+        started?.Dispose();
+        return result;
+    }
+
+    internal static I6C6ClosureHarnessErrorCodeV1
+        TryClassifyStartedProcessForTest(Process process) =>
+        ClassifyStartedProcess(process);
+
+    internal static ProcessStartInfo CreateStartInfo(
+        I6C6ClosureScenarioConfigurationV1 scenario,
+        int connectionPort)
+    {
+        I6C6OpponentRuntimeLaunchSpecificationV1 launchSpecification =
+            CreateLaunchSpecification(
+                scenario,
+                connectionPort,
+                scenario?.OpponentDeckSha256 ?? string.Empty);
+        return CreateStartInfo(launchSpecification);
+    }
+
+    internal static bool ValidateStartInfoForTest(
+        ProcessStartInfo startInfo,
+        string expectedDeckPath,
+        int connectionPort) =>
+        ValidateStartInfo(startInfo, expectedDeckPath, connectionPort);
+
+    private static I6C6OpponentRuntimeLaunchSpecificationV1
+        CreateLaunchSpecification(
+            I6C6ClosureScenarioConfigurationV1 scenario,
+            int connectionPort,
+            string actualParticipantDeckSha256)
+    {
+        ArgumentNullException.ThrowIfNull(scenario);
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            scenario.OpponentDeckPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            actualParticipantDeckSha256);
+        if (connectionPort is < 1 or > 65535 ||
+            scenario.OpponentDeckPath.Contains('"', StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "The WindBot launch specification is invalid.");
+        }
+
+        return new(
+            ExpectedWindBotExecutablePath,
+            ExpectedWindBotWorkingDirectory,
+            scenario.OpponentDeckPath,
+            connectionPort,
+            ExpectedWindBotVersionArgument,
+            scenario.ScenarioId,
+            scenario.OpponentDeckPath,
+            actualParticipantDeckSha256);
+    }
+
+    private static ProcessStartInfo CreateStartInfo(
+        I6C6OpponentRuntimeLaunchSpecificationV1 launchSpecification)
+    {
+        ProcessStartInfo startInfo = new(launchSpecification.ExecutablePath)
+        {
+            WorkingDirectory = launchSpecification.WorkingDirectory,
+            UseShellExecute = true,
+            CreateNoWindow = false
+        };
+        startInfo.ArgumentList.Add($"DeckFile={launchSpecification.DeckFile}");
+        startInfo.ArgumentList.Add(
+            $"Port={launchSpecification.Port.ToString(CultureInfo.InvariantCulture)}");
+        startInfo.ArgumentList.Add(launchSpecification.Version);
+        return startInfo;
+    }
+
+    private static bool ValidateStartInfo(
+        ProcessStartInfo startInfo,
+        string expectedDeckPath,
+        int connectionPort)
+    {
+        if (startInfo is null ||
+            string.IsNullOrWhiteSpace(expectedDeckPath) ||
+            connectionPort is < 1 or > 65535)
+        {
+            return false;
+        }
+
+        return string.Equals(
+                startInfo.FileName,
+                ExpectedWindBotExecutablePath,
+                StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(
+                startInfo.WorkingDirectory,
+                ExpectedWindBotWorkingDirectory,
+                StringComparison.OrdinalIgnoreCase) &&
+            startInfo.UseShellExecute &&
+            !startInfo.CreateNoWindow &&
+            HasProcessInput(startInfo, expectedDeckPath) &&
+            HasPortInput(startInfo, connectionPort) &&
+            HasVersionInput(startInfo);
+    }
+
+    private static I6C6ClosureHarnessErrorCodeV1 TryStartProcess(
+        ProcessStartInfo startInfo,
+        out Process? started)
+    {
+        started = null;
+        try
+        {
+            started = Process.Start(startInfo);
+            if (started is null)
+            {
+                return I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable;
+            }
+
+            I6C6ClosureHarnessErrorCodeV1 processState =
+                ClassifyStartedProcess(started);
+            if (processState != I6C6ClosureHarnessErrorCodeV1.None)
+            {
+                started.Dispose();
+                started = null;
+                return processState;
+            }
+
+            return I6C6ClosureHarnessErrorCodeV1.None;
+        }
+        catch (Exception)
+        {
+            started?.Dispose();
+            started = null;
+            return I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable;
+        }
+    }
+
+    private static I6C6ClosureHarnessErrorCodeV1 ClassifyStartedProcess(
+        Process process)
+    {
+        try
+        {
+            return process is null || process.HasExited
+                ? I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable
+                : I6C6ClosureHarnessErrorCodeV1.None;
+        }
+        catch (Exception)
+        {
+            return I6C6ClosureHarnessErrorCodeV1.RuntimeArtifactUnavailable;
+        }
     }
 
     public ValueTask DisposeAsync()

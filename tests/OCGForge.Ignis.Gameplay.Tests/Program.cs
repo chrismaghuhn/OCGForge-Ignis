@@ -456,6 +456,12 @@ var tests = new (string Name, Action Body)[]
     ("I6G opponent participant arguments are token exact",
         I6C6RealRunEntryPointTests.TestOpponentParticipantArgumentsAreTokenExact),
 
+    ("I6G opponent participant owns canonical launch",
+        I6C6RealRunEntryPointTests.TestOpponentParticipantOwnsCanonicalLaunch),
+
+    ("I6G opponent participant start failures fail closed",
+        I6C6RealRunEntryPointTests.TestOpponentParticipantStartFailuresFailClosed),
+
     ("I6G real I4 idle prompt boundary binds every candidate",
         I6GRealI4PromptBoundaryTests.TestExistingIdleBoundaryBindsEveryCandidate),
 
