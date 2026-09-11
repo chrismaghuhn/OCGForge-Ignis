@@ -301,6 +301,10 @@ internal static class I6C6RealRunEntryPointTests
             I6C6ClosureHarnessExecutionStageV1.UnexpectedException,
             unexpected.Stage);
         Equal(I2ErrorCode.None, unexpected.I2ErrorCode);
+        Equal(
+            I6C6ClosureHarnessExceptionSiteV1.None,
+            unexpected.ExceptionSite);
+        Null(unexpected.ExceptionType);
 
         I6C6ClosureHarnessExecutionDiagnosticsV1 capture =
             I6C6ClosureHarnessExecutionDiagnosticsV1.GameplayCapture();
@@ -326,6 +330,105 @@ internal static class I6C6RealRunEntryPointTests
             true);
         Equal(I6C6ClosureHarnessErrorCodeV1.None, success.ErrorCode);
         Null(success.Diagnostics);
+    }
+
+    internal static void TestUnexpectedExceptionDiagnosticsPreserveBoundary()
+    {
+        (I6C6ClosureHarnessExceptionSiteV1 Site, Exception Exception)[] cases =
+        {
+            (
+                I6C6ClosureHarnessExceptionSiteV1.TransportConstruction,
+                new InvalidOperationException()),
+            (
+                I6C6ClosureHarnessExceptionSiteV1.RunnerConstruction,
+                new ArgumentException()),
+            (
+                I6C6ClosureHarnessExceptionSiteV1.ExternalRuntimeStartReadiness,
+                new IOException()),
+            (
+                I6C6ClosureHarnessExceptionSiteV1.SessionStart,
+                new InvalidDataException()),
+            (
+                I6C6ClosureHarnessExceptionSiteV1.DeckLoad,
+                new FileNotFoundException()),
+            (
+                I6C6ClosureHarnessExceptionSiteV1.PreDuelDrive,
+                new InvalidOperationException()),
+            (
+                I6C6ClosureHarnessExceptionSiteV1.GameplayCapture,
+                new NotSupportedException()),
+            (
+                I6C6ClosureHarnessExceptionSiteV1.RunnerDisposal,
+                new ObjectDisposedException("runner")),
+            (
+                I6C6ClosureHarnessExceptionSiteV1.CaptureTransportDisposal,
+                new IOException()),
+            (
+                I6C6ClosureHarnessExceptionSiteV1.ExternalRuntimeOwnerDisposal,
+                new ObjectDisposedException("owner"))
+        };
+
+        foreach ((I6C6ClosureHarnessExceptionSiteV1 site, Exception exception)
+                     in cases)
+        {
+            I6C6ClosureHarnessExecutionDiagnosticsV1 diagnostics =
+                I6C6ClosureHarnessExecutionDiagnosticsV1.UnexpectedException(
+                    site,
+                    exception);
+            Equal(
+                I6C6ClosureHarnessExecutionStageV1.UnexpectedException,
+                diagnostics.Stage);
+            Equal(site, diagnostics.ExceptionSite);
+            Equal(exception.GetType().FullName, diagnostics.ExceptionType);
+
+            I6C6ClosureHarnessExecutionResultV1 result =
+                I6C6ClosureHarnessV1.UnexpectedExceptionResultForTest(
+                    site,
+                    exception,
+                    processStarted: true);
+            Equal(
+                I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+                result.ErrorCode);
+            True(result.ProcessStarted);
+            False(result.GameplayCaptureSucceeded);
+            Null(result.Capture);
+            NotNull(result.Diagnostics);
+            Equal(site, result.Diagnostics!.Value.ExceptionSite);
+            Equal(
+                exception.GetType().FullName,
+                result.Diagnostics!.Value.ExceptionType);
+        }
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1 deckLoad =
+            I6C6ClosureHarnessExecutionDiagnosticsV1.DeckLoad(
+                new FileNotFoundException());
+        Equal(
+            I6C6ClosureHarnessExecutionStageV1.DeckLoad,
+            deckLoad.Stage);
+        Equal(
+            I6C6ClosureHarnessExceptionSiteV1.DeckLoad,
+            deckLoad.ExceptionSite);
+        Equal(
+            typeof(FileNotFoundException).FullName,
+            deckLoad.ExceptionType);
+    }
+
+    internal static void TestUnexpectedExceptionDiagnosticsAreNonSemantic()
+    {
+        PerspectiveSafeFrameV1 frame = CreateFullFrame();
+        I6C6OpponentRuntimeBindingResultV1 binding =
+            CreateOpponentBinding();
+        True(binding.IsSuccess);
+        NotNull(binding.Binding);
+
+        string before = Digest(frame, binding.Binding!);
+        _ = I6C6ClosureHarnessV1.UnexpectedExceptionResultForTest(
+            I6C6ClosureHarnessExceptionSiteV1.GameplayCapture,
+            new InvalidOperationException("must not be hashed"),
+            processStarted: true);
+        string after = Digest(frame, binding.Binding!);
+
+        Equal(before, after);
     }
 
     private static I6C6LiveGameplayCaptureResultV1

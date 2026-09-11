@@ -51,6 +51,21 @@ internal enum I6C6ClosureHarnessExecutionStageV1 : byte
     UnexpectedException = 7
 }
 
+internal enum I6C6ClosureHarnessExceptionSiteV1 : byte
+{
+    None = 0,
+    TransportConstruction = 1,
+    RunnerConstruction = 2,
+    ExternalRuntimeStartReadiness = 3,
+    SessionStart = 4,
+    DeckLoad = 5,
+    PreDuelDrive = 6,
+    GameplayCapture = 7,
+    RunnerDisposal = 8,
+    CaptureTransportDisposal = 9,
+    ExternalRuntimeOwnerDisposal = 10
+}
+
 internal enum I6C6ClosureHarnessPreDuelFailureStageV1 : byte
 {
     None = 0,
@@ -70,7 +85,10 @@ internal readonly record struct I6C6ClosureHarnessExecutionDiagnosticsV1(
     I6C6ClosureHarnessPreDuelFailureStageV1 PreDuelStage =
         I6C6ClosureHarnessPreDuelFailureStageV1.None,
     I6C6ExternalRuntimeReadinessResultV1 Readiness =
-        I6C6ExternalRuntimeReadinessResultV1.None)
+        I6C6ExternalRuntimeReadinessResultV1.None,
+    I6C6ClosureHarnessExceptionSiteV1 ExceptionSite =
+        I6C6ClosureHarnessExceptionSiteV1.None,
+    string? ExceptionType = null)
 {
     internal static I6C6ClosureHarnessExecutionDiagnosticsV1 ExternalRuntimeStart(
         I6C6ExternalRuntimeReadinessResultV1 readiness =
@@ -118,6 +136,24 @@ internal readonly record struct I6C6ClosureHarnessExecutionDiagnosticsV1(
     internal static I6C6ClosureHarnessExecutionDiagnosticsV1
         UnexpectedException() =>
         new(I6C6ClosureHarnessExecutionStageV1.UnexpectedException);
+
+    internal static I6C6ClosureHarnessExecutionDiagnosticsV1
+        UnexpectedException(
+            I6C6ClosureHarnessExceptionSiteV1 site,
+            Exception exception) =>
+        new(
+            I6C6ClosureHarnessExecutionStageV1.UnexpectedException,
+            ExceptionSite: site,
+            ExceptionType: exception.GetType().FullName ??
+                exception.GetType().Name);
+
+    internal static I6C6ClosureHarnessExecutionDiagnosticsV1
+        DeckLoad(Exception exception) =>
+        new(
+            I6C6ClosureHarnessExecutionStageV1.DeckLoad,
+            ExceptionSite: I6C6ClosureHarnessExceptionSiteV1.DeckLoad,
+            ExceptionType: exception.GetType().FullName ??
+                exception.GetType().Name);
 }
 
 internal sealed record I6C6ClosureScenarioConfigurationV1(
@@ -3207,6 +3243,14 @@ internal sealed class I6C6TcpCaptureTransportV1 : IByteTransport
 
 internal static class I6C6ClosureHarnessV1
 {
+    private sealed class ExecutionScope
+    {
+        internal I6C6ClosureHarnessExceptionSiteV1 ExceptionSite =
+            I6C6ClosureHarnessExceptionSiteV1.None;
+
+        internal I6C6ExternalRuntimeProcessOwnerV1? ProcessOwner;
+    }
+
     private static readonly Type[] ExistingIgnisPipelineTypes =
     {
         typeof(I2SessionRunner),
@@ -3551,6 +3595,27 @@ internal static class I6C6ClosureHarnessV1
                 errorCode,
                 failureStage);
 
+    internal static I6C6ClosureHarnessExecutionResultV1
+        UnexpectedExceptionResultForTest(
+            I6C6ClosureHarnessExceptionSiteV1 site,
+            Exception exception,
+            bool processStarted) =>
+        UnexpectedExceptionResult(site, exception, processStarted);
+
+    private static I6C6ClosureHarnessExecutionResultV1
+        UnexpectedExceptionResult(
+            I6C6ClosureHarnessExceptionSiteV1 site,
+            Exception exception,
+            bool processStarted) =>
+        new(
+            I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+            processStarted,
+            false,
+            Diagnostics:
+                I6C6ClosureHarnessExecutionDiagnosticsV1.UnexpectedException(
+                    site,
+                    exception));
+
     internal static async ValueTask<I6C6ClosureHarnessExecutionResultV1>
         ExecuteAsync(
             I6C6ClosureHarnessConfigurationV1 configuration,
@@ -3597,197 +3662,353 @@ internal static class I6C6ClosureHarnessV1
                 false);
         }
 
-        I6C6ExternalRuntimeProcessOwnerV1? processOwner = null;
+        ExecutionScope scope = new();
+        I6C6ClosureHarnessExecutionResultV1 result =
+            await ExecuteWithResourcesAsync(
+                    binding,
+                    opponentRuntimeParticipant,
+                    connection,
+                    matchContext,
+                    printedProvider,
+                    maximumAdditionalMessages,
+                    rpsChoice,
+                    turnPreference,
+                    cancellationToken,
+                    scope)
+                .ConfigureAwait(false);
+
         try
         {
-            await using I6C6TcpCaptureTransportV1 captureTransport =
-                new(new TcpClientTransport());
-            await using I2SessionRunner runner = new(captureTransport);
+            scope.ExceptionSite =
+                I6C6ClosureHarnessExceptionSiteV1
+                    .ExternalRuntimeOwnerDisposal;
+            if (scope.ProcessOwner is not null)
+            {
+                await scope.ProcessOwner.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+        catch (Exception exception)
+        {
+            return UnexpectedExceptionResult(
+                I6C6ClosureHarnessExceptionSiteV1.ExternalRuntimeOwnerDisposal,
+                exception,
+                scope.ProcessOwner is not null);
+        }
 
-            I2Result started;
+        return result;
+    }
+
+    private static async ValueTask<I6C6ClosureHarnessExecutionResultV1>
+        ExecuteWithResourcesAsync(
+            I6C6ClosureHarnessBindingV1 binding,
+            I6C6OpponentRuntimeParticipantLeaseV1 opponentRuntimeParticipant,
+            ConnectionConfigurationV1 connection,
+            PerspectiveSafeMatchContextV1 matchContext,
+            PerspectiveSafePrintedProviderV1 printedProvider,
+            int maximumAdditionalMessages,
+            byte rpsChoice,
+            byte turnPreference,
+            CancellationToken cancellationToken,
+            ExecutionScope scope)
+    {
+        I6C6TcpCaptureTransportV1 captureTransport;
+        try
+        {
+            scope.ExceptionSite =
+                I6C6ClosureHarnessExceptionSiteV1.TransportConstruction;
+            captureTransport = new(new TcpClientTransport());
+        }
+        catch (Exception exception)
+        {
+            return UnexpectedExceptionResult(
+                I6C6ClosureHarnessExceptionSiteV1.TransportConstruction,
+                exception,
+                false);
+        }
+
+        I2SessionRunner runner;
+        try
+        {
+            scope.ExceptionSite =
+                I6C6ClosureHarnessExceptionSiteV1.RunnerConstruction;
+            runner = new(captureTransport);
+        }
+        catch (Exception exception)
+        {
             try
             {
-                started =
-                    await I6C6ExternalRuntimeStartupSequenceV1
-                        .RunAsync(
-                            token =>
-                                I6C6ExternalRuntimeProcessOwnerV1.StartAsync(
-                                    binding,
-                                    connection,
-                                    token),
-                            (owner, token) =>
-                            {
-                                processOwner = owner;
-                                return runner.StartAsync(connection, token);
-                            },
-                            cancellationToken)
-                        .ConfigureAwait(false);
+                scope.ExceptionSite =
+                    I6C6ClosureHarnessExceptionSiteV1
+                        .CaptureTransportDisposal;
+                await captureTransport.DisposeAsync().ConfigureAwait(false);
             }
-            catch (OperationCanceledException)
-                when (cancellationToken.IsCancellationRequested)
+            catch (Exception disposalException)
             {
-                return new(
-                    I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
-                    false,
-                    false,
-                    Diagnostics:
-                        I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled());
-            }
-            catch (I6C6ExternalRuntimeReadinessException readinessException)
-            {
-                if (readinessException.Result ==
-                    I6C6ExternalRuntimeReadinessResultV1.Cancelled)
-                {
-                    return new(
-                        I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
-                        readinessException.ProcessStarted,
-                        false,
-                        Diagnostics:
-                            I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled(
-                                readiness:
-                                    I6C6ExternalRuntimeReadinessResultV1
-                                        .Cancelled));
-                }
-
-                return new(
-                    I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
-                    readinessException.ProcessStarted,
-                    false,
-                    Diagnostics:
-                        I6C6ClosureHarnessExecutionDiagnosticsV1.ExternalRuntimeStart(
-                            readinessException.Result));
-            }
-            catch
-            {
-                return new(
-                    I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
-                    false,
-                    false,
-                    Diagnostics:
-                        I6C6ClosureHarnessExecutionDiagnosticsV1
-                            .ExternalRuntimeStart());
-            }
-            if (!started.IsSuccess)
-            {
-                I6C6ClosureHarnessExecutionDiagnosticsV1 diagnostics =
-                    cancellationToken.IsCancellationRequested ||
-                    started.Error == I2ErrorCode.Cancelled
-                        ? I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled(
-                            started.Error)
-                        : I6C6ClosureHarnessExecutionDiagnosticsV1.SessionStart(
-                            started.Error);
-                return new(
-                    I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
-                    true,
-                    false,
-                    Diagnostics: diagnostics);
+                return UnexpectedExceptionResult(
+                    I6C6ClosureHarnessExceptionSiteV1
+                        .CaptureTransportDisposal,
+                    disposalException,
+                    false);
             }
 
-            PrevalidatedProtocolDeck deck;
-            try
-            {
-                deck = LoadDeck(binding.Scenario.PrimaryDeckPath);
-            }
-            catch
-            {
-                return new(
-                    I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
-                    true,
-                    false,
-                    Diagnostics:
-                        I6C6ClosureHarnessExecutionDiagnosticsV1.DeckLoad());
-            }
+            return UnexpectedExceptionResult(
+                I6C6ClosureHarnessExceptionSiteV1.RunnerConstruction,
+                exception,
+                false);
+        }
 
-            I6C6PreDuelHandoffResultV1 handoff =
-                await DriveToGameplayAsync(
-                        runner,
-                        deck,
-                        rpsChoice,
-                        turnPreference,
+        I6C6ClosureHarnessExecutionResultV1 result;
+        try
+        {
+            result = await ExecuteCoreAsync(
+                    binding,
+                    opponentRuntimeParticipant,
+                    connection,
+                    matchContext,
+                    printedProvider,
+                    maximumAdditionalMessages,
+                    rpsChoice,
+                    turnPreference,
+                    cancellationToken,
+                    scope,
+                    runner,
+                    captureTransport)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            result = new(
+                I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+                scope.ProcessOwner is not null,
+                false,
+                Diagnostics:
+                    I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled());
+        }
+        catch (Exception exception)
+        {
+            result = UnexpectedExceptionResult(
+                scope.ExceptionSite,
+                exception,
+                scope.ProcessOwner is not null);
+        }
+
+        Exception? disposalExceptionToReport = null;
+        I6C6ClosureHarnessExceptionSiteV1 disposalSite =
+            I6C6ClosureHarnessExceptionSiteV1.None;
+        try
+        {
+            scope.ExceptionSite =
+                I6C6ClosureHarnessExceptionSiteV1.RunnerDisposal;
+            await runner.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            disposalExceptionToReport = exception;
+            disposalSite =
+                I6C6ClosureHarnessExceptionSiteV1.RunnerDisposal;
+        }
+
+        try
+        {
+            scope.ExceptionSite =
+                I6C6ClosureHarnessExceptionSiteV1
+                    .CaptureTransportDisposal;
+            await captureTransport.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            if (disposalExceptionToReport is null)
+            {
+                disposalExceptionToReport = exception;
+                disposalSite =
+                    I6C6ClosureHarnessExceptionSiteV1
+                        .CaptureTransportDisposal;
+            }
+        }
+
+        return disposalExceptionToReport is null
+            ? result
+            : UnexpectedExceptionResult(
+                disposalSite,
+                disposalExceptionToReport,
+                scope.ProcessOwner is not null);
+    }
+
+    private static async ValueTask<I6C6ClosureHarnessExecutionResultV1>
+        ExecuteCoreAsync(
+            I6C6ClosureHarnessBindingV1 binding,
+            I6C6OpponentRuntimeParticipantLeaseV1 opponentRuntimeParticipant,
+            ConnectionConfigurationV1 connection,
+            PerspectiveSafeMatchContextV1 matchContext,
+            PerspectiveSafePrintedProviderV1 printedProvider,
+            int maximumAdditionalMessages,
+            byte rpsChoice,
+            byte turnPreference,
+            CancellationToken cancellationToken,
+            ExecutionScope scope,
+            I2SessionRunner runner,
+            I6C6TcpCaptureTransportV1 captureTransport)
+    {
+        I2Result started;
+        scope.ExceptionSite =
+            I6C6ClosureHarnessExceptionSiteV1.ExternalRuntimeStartReadiness;
+        try
+        {
+            started =
+                await I6C6ExternalRuntimeStartupSequenceV1
+                    .RunAsync(
+                        token =>
+                            I6C6ExternalRuntimeProcessOwnerV1.StartAsync(
+                                binding,
+                                connection,
+                                token),
+                        (owner, token) =>
+                        {
+                            scope.ProcessOwner = owner;
+                            scope.ExceptionSite =
+                                I6C6ClosureHarnessExceptionSiteV1.SessionStart;
+                            return runner.StartAsync(connection, token);
+                        },
                         cancellationToken)
                     .ConfigureAwait(false);
-            if (!handoff.IsSuccess || handoff.Offer is null)
-            {
-                return new(
-                    I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
-                    true,
-                    false,
-                    Diagnostics: ClassifyPreDuelFailure(
-                        handoff.ErrorCode,
-                        handoff.FailureStage,
-                        cancellationToken.IsCancellationRequested));
-            }
-
-            I6C6LiveGameplayCaptureResultV1 capture =
-                await I6C6LiveGameplayCaptureResultV1.CaptureAsync(
-                        binding,
-                        opponentRuntimeParticipant.Binding,
-                        handoff.Offer,
-                        captureTransport,
-                        matchContext,
-                        printedProvider,
-                        maximumAdditionalMessages,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            if (!opponentRuntimeParticipant.IsLive)
-            {
-                I6C6ClosureHarnessExecutionDiagnosticsV1 diagnostics =
-                    cancellationToken.IsCancellationRequested
-                        ? I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled()
-                        : I6C6ClosureHarnessExecutionDiagnosticsV1
-                            .GameplayCapture();
-                return new(
-                    I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
-                    true,
-                    false,
-                    capture,
-                    diagnostics);
-            }
-
-            I6C6ClosureHarnessExecutionDiagnosticsV1? captureDiagnostics =
-                capture.IsSuccess
-                    ? null
-                    : cancellationToken.IsCancellationRequested ||
-                      capture.ErrorCode == GameplayErrorCode.Cancelled
-                        ? I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled()
-                        : I6C6ClosureHarnessExecutionDiagnosticsV1
-                            .GameplayCapture();
-            return new(
-                capture.IsSuccess
-                    ? I6C6ClosureHarnessErrorCodeV1.None
-                    : I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
-                true,
-                capture.IsSuccess,
-                capture,
-                captureDiagnostics);
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
         {
             return new(
                 I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
-                processOwner is not null,
+                false,
                 false,
                 Diagnostics:
                     I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled());
         }
-        catch
+        catch (I6C6ExternalRuntimeReadinessException readinessException)
+        {
+            if (readinessException.Result ==
+                I6C6ExternalRuntimeReadinessResultV1.Cancelled)
+            {
+                return new(
+                    I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+                    readinessException.ProcessStarted,
+                    false,
+                    Diagnostics:
+                        I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled(
+                            readiness:
+                                I6C6ExternalRuntimeReadinessResultV1.Cancelled));
+            }
+
+            return new(
+                I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+                readinessException.ProcessStarted,
+                false,
+                Diagnostics:
+                    I6C6ClosureHarnessExecutionDiagnosticsV1.ExternalRuntimeStart(
+                        readinessException.Result));
+        }
+        catch (Exception exception)
+        {
+            return UnexpectedExceptionResult(
+                scope.ExceptionSite,
+                exception,
+                scope.ProcessOwner is not null);
+        }
+
+        if (!started.IsSuccess)
+        {
+            I6C6ClosureHarnessExecutionDiagnosticsV1 diagnostics =
+                cancellationToken.IsCancellationRequested ||
+                started.Error == I2ErrorCode.Cancelled
+                    ? I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled(
+                        started.Error)
+                    : I6C6ClosureHarnessExecutionDiagnosticsV1.SessionStart(
+                        started.Error);
+            return new(
+                I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+                true,
+                false,
+                Diagnostics: diagnostics);
+        }
+
+        PrevalidatedProtocolDeck deck;
+        scope.ExceptionSite = I6C6ClosureHarnessExceptionSiteV1.DeckLoad;
+        try
+        {
+            deck = LoadDeck(binding.Scenario.PrimaryDeckPath);
+        }
+        catch (Exception exception)
         {
             return new(
                 I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
-                processOwner is not null,
+                true,
                 false,
                 Diagnostics:
-                    I6C6ClosureHarnessExecutionDiagnosticsV1
-                        .UnexpectedException());
+                    I6C6ClosureHarnessExecutionDiagnosticsV1.DeckLoad(
+                        exception));
         }
-        finally
+
+        scope.ExceptionSite = I6C6ClosureHarnessExceptionSiteV1.PreDuelDrive;
+        I6C6PreDuelHandoffResultV1 handoff =
+            await DriveToGameplayAsync(
+                    runner,
+                    deck,
+                    rpsChoice,
+                    turnPreference,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (!handoff.IsSuccess || handoff.Offer is null)
         {
-            if (processOwner is not null)
-            {
-                await processOwner.DisposeAsync().ConfigureAwait(false);
-            }
+            return new(
+                I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+                true,
+                false,
+                Diagnostics: ClassifyPreDuelFailure(
+                    handoff.ErrorCode,
+                    handoff.FailureStage,
+                    cancellationToken.IsCancellationRequested));
         }
+
+        scope.ExceptionSite = I6C6ClosureHarnessExceptionSiteV1.GameplayCapture;
+        I6C6LiveGameplayCaptureResultV1 capture =
+            await I6C6LiveGameplayCaptureResultV1.CaptureAsync(
+                    binding,
+                    opponentRuntimeParticipant.Binding,
+                    handoff.Offer,
+                    captureTransport,
+                    matchContext,
+                    printedProvider,
+                    maximumAdditionalMessages,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (!opponentRuntimeParticipant.IsLive)
+        {
+            I6C6ClosureHarnessExecutionDiagnosticsV1 diagnostics =
+                cancellationToken.IsCancellationRequested
+                    ? I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled()
+                    : I6C6ClosureHarnessExecutionDiagnosticsV1.GameplayCapture();
+            return new(
+                I6C6ClosureHarnessErrorCodeV1.ScenarioInputProvenanceMismatch,
+                true,
+                false,
+                capture,
+                diagnostics);
+        }
+
+        I6C6ClosureHarnessExecutionDiagnosticsV1? captureDiagnostics =
+            capture.IsSuccess
+                ? null
+                : cancellationToken.IsCancellationRequested ||
+                  capture.ErrorCode == GameplayErrorCode.Cancelled
+                    ? I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled()
+                    : I6C6ClosureHarnessExecutionDiagnosticsV1.GameplayCapture();
+        return new(
+            capture.IsSuccess
+                ? I6C6ClosureHarnessErrorCodeV1.None
+                : I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+            true,
+            capture.IsSuccess,
+            capture,
+            captureDiagnostics);
     }
 
     internal static I6C6ClosureEvidenceValidationResultV1 ValidateEvidence(

@@ -366,6 +366,14 @@ var tests = new (string Name, Action Body)[]
     ("I6C6 execution failures retain bounded diagnostics",
         I6C6RealRunEntryPointTests.TestExecutionFailureDiagnostics),
 
+    ("I6C6 unexpected exceptions retain bounded site and type",
+        I6C6RealRunEntryPointTests
+            .TestUnexpectedExceptionDiagnosticsPreserveBoundary),
+
+    ("I6C6 unexpected exception diagnostics are non-semantic",
+        I6C6RealRunEntryPointTests
+            .TestUnexpectedExceptionDiagnosticsAreNonSemantic),
+
     ("I6C6 pre-duel errors preserve exact I2 causes",
         I6C6RealRunEntryPointTests.TestPreDuelI2ErrorPropagation),
 
