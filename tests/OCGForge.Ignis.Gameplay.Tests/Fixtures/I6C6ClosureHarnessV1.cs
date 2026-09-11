@@ -3056,6 +3056,19 @@ internal static class I6C6ClosureHarnessV1
                 false);
     }
 
+    internal static I6C6ClosureHarnessExecutionDiagnosticsV1
+        ClassifyPreDuelFailure(
+            I2ErrorCode errorCode,
+            I6C6ClosureHarnessPreDuelFailureStageV1 failureStage,
+            bool cancellationRequested) =>
+        cancellationRequested || errorCode == I2ErrorCode.Cancelled
+            ? I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled(
+                errorCode,
+                failureStage)
+            : I6C6ClosureHarnessExecutionDiagnosticsV1.PreDuelDrive(
+                errorCode,
+                failureStage);
+
     internal static async ValueTask<I6C6ClosureHarnessExecutionResultV1>
         ExecuteAsync(
             I6C6ClosureHarnessConfigurationV1 configuration,
@@ -3169,20 +3182,14 @@ internal static class I6C6ClosureHarnessV1
                     .ConfigureAwait(false);
             if (!handoff.IsSuccess || handoff.Offer is null)
             {
-                I6C6ClosureHarnessExecutionDiagnosticsV1 diagnostics =
-                    cancellationToken.IsCancellationRequested ||
-                    handoff.ErrorCode == I2ErrorCode.Cancelled
-                        ? I6C6ClosureHarnessExecutionDiagnosticsV1.Cancelled(
-                            handoff.ErrorCode,
-                            handoff.FailureStage)
-                        : I6C6ClosureHarnessExecutionDiagnosticsV1.PreDuelDrive(
-                            handoff.ErrorCode,
-                            handoff.FailureStage);
                 return new(
                     I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
                     true,
                     false,
-                    Diagnostics: diagnostics);
+                    Diagnostics: ClassifyPreDuelFailure(
+                        handoff.ErrorCode,
+                        handoff.FailureStage,
+                        cancellationToken.IsCancellationRequested));
             }
 
             I6C6LiveGameplayCaptureResultV1 capture =
@@ -3417,7 +3424,7 @@ internal static class I6C6ClosureHarnessV1
         return new PrevalidatedProtocolDeck(main.Concat(extra), side);
     }
 
-    private static async ValueTask<I6C6PreDuelHandoffResultV1>
+    internal static async ValueTask<I6C6PreDuelHandoffResultV1>
         DriveToGameplayAsync(
             I2SessionRunner runner,
             PrevalidatedProtocolDeck deck,
@@ -3488,14 +3495,15 @@ internal static class I6C6ClosureHarnessV1
             switch (runner.State)
             {
                 case I2SessionState.LobbyJoined:
-                    if (!(await runner.SubmitDeckAsync(
-                                deck,
-                                cancellationToken)
-                            .ConfigureAwait(false)).IsSuccess)
+                    I2Result deckSubmission = await runner.SubmitDeckAsync(
+                            deck,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (!deckSubmission.IsSuccess)
                     {
                         return new(
                             false,
-                            I2ErrorCode.DeckRejected,
+                            deckSubmission.Error,
                             I6C6ClosureHarnessPreDuelFailureStageV1
                                 .DeckSubmission,
                             null);
@@ -3504,12 +3512,14 @@ internal static class I6C6ClosureHarnessV1
                     break;
 
                 case I2SessionState.DeckSubmitted:
-                    if (!(await runner.RequestReadyAsync(cancellationToken)
-                            .ConfigureAwait(false)).IsSuccess)
+                    I2Result readyRequest = await runner.RequestReadyAsync(
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (!readyRequest.IsSuccess)
                     {
                         return new(
                             false,
-                            I2ErrorCode.InvalidStateTransition,
+                            readyRequest.Error,
                             I6C6ClosureHarnessPreDuelFailureStageV1.ReadyRequest,
                             null);
                     }
@@ -3517,12 +3527,14 @@ internal static class I6C6ClosureHarnessV1
                     break;
 
                 case I2SessionState.Ready:
-                    if (!(await runner.RequestDuelStartAsync(cancellationToken)
-                            .ConfigureAwait(false)).IsSuccess)
+                    I2Result duelStartRequest = await
+                        runner.RequestDuelStartAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                    if (!duelStartRequest.IsSuccess)
                     {
                         return new(
                             false,
-                            I2ErrorCode.InvalidStateTransition,
+                            duelStartRequest.Error,
                             I6C6ClosureHarnessPreDuelFailureStageV1
                                 .DuelStartRequest,
                             null);
@@ -3677,7 +3689,7 @@ internal static class I6C6ClosureHarnessV1
             AllowsSyntheticLinkEvidenceInRealMode: false,
             AllowsSyntheticCounterEvidenceInRealMode: false);
 
-    private readonly record struct I6C6PreDuelHandoffResultV1(
+    internal readonly record struct I6C6PreDuelHandoffResultV1(
         bool IsSuccess,
         I2ErrorCode ErrorCode,
         I6C6ClosureHarnessPreDuelFailureStageV1 FailureStage,

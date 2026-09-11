@@ -366,6 +366,9 @@ var tests = new (string Name, Action Body)[]
     ("I6C6 execution failures retain bounded diagnostics",
         I6C6RealRunEntryPointTests.TestExecutionFailureDiagnostics),
 
+    ("I6C6 pre-duel errors preserve exact I2 causes",
+        I6C6RealRunEntryPointTests.TestPreDuelI2ErrorPropagation),
+
     ("I6G capture preserves frame-source failure diagnostics",
         I6C6RealRunEntryPointTests.TestCaptureFailureDiagnosticsExposeSourceError),
 

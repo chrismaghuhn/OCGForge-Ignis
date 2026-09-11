@@ -334,6 +334,176 @@ internal static class I6C6RealRunEntryPointTests
             });
     }
 
+    internal static void TestPreDuelI2ErrorPropagation()
+    {
+        PreDuelFailureCase[] cases =
+        {
+            new(
+                "DeckSubmission/SendFailed",
+                CtosPacketType.UpdateDeck,
+                I6C6ClosureHarnessPreDuelFailureStageV1.DeckSubmission,
+                I2ErrorCode.SendFailed,
+                false,
+                new[] { PreDuelLobbyFrames() }),
+            new(
+                "ReadyRequest/SendFailed",
+                CtosPacketType.HsReady,
+                I6C6ClosureHarnessPreDuelFailureStageV1.ReadyRequest,
+                I2ErrorCode.SendFailed,
+                false,
+                new[] { PreDuelLobbyFrames() }),
+            new(
+                "ReadyRequest/Cancelled",
+                CtosPacketType.HsReady,
+                I6C6ClosureHarnessPreDuelFailureStageV1.ReadyRequest,
+                I2ErrorCode.Cancelled,
+                true,
+                new[] { PreDuelLobbyFrames() }),
+            new(
+                "DuelStartRequest/SendFailed",
+                CtosPacketType.HsStart,
+                I6C6ClosureHarnessPreDuelFailureStageV1.DuelStartRequest,
+                I2ErrorCode.SendFailed,
+                false,
+                new[] { PreDuelLobbyFrames() }),
+            new(
+                "DuelStartRequest/Cancelled",
+                CtosPacketType.HsStart,
+                I6C6ClosureHarnessPreDuelFailureStageV1.DuelStartRequest,
+                I2ErrorCode.Cancelled,
+                true,
+                new[] { PreDuelLobbyFrames() })
+        };
+
+        foreach (PreDuelFailureCase testCase in cases)
+        {
+            using CancellationTokenSource cancellation = new();
+            ScriptedPreDuelTransport transport = new(
+                testCase.Frames,
+                testCase.FailurePacketType,
+                testCase.CancelOnFailure,
+                cancellation);
+            I2SessionRunner runner = new(transport);
+            try
+            {
+                I2Result started = runner.StartAsync(
+                        PreDuelTestConnection(),
+                        CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+                True(started.IsSuccess, testCase.Name);
+
+                I6C6ClosureHarnessV1.I6C6PreDuelHandoffResultV1 handoff =
+                    I6C6ClosureHarnessV1.DriveToGameplayAsync(
+                            runner,
+                            new PrevalidatedProtocolDeck(
+                                new uint[] { 1 },
+                                Array.Empty<uint>()),
+                            0,
+                            0,
+                            testCase.CancelOnFailure
+                                ? cancellation.Token
+                                : CancellationToken.None)
+                        .GetAwaiter()
+                        .GetResult();
+
+                if (handoff.IsSuccess || handoff.ErrorCode != testCase.ErrorCode)
+                {
+                    throw new InvalidOperationException(
+                        $"{testCase.Name}: expected {testCase.ErrorCode}, " +
+                        $"got {handoff.ErrorCode} in {runner.State}");
+                }
+                Equal(testCase.ErrorCode, handoff.ErrorCode);
+                Equal(testCase.FailureStage, handoff.FailureStage);
+
+                I6C6ClosureHarnessExecutionDiagnosticsV1 diagnostics =
+                    I6C6ClosureHarnessV1.ClassifyPreDuelFailure(
+                        handoff.ErrorCode,
+                        handoff.FailureStage,
+                        testCase.CancelOnFailure &&
+                        cancellation.IsCancellationRequested);
+                Equal(
+                    testCase.ErrorCode == I2ErrorCode.Cancelled
+                        ? I6C6ClosureHarnessExecutionStageV1.Cancelled
+                        : I6C6ClosureHarnessExecutionStageV1.PreDuelDrive,
+                    diagnostics.Stage);
+                Equal(testCase.ErrorCode, diagnostics.I2ErrorCode);
+                Equal(testCase.FailureStage, diagnostics.PreDuelStage);
+            }
+            finally
+            {
+                runner.DisposeAsync().GetAwaiter().GetResult();
+            }
+        }
+    }
+
+    private static ConnectionConfigurationV1 PreDuelTestConnection() =>
+        new(
+            "127.0.0.1",
+            7911,
+            "Ignis",
+            0,
+            RoomPasswordV1.Create(string.Empty),
+            TimeSpan.FromSeconds(1));
+
+    private static byte[] PreDuelLobbyFrames() =>
+        Join(
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.JoinGame,
+                PacketPayloadCodec.EncodeStocJoinGame(
+                    new HostInfoPayload(
+                        0,
+                        5,
+                        0,
+                        0,
+                        0,
+                        0,
+                        8000,
+                        5,
+                        1,
+                        0,
+                        0,
+                        ClientContractV1.ExpectedServerHandshake,
+                        new ProtocolClientVersion(41, 0, 11, 0),
+                        1,
+                        1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        new DeckSizeLimits(40, 60),
+                        new DeckSizeLimits(0, 15),
+                        new DeckSizeLimits(0, 15)))),
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.TypeChange,
+                PacketPayloadCodec.EncodeStocTypeChange(
+                    new StocTypeChangePayload(0x10))),
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.HsPlayerEnter,
+                PacketPayloadCodec.EncodeStocHsPlayerEnter(
+                    new StocHsPlayerEnterPayload("Ignis", 0))),
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.HsPlayerEnter,
+                PacketPayloadCodec.EncodeStocHsPlayerEnter(
+                    new StocHsPlayerEnterPayload("Opponent", 1))));
+
+    private static byte[] PreDuelReadyFrames() =>
+        Join(
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.HsPlayerChange,
+                PacketPayloadCodec.EncodeStocHsPlayerChange(
+                    new StocHsPlayerChangePayload(0x09))),
+            WireFrameCodec.EncodeStoc(
+                StocPacketType.HsPlayerChange,
+                PacketPayloadCodec.EncodeStocHsPlayerChange(
+                    new StocHsPlayerChangePayload(0x19))));
+
+    private static byte[] PreDuelWatchFrame() =>
+        WireFrameCodec.EncodeStoc(
+            StocPacketType.HsWatchChange,
+            PacketPayloadCodec.EncodeStocHsWatchChange(
+                new StocHsWatchChangePayload(0)));
+
     internal static void TestSafeEvidenceDigestExcludesTcpChunking()
     {
         PerspectiveSafeFrameV1 frame = CreateFullFrame();
@@ -621,5 +791,122 @@ internal static class I6C6RealRunEntryPointTests
                     matchContext ?? source.MatchContext));
         True(result.IsSuccess, result.Error?.ToString() ?? "frame rebuild failed");
         return result.Frame!;
+    }
+
+    private readonly record struct PreDuelFailureCase(
+        string Name,
+        CtosPacketType FailurePacketType,
+        I6C6ClosureHarnessPreDuelFailureStageV1 FailureStage,
+        I2ErrorCode ErrorCode,
+        bool CancelOnFailure,
+        byte[][] Frames);
+
+    private sealed class ScriptedPreDuelTransport : IByteTransport
+    {
+        private readonly Queue<byte[]> chunks;
+        private readonly CtosPacketType failurePacketType;
+        private readonly bool cancelOnFailure;
+        private readonly CancellationTokenSource cancellation;
+        private byte[]? currentChunk;
+        private int currentOffset;
+        private bool closed;
+
+        internal ScriptedPreDuelTransport(
+            IEnumerable<byte[]> frames,
+            CtosPacketType failurePacketType,
+            bool cancelOnFailure,
+            CancellationTokenSource cancellation)
+        {
+            chunks = new Queue<byte[]>(
+                frames.Select(frame => frame.ToArray()));
+            this.failurePacketType = failurePacketType;
+            this.cancelOnFailure = cancelOnFailure;
+            this.cancellation = cancellation ??
+                throw new ArgumentNullException(nameof(cancellation));
+        }
+
+        public ValueTask ConnectAsync(
+            string host,
+            int port,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<int> ReadAsync(
+            Memory<byte> destination,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            while (currentChunk is null || currentOffset == currentChunk.Length)
+            {
+                if (chunks.Count == 0)
+                {
+                    return ValueTask.FromResult(0);
+                }
+
+                currentChunk = chunks.Dequeue();
+                currentOffset = 0;
+            }
+
+            int count = Math.Min(
+                destination.Length,
+                currentChunk.Length - currentOffset);
+            currentChunk.AsMemory(currentOffset, count).CopyTo(destination);
+            currentOffset += count;
+            return ValueTask.FromResult(count);
+        }
+
+        public ValueTask WriteAsync(
+            ReadOnlyMemory<byte> source,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            FrameReadResult<CtosFrame> parsed = WireFrameCodec.TryReadCtos(
+                source.Span);
+
+            if (parsed.Status == FrameReadStatus.Success &&
+                parsed.Frame is not null &&
+                parsed.Frame.Type == failurePacketType)
+            {
+                if (cancelOnFailure)
+                {
+                    cancellation.Cancel();
+                    throw new OperationCanceledException(cancellation.Token);
+                }
+
+                throw new InvalidOperationException(
+                    "scripted pre-duel write failure");
+            }
+
+            if (parsed.Status == FrameReadStatus.Success &&
+                parsed.Frame is not null)
+            {
+                if (parsed.Frame.Type == CtosPacketType.UpdateDeck)
+                {
+                    chunks.Enqueue(PreDuelWatchFrame());
+                }
+                else if (parsed.Frame.Type == CtosPacketType.HsReady)
+                {
+                    chunks.Enqueue(PreDuelReadyFrames());
+                }
+            }
+
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask CloseAsync()
+        {
+            if (!closed)
+            {
+                closed = true;
+            }
+
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => CloseAsync();
     }
 }
