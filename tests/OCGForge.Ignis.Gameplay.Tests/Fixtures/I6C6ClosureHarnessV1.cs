@@ -144,6 +144,10 @@ internal sealed record I6C6ClosureHarnessConfigurationV1(
     string EvidenceRngId,
     ulong EvidenceRngRoot,
     string FinalRuntimeExecutableSha256,
+    string ServerOnlyBootstrapFixParent,
+    string ServerOnlyBootstrapFixCommit,
+    string ServerOnlyBootstrapFixPatchsetSha256,
+    string ServerOnlyBootstrapFixRuntimeExecutableSha256,
     I6C6ClosureScenarioConfigurationV1 LinkScenario,
     I6C6ClosureScenarioConfigurationV1 CounterScenario);
 
@@ -2631,9 +2635,11 @@ internal sealed class I6C6ExternalRuntimeProcessOwnerV1 : IAsyncDisposable
     }
 
     internal static ProcessStartInfo CreateStartInfo(
-        I6C6ClosureHarnessConfigurationV1 configuration)
+        I6C6ClosureHarnessConfigurationV1 configuration,
+        ConnectionConfigurationV1 connection)
     {
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(connection);
         I6C6ClosureHarnessValidationResultV1 validation =
             I6C6ClosureHarnessV1.ValidateConfiguration(configuration);
         if (!validation.IsSuccess)
@@ -2654,14 +2660,21 @@ internal sealed class I6C6ExternalRuntimeProcessOwnerV1 : IAsyncDisposable
         startInfo.ArgumentList.Add("-r");
         startInfo.ArgumentList.Add("-m");
         startInfo.ArgumentList.Add("-i6c6-server-only");
+        startInfo.ArgumentList.Add("-i6c6-server-port");
+        startInfo.ArgumentList.Add(
+            connection.Port.ToString(CultureInfo.InvariantCulture));
         return startInfo;
     }
 
     internal static I6C6ExternalRuntimeProcessOwnerV1 Start(
-        I6C6ClosureHarnessBindingV1 binding)
+        I6C6ClosureHarnessBindingV1 binding,
+        ConnectionConfigurationV1 connection)
     {
         ArgumentNullException.ThrowIfNull(binding);
-        ProcessStartInfo startInfo = CreateStartInfo(binding.Configuration);
+        ArgumentNullException.ThrowIfNull(connection);
+        ProcessStartInfo startInfo = CreateStartInfo(
+            binding.Configuration,
+            connection);
         Process started = Process.Start(startInfo) ??
             throw new InvalidOperationException(
                 "The external EDOPro process could not be started.");
@@ -2799,7 +2812,7 @@ internal static class I6C6ClosureHarnessV1
         "ocgforge-ignis.i6c6.evidence-rng.v1";
     private const ulong ExpectedEvidenceRngRoot = 0x2e43fb46490a681dUL;
     private const string ExpectedFinalRuntimeExecutableSha256 =
-        "c27ec4530cc12d2641b1d79b844eac81662f92550cf93da4276a4168fe9d5380";
+        "d57d9d705fb01ef2ba9d73eb89b29b6c438bf9d9c91e20daa8bca2fbf19babed";
     private const string ExpectedLoopbackHostPatchParent =
         ExpectedRuntimeHead;
     private const string ExpectedLoopbackHostPatchCommit =
@@ -2812,6 +2825,14 @@ internal static class I6C6ClosureHarnessV1
         "690d031c9b882a36ffd1ea167af80d0ef9cf791b";
     private const string ExpectedServerBootstrapPatchsetSha256 =
         "7500ad5f75fe31910427343d65672b871e8a7c092f75f121ef57831ce4b0c31f";
+    private const string ExpectedServerOnlyBootstrapFixParent =
+        "4e1f93683d4ccec76558d06a5483f4090e30113c";
+    private const string ExpectedServerOnlyBootstrapFixCommit =
+        "1dcb983b2b7a2ead807eda8aa98d26066ce0baa3";
+    private const string ExpectedServerOnlyBootstrapFixPatchsetSha256 =
+        "5019259b4db733e4a38f285b45d0a4dea8b11a245047edee76fcb6234fa4bf79";
+    private const string ExpectedServerOnlyBootstrapFixRuntimeExecutableSha256 =
+        ExpectedFinalRuntimeExecutableSha256;
     private const string ExpectedDatabaseSha256 =
         "c49a077285e1d999f32056cb65303b75e311e859b4486c48f41772a193069225";
     private const string ExpectedCardscriptsCommit =
@@ -2882,6 +2903,22 @@ internal static class I6C6ClosureHarnessV1
             !string.Equals(
                 configuration.ServerBootstrapRuntimeExecutableSha256,
                 ExpectedServerBootstrapRuntimeExecutableSha256,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.ServerOnlyBootstrapFixParent,
+                ExpectedServerOnlyBootstrapFixParent,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.ServerOnlyBootstrapFixCommit,
+                ExpectedServerOnlyBootstrapFixCommit,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.ServerOnlyBootstrapFixPatchsetSha256,
+                ExpectedServerOnlyBootstrapFixPatchsetSha256,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                configuration.ServerOnlyBootstrapFixRuntimeExecutableSha256,
+                ExpectedServerOnlyBootstrapFixRuntimeExecutableSha256,
                 StringComparison.Ordinal) ||
             !string.Equals(
                 configuration.TimerGuardParent,
@@ -3120,7 +3157,9 @@ internal static class I6C6ClosureHarnessV1
         {
             try
             {
-                processOwner = I6C6ExternalRuntimeProcessOwnerV1.Start(binding);
+                processOwner = I6C6ExternalRuntimeProcessOwnerV1.Start(
+                    binding,
+                    connection);
             }
             catch
             {

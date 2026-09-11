@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OCGForge.Ignis.Client;
 using OCGForge.Ignis.Gameplay;
 using OCGForge.Ignis.Gameplay.Tests.Fixtures;
@@ -14,7 +15,7 @@ internal static class I6C6NativeOracleTests
                 RuntimeExecutablePath:
                     @"C:\Users\chris\.config\superpowers\worktrees\edopro\i6c6-edopro-server-only-v1\bin\release\ygoprodll.exe",
                 RuntimeExecutableSha256:
-                    "c27ec4530cc12d2641b1d79b844eac81662f92550cf93da4276a4168fe9d5380",
+                    "d57d9d705fb01ef2ba9d73eb89b29b6c438bf9d9c91e20daa8bca2fbf19babed",
                 AssetRoot: @"C:\ProjectIgnis",
                 DatabaseSha256:
                     "c49a077285e1d999f32056cb65303b75e311e859b4486c48f41772a193069225",
@@ -64,7 +65,15 @@ internal static class I6C6NativeOracleTests
                     "ocgforge-ignis.i6c6.evidence-rng.v1",
                 EvidenceRngRoot: 0x2e43fb46490a681dUL,
                 FinalRuntimeExecutableSha256:
-                    "c27ec4530cc12d2641b1d79b844eac81662f92550cf93da4276a4168fe9d5380",
+                    "d57d9d705fb01ef2ba9d73eb89b29b6c438bf9d9c91e20daa8bca2fbf19babed",
+                ServerOnlyBootstrapFixParent:
+                    "4e1f93683d4ccec76558d06a5483f4090e30113c",
+                ServerOnlyBootstrapFixCommit:
+                    "1dcb983b2b7a2ead807eda8aa98d26066ce0baa3",
+                ServerOnlyBootstrapFixPatchsetSha256:
+                    "5019259b4db733e4a38f285b45d0a4dea8b11a245047edee76fcb6234fa4bf79",
+                ServerOnlyBootstrapFixRuntimeExecutableSha256:
+                    "d57d9d705fb01ef2ba9d73eb89b29b6c438bf9d9c91e20daa8bca2fbf19babed",
                 LinkScenario: new(
                     "projectignis.tactical-try.cyber-dragon.v1",
                     @"C:\ProjectIgnis\deck\[Tactical-Try Deck] Decisive Strike Cyber Dragon.ydk",
@@ -164,6 +173,53 @@ internal static class I6C6NativeOracleTests
         Equal(I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
             wrongBootstrapRuntime.ErrorCode);
 
+        I6C6ClosureHarnessValidationResultV1 missingCorrectiveCommit =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with
+                {
+                    ServerOnlyBootstrapFixCommit = string.Empty
+                });
+        Equal(
+            I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            missingCorrectiveCommit.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongCorrectiveCommit =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with
+                {
+                    ServerOnlyBootstrapFixCommit = "wrong"
+                });
+        Equal(
+            I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongCorrectiveCommit.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongCorrectiveParent =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with { ServerOnlyBootstrapFixParent = "wrong" });
+        Equal(
+            I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongCorrectiveParent.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongCorrectivePatchset =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with
+                {
+                    ServerOnlyBootstrapFixPatchsetSha256 = "wrong"
+                });
+        Equal(
+            I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongCorrectivePatchset.ErrorCode);
+
+        I6C6ClosureHarnessValidationResultV1 wrongCorrectiveRuntime =
+            I6C6ClosureHarnessV1.ValidateConfiguration(
+                configuration with
+                {
+                    ServerOnlyBootstrapFixRuntimeExecutableSha256 = "wrong"
+                });
+        Equal(
+            I6C6ClosureHarnessErrorCodeV1.RuntimeProvenanceMismatch,
+            wrongCorrectiveRuntime.ErrorCode);
+
         I6C6ClosureHarnessValidationResultV1 wrongTimerParent =
             I6C6ClosureHarnessV1.ValidateConfiguration(
                 configuration with { TimerGuardParent = "wrong" });
@@ -245,11 +301,73 @@ internal static class I6C6NativeOracleTests
         Equal(I6C6ClosureHarnessErrorCodeV1.ForbiddenRuntimeExecutable,
             forbiddenExecutable.ErrorCode);
 
-        var startInfo = I6C6ExternalRuntimeProcessOwnerV1.CreateStartInfo(
-            configuration);
+        ConnectionConfigurationV1 connection = new(
+            "127.0.0.1",
+            7911,
+            "Ignis",
+            0,
+            RoomPasswordV1.Create(string.Empty),
+            TimeSpan.FromSeconds(1));
+        ProcessStartInfo startInfo =
+            I6C6ExternalRuntimeProcessOwnerV1.CreateStartInfo(
+                configuration,
+                connection);
         True(startInfo.ArgumentList.SequenceEqual(
-            new[] { "-C", @"C:\ProjectIgnis", "-r", "-m", "-i6c6-server-only" },
+            new[]
+            {
+                "-C",
+                @"C:\ProjectIgnis",
+                "-r",
+                "-m",
+                "-i6c6-server-only",
+                "-i6c6-server-port",
+                "7911"
+            },
             StringComparer.Ordinal));
+
+        ConnectionConfigurationV1 alternateConnection = new(
+            "127.0.0.1",
+            7912,
+            "Ignis",
+            0,
+            RoomPasswordV1.Create(string.Empty),
+            TimeSpan.FromSeconds(1));
+        ProcessStartInfo alternateStartInfo =
+            I6C6ExternalRuntimeProcessOwnerV1.CreateStartInfo(
+                configuration,
+                alternateConnection);
+        True(alternateStartInfo.ArgumentList.SequenceEqual(
+            new[]
+            {
+                "-C",
+                @"C:\ProjectIgnis",
+                "-r",
+                "-m",
+                "-i6c6-server-only",
+                "-i6c6-server-port",
+                "7912"
+            },
+            StringComparer.Ordinal));
+
+        foreach (int invalidPort in new[] { 0, 65536 })
+        {
+            try
+            {
+                _ = new ConnectionConfigurationV1(
+                    "127.0.0.1",
+                    invalidPort,
+                    "Ignis",
+                    0,
+                    RoomPasswordV1.Create(string.Empty),
+                    TimeSpan.FromSeconds(1));
+                throw new InvalidOperationException(
+                    $"invalid connection port {invalidPort} was accepted");
+            }
+            catch (ClientConfigurationException exception)
+            {
+                Equal(I2ErrorCode.InvalidConfiguration, exception.Code);
+            }
+        }
 
         I6C6ClosureHarnessExecutionResultV1 blocked =
             I6C6ClosureHarnessV1.TryBeginRealExecution(
