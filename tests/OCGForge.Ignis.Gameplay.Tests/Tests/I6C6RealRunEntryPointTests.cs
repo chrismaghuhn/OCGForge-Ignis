@@ -437,6 +437,182 @@ internal static class I6C6RealRunEntryPointTests
         }
     }
 
+    internal static void TestPreDuelDuelStartRequiresAllLobbyPredicates()
+    {
+        RunDuelStartGatingCase(
+            "remote player is not ready",
+            PreDuelLobbyFrames(),
+            new[] { PreDuelPlayerChange(0x09) },
+            rejectDuelStart: false,
+            expectedHsStartAttempts: 0,
+            expectedHsStartWrites: 0,
+            expectEarlyHsStart: false,
+            expectPumpAfterLocalReady: true,
+            blockWhenEmpty: true);
+
+        RunDuelStartGatingCase(
+            "remote player becomes ready",
+            PreDuelLobbyFrames(),
+            new[]
+            {
+                PreDuelPlayerChange(0x09),
+                PreDuelPlayerChange(0x19)
+            },
+            rejectDuelStart: false,
+            expectedHsStartAttempts: 1,
+            expectedHsStartWrites: 1,
+            expectEarlyHsStart: false,
+            expectPumpAfterLocalReady: false,
+            expectSuccessfulHandoff: true);
+
+        RunDuelStartGatingCase(
+            "client is not host",
+            PreDuelLobbyFrames(typeChange: 0x00),
+            new[]
+            {
+                PreDuelPlayerChange(0x09),
+                PreDuelPlayerChange(0x19)
+            },
+            rejectDuelStart: false,
+            expectedHsStartAttempts: 0,
+            expectedHsStartWrites: 0,
+            expectEarlyHsStart: false,
+            expectPumpAfterLocalReady: true,
+            blockWhenEmpty: true);
+
+        RunDuelStartGatingCase(
+            "second slot is unoccupied",
+            PreDuelLobbyFrames(includeOpponent: false),
+            new[] { PreDuelPlayerChange(0x09) },
+            rejectDuelStart: false,
+            expectedHsStartAttempts: 0,
+            expectedHsStartWrites: 0,
+            expectEarlyHsStart: false,
+            expectPumpAfterLocalReady: true,
+            blockWhenEmpty: true);
+
+        RunDuelStartGatingCase(
+            "legal preflight with rejected I2 send",
+            PreDuelLobbyFrames(),
+            new[]
+            {
+                PreDuelPlayerChange(0x09),
+                PreDuelPlayerChange(0x19)
+            },
+            rejectDuelStart: true,
+            expectedHsStartAttempts: 1,
+            expectedHsStartWrites: 0,
+            expectEarlyHsStart: false,
+            expectPumpAfterLocalReady: false,
+            expectedError: I2ErrorCode.SendFailed,
+            expectedFailureStage:
+                I6C6ClosureHarnessPreDuelFailureStageV1.DuelStartRequest,
+            expectSuccessfulHandoff: false);
+    }
+
+    private static void RunDuelStartGatingCase(
+        string name,
+        byte[] lobbyFrame,
+        byte[][] readyFrames,
+        bool rejectDuelStart,
+        int expectedHsStartAttempts,
+        int expectedHsStartWrites,
+        bool expectEarlyHsStart,
+        bool expectPumpAfterLocalReady,
+        bool blockWhenEmpty = false,
+        bool expectSuccessfulHandoff = false,
+        I2ErrorCode? expectedError = null,
+        I6C6ClosureHarnessPreDuelFailureStageV1 expectedFailureStage =
+            I6C6ClosureHarnessPreDuelFailureStageV1.None)
+    {
+        using CancellationTokenSource cancellation = new();
+        DuelStartGatingTransport transport = new(
+            new[] { lobbyFrame },
+            readyFrames,
+            rejectDuelStart,
+            blockWhenEmpty);
+        I2SessionRunner runner = new(transport);
+        Task<I6C6ClosureHarnessV1.I6C6PreDuelHandoffResultV1>? driveTask =
+            null;
+        try
+        {
+            I2Result started = runner.StartAsync(
+                    PreDuelTestConnection(),
+                    CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            True(started.IsSuccess, name);
+
+            if (blockWhenEmpty)
+            {
+                driveTask = Task.Run(
+                    () => I6C6ClosureHarnessV1.DriveToGameplayAsync(
+                            runner,
+                            new PrevalidatedProtocolDeck(
+                                new uint[] { 1 },
+                                Array.Empty<uint>()),
+                            1,
+                            0,
+                            cancellation.Token)
+                        .GetAwaiter()
+                        .GetResult());
+                Task completed = Task.WhenAny(
+                        transport.EmptyReadStarted,
+                        driveTask)
+                    .GetAwaiter()
+                    .GetResult();
+                True(
+                    ReferenceEquals(completed, transport.EmptyReadStarted),
+                    name);
+                True(runner.State == I2SessionState.Ready, name);
+                True(transport.HsStartAttemptCount == 0, name);
+                transport.ReleaseEmptyRead();
+            }
+
+            I6C6ClosureHarnessV1.I6C6PreDuelHandoffResultV1 handoff =
+                driveTask?.GetAwaiter().GetResult() ??
+                I6C6ClosureHarnessV1.DriveToGameplayAsync(
+                        runner,
+                        new PrevalidatedProtocolDeck(
+                            new uint[] { 1 },
+                            Array.Empty<uint>()),
+                        1,
+                        0,
+                        cancellation.Token)
+                    .GetAwaiter()
+                    .GetResult();
+
+            True(
+                expectedHsStartAttempts == transport.HsStartAttemptCount,
+                name);
+            True(
+                expectedHsStartWrites == transport.HsStartWriteCount,
+                name);
+            True(expectEarlyHsStart == transport.EarlyHsStart, name);
+            True(
+                expectPumpAfterLocalReady ==
+                    transport.PumpContinuedAfterLocalReady,
+                name);
+
+            if (expectedError is I2ErrorCode error)
+            {
+                Equal(error, handoff.ErrorCode);
+                Equal(expectedFailureStage, handoff.FailureStage);
+            }
+
+            if (expectSuccessfulHandoff)
+            {
+                True(handoff.IsSuccess, name);
+                Equal(I2SessionState.HandedOff, runner.State);
+            }
+        }
+        finally
+        {
+            transport.ReleaseEmptyRead();
+            runner.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
     private static ConnectionConfigurationV1 PreDuelTestConnection() =>
         new(
             "127.0.0.1",
@@ -446,7 +622,9 @@ internal static class I6C6RealRunEntryPointTests
             RoomPasswordV1.Create(string.Empty),
             TimeSpan.FromSeconds(1));
 
-    private static byte[] PreDuelLobbyFrames() =>
+    private static byte[] PreDuelLobbyFrames(
+        byte typeChange = 0x10,
+        bool includeOpponent = true) =>
         Join(
             WireFrameCodec.EncodeStoc(
                 StocPacketType.JoinGame,
@@ -477,15 +655,39 @@ internal static class I6C6RealRunEntryPointTests
             WireFrameCodec.EncodeStoc(
                 StocPacketType.TypeChange,
                 PacketPayloadCodec.EncodeStocTypeChange(
-                    new StocTypeChangePayload(0x10))),
+                    new StocTypeChangePayload(typeChange))),
             WireFrameCodec.EncodeStoc(
                 StocPacketType.HsPlayerEnter,
                 PacketPayloadCodec.EncodeStocHsPlayerEnter(
                     new StocHsPlayerEnterPayload("Ignis", 0))),
-            WireFrameCodec.EncodeStoc(
-                StocPacketType.HsPlayerEnter,
-                PacketPayloadCodec.EncodeStocHsPlayerEnter(
-                    new StocHsPlayerEnterPayload("Opponent", 1))));
+            includeOpponent
+                ? WireFrameCodec.EncodeStoc(
+                    StocPacketType.HsPlayerEnter,
+                    PacketPayloadCodec.EncodeStocHsPlayerEnter(
+                        new StocHsPlayerEnterPayload("Opponent", 1)))
+                : Array.Empty<byte>());
+
+    private static byte[] PreDuelPlayerChange(byte status) =>
+        WireFrameCodec.EncodeStoc(
+            StocPacketType.HsPlayerChange,
+            PacketPayloadCodec.EncodeStocHsPlayerChange(
+                new StocHsPlayerChangePayload(status)));
+
+    private static byte[] PreDuelDuelStartFrame() =>
+        WireFrameCodec.EncodeStoc(
+            StocPacketType.DuelStart,
+            Array.Empty<byte>());
+
+    private static byte[] PreDuelSelectHandFrame() =>
+        WireFrameCodec.EncodeStoc(
+            StocPacketType.SelectHand,
+            Array.Empty<byte>());
+
+    private static byte[] PreDuelHandLossFrame() =>
+        WireFrameCodec.EncodeStoc(
+            StocPacketType.HandResult,
+            PacketPayloadCodec.EncodeStocHandResult(
+                new StocHandResultPayload(1, 2)));
 
     private static byte[] PreDuelReadyFrames() =>
         Join(
@@ -1132,5 +1334,185 @@ internal static class I6C6RealRunEntryPointTests
         }
 
         public ValueTask DisposeAsync() => CloseAsync();
+    }
+
+    private sealed class DuelStartGatingTransport : IByteTransport
+    {
+        private readonly Queue<QueuedChunk> chunks = new();
+        private readonly byte[][] readyFrames;
+        private readonly bool rejectDuelStart;
+        private readonly bool blockWhenEmpty;
+        private readonly TaskCompletionSource<bool> emptyReadStarted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> releaseEmptyRead =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private QueuedChunk? currentChunk;
+        private int currentOffset;
+        private bool localReadyObserved;
+        private bool remoteReadyObserved;
+        private bool emptyReadSignaled;
+
+        internal DuelStartGatingTransport(
+            IEnumerable<byte[]> lobbyFrames,
+            IEnumerable<byte[]> readyFrames,
+            bool rejectDuelStart,
+            bool blockWhenEmpty)
+        {
+            foreach (byte[] frame in lobbyFrames)
+            {
+                chunks.Enqueue(new(frame.ToArray(), false, false));
+            }
+
+            this.readyFrames = readyFrames
+                .Select(frame => frame.ToArray())
+                .ToArray();
+            this.rejectDuelStart = rejectDuelStart;
+            this.blockWhenEmpty = blockWhenEmpty;
+        }
+
+        internal int HsStartAttemptCount { get; private set; }
+
+        internal int HsStartWriteCount { get; private set; }
+
+        internal bool EarlyHsStart { get; private set; }
+
+        internal bool PumpContinuedAfterLocalReady { get; private set; }
+
+        internal Task EmptyReadStarted => emptyReadStarted.Task;
+
+        internal void ReleaseEmptyRead() => releaseEmptyRead.TrySetResult(true);
+
+        public ValueTask ConnectAsync(
+            string host,
+            int port,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public async ValueTask<int> ReadAsync(
+            Memory<byte> destination,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            while (currentChunk is null || currentOffset == currentChunk.Bytes.Length)
+            {
+                if (chunks.Count == 0)
+                {
+                    if (localReadyObserved && !PumpContinuedAfterLocalReady)
+                    {
+                        PumpContinuedAfterLocalReady = true;
+                    }
+
+                    if (blockWhenEmpty && !emptyReadSignaled)
+                    {
+                        emptyReadSignaled = true;
+                        emptyReadStarted.TrySetResult(true);
+                        await releaseEmptyRead.Task.WaitAsync(
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    return 0;
+                }
+
+                currentChunk = chunks.Dequeue();
+                currentOffset = 0;
+                if (currentChunk.LocalReady)
+                {
+                    localReadyObserved = true;
+                }
+
+                if (currentChunk.RemoteReady)
+                {
+                    remoteReadyObserved = true;
+                }
+            }
+
+            int count = Math.Min(
+                destination.Length,
+                currentChunk.Bytes.Length - currentOffset);
+            currentChunk.Bytes.AsMemory(currentOffset, count).CopyTo(destination);
+            currentOffset += count;
+            return count;
+        }
+
+        public ValueTask WriteAsync(
+            ReadOnlyMemory<byte> source,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            FrameReadResult<CtosFrame> parsed = WireFrameCodec.TryReadCtos(
+                source.Span);
+            if (parsed.Status != FrameReadStatus.Success ||
+                parsed.Frame is null)
+            {
+                throw new InvalidDataException("invalid scripted CTOS frame");
+            }
+
+            switch (parsed.Frame.Type)
+            {
+                case CtosPacketType.UpdateDeck:
+                    chunks.Enqueue(
+                        new(PreDuelWatchFrame(), false, false));
+                    break;
+
+                case CtosPacketType.HsReady:
+                    for (int index = 0; index < readyFrames.Length; index++)
+                    {
+                        chunks.Enqueue(
+                            new(
+                                readyFrames[index],
+                                LocalReady: index == 0,
+                                RemoteReady: index == 1));
+                    }
+
+                    break;
+
+                case CtosPacketType.HsStart:
+                    HsStartAttemptCount++;
+                    if (!remoteReadyObserved)
+                    {
+                        EarlyHsStart = true;
+                        throw new InvalidOperationException(
+                            "HsStart was attempted before remote ready.");
+                    }
+
+                    if (rejectDuelStart)
+                    {
+                        throw new InvalidOperationException(
+                            "scripted duel start send failure");
+                    }
+
+                    HsStartWriteCount++;
+                    chunks.Enqueue(
+                        new(PreDuelDuelStartFrame(), false, false));
+                    chunks.Enqueue(
+                        new(PreDuelSelectHandFrame(), false, false));
+                    break;
+
+                case CtosPacketType.HandResult:
+                    chunks.Enqueue(
+                        new(PreDuelHandLossFrame(), false, false));
+                    break;
+            }
+
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask CloseAsync()
+        {
+            ReleaseEmptyRead();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => CloseAsync();
+
+        private sealed record QueuedChunk(
+            byte[] Bytes,
+            bool LocalReady,
+            bool RemoteReady);
     }
 }

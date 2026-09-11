@@ -3566,6 +3566,11 @@ internal static class I6C6ClosureHarnessV1
                     break;
 
                 case I2SessionState.Ready:
+                    if (!CanRequestDuelStart(runner))
+                    {
+                        break;
+                    }
+
                     I2Result duelStartRequest = await
                         runner.RequestDuelStartAsync(cancellationToken)
                             .ConfigureAwait(false);
@@ -3604,6 +3609,38 @@ internal static class I6C6ClosureHarnessV1
             I2ErrorCode.InvalidStateTransition,
             I6C6ClosureHarnessPreDuelFailureStageV1.RuntimeHandoff,
             null);
+    }
+
+    private static bool CanRequestDuelStart(I2SessionRunner runner)
+    {
+        if (runner.State != I2SessionState.Ready ||
+            runner.PendingChoice is not null ||
+            !runner.Lobby.IsHost ||
+            runner.Lobby.PreDuelLobbyPosition is not (0 or 1))
+        {
+            return false;
+        }
+
+        IReadOnlyList<LobbyPlayerSnapshot> players =
+            runner.Lobby.SnapshotPlayers();
+        return IsOccupiedAndReady(
+                players,
+                ClientContractV1.FirstDuelistPosition) &&
+            IsOccupiedAndReady(
+                players,
+                ClientContractV1.SecondDuelistPosition);
+    }
+
+    private static bool IsOccupiedAndReady(
+        IReadOnlyList<LobbyPlayerSnapshot> players,
+        byte position)
+    {
+        LobbyPlayerSnapshot[] matches = players
+            .Where(player => player.Position == position)
+            .ToArray();
+        return matches.Length == 1 &&
+            matches[0].IsOccupied &&
+            matches[0].IsReady;
     }
 
     private static I6C6ClosureHarnessErrorCodeV1 ValidateLocalArtifacts(
