@@ -221,6 +221,21 @@ public readonly record struct StocTypeChangePayload(byte Type);
 
 public readonly record struct StocTimeLimitPayload(byte Player, ushort LeftTime);
 
+public enum StocChat2Type : byte
+{
+    Duelist = 0,
+    Observer = 1,
+    System = 2,
+    SystemError = 3,
+    SystemShout = 4
+}
+
+public readonly record struct StocChat2Payload(
+    StocChat2Type Type,
+    bool? IsTeam,
+    string ClientName,
+    string Message);
+
 public readonly record struct StocHsPlayerEnterPayload(string Name, byte Position);
 
 public readonly record struct StocHsPlayerChangePayload(byte Status);

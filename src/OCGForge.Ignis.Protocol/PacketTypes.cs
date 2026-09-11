@@ -39,6 +39,7 @@ public enum StocPacketType : byte
     HsPlayerEnter = 0x20,
     HsPlayerChange = 0x21,
     HsWatchChange = 0x22,
+    Chat2 = 0xf3,
     Catchup = 0xf0,
     Rematch = 0xf1,
     WaitingRematch = 0xf2
@@ -88,7 +89,8 @@ public static class PacketTypeCatalog
             (byte)StocPacketType.TimeLimit or
             (byte)StocPacketType.HsPlayerEnter or
             (byte)StocPacketType.HsPlayerChange or
-            (byte)StocPacketType.HsWatchChange => PacketTypeDisposition.Supported,
+            (byte)StocPacketType.HsWatchChange or
+            (byte)StocPacketType.Chat2 => PacketTypeDisposition.Supported,
             (byte)StocPacketType.Catchup or
             (byte)StocPacketType.Rematch or
             (byte)StocPacketType.WaitingRematch => PacketTypeDisposition.ExplicitlyUnsupported,

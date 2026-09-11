@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 
 namespace OCGForge.Ignis.Protocol;
 
@@ -11,6 +12,15 @@ public static class PacketPayloadCodec
     public const int HostInfoPayloadLength = 68;
     public const int SmallErrorPayloadLength = 8;
     public const int DeckErrorPayloadLength = 24;
+    public const int Chat2ClientNameCodeUnits = 20;
+    public const int Chat2MessageMaxCodeUnits = 256;
+
+    private const int Chat2HeaderLength =
+        2 + (Chat2ClientNameCodeUnits * 2);
+    private const int Chat2MinimumPayloadLength = Chat2HeaderLength + 2;
+
+    private static readonly UnicodeEncoding LittleEndianUtf16 =
+        new(bigEndian: false, byteOrderMark: false, throwOnInvalidBytes: true);
 
     public static byte[] EncodePlayerInfo(CtosPlayerInfoPayload value) =>
         FixedUtf16String.Encode(value.Name, ProtocolContractV1.FixedTextCodeUnits);
@@ -484,6 +494,70 @@ public static class PacketPayloadCodec
             : PayloadDecodeResults.Failure<StocTimeLimitPayload>(
                 ExactLengthError(payload.Length, TimeLimitPayloadLength));
 
+    public static PayloadDecodeResult<StocChat2Payload> DecodeStocChat2(
+        ReadOnlySpan<byte> payload)
+    {
+        int maximumMessageBytes = Chat2MessageMaxCodeUnits * 2;
+        if (payload.Length < Chat2MinimumPayloadLength)
+        {
+            return PayloadDecodeResults.Failure<StocChat2Payload>(
+                ProtocolErrorCode.PayloadLengthMismatch);
+        }
+
+        if (payload.Length > Chat2HeaderLength + maximumMessageBytes)
+        {
+            return PayloadDecodeResults.Failure<StocChat2Payload>(
+                ProtocolErrorCode.TrailingPayloadBytes);
+        }
+
+        StocChat2Type type = payload[0] switch
+        {
+            (byte)StocChat2Type.Duelist => StocChat2Type.Duelist,
+            (byte)StocChat2Type.Observer => StocChat2Type.Observer,
+            (byte)StocChat2Type.System => StocChat2Type.System,
+            (byte)StocChat2Type.SystemError => StocChat2Type.SystemError,
+            (byte)StocChat2Type.SystemShout => StocChat2Type.SystemShout,
+            _ => (StocChat2Type)byte.MaxValue
+        };
+        if ((byte)type == byte.MaxValue)
+        {
+            return PayloadDecodeResults.Failure<StocChat2Payload>(
+                ProtocolErrorCode.UnknownPacketType);
+        }
+
+        bool? isTeam = null;
+        if (type == StocChat2Type.Duelist)
+        {
+            if (payload[1] > 1)
+            {
+                return PayloadDecodeResults.Failure<StocChat2Payload>(
+                    ProtocolErrorCode.UnknownPacketType);
+            }
+
+            isTeam = payload[1] == 1;
+        }
+
+        PayloadDecodeResult<string> clientName = FixedUtf16String.Decode(
+            payload.Slice(2, Chat2ClientNameCodeUnits * 2),
+            Chat2ClientNameCodeUnits);
+        if (!clientName.IsSuccess)
+        {
+            return PayloadDecodeResults.Failure<StocChat2Payload>(
+                clientName.Error);
+        }
+
+        PayloadDecodeResult<string> message = DecodeChat2Message(
+            payload[Chat2HeaderLength..]);
+        return message.IsSuccess
+            ? PayloadDecodeResults.Success(
+                new StocChat2Payload(
+                    type,
+                    isTeam,
+                    clientName.Value,
+                    message.Value))
+            : PayloadDecodeResults.Failure<StocChat2Payload>(message.Error);
+    }
+
     public static byte[] EncodeStocHsPlayerEnter(StocHsPlayerEnterPayload value)
     {
         byte[] payload = new byte[HsPlayerEnterPayloadLength];
@@ -563,6 +637,52 @@ public static class PacketPayloadCodec
         ReadOnlySpan<byte> payload) =>
         PayloadDecodeResults.Success(
             new StocGameMessagePayload(payload));
+
+    private static PayloadDecodeResult<string> DecodeChat2Message(
+        ReadOnlySpan<byte> payload)
+    {
+        int maximumMessageBytes = Chat2MessageMaxCodeUnits * 2;
+        if (payload.Length < 2 || payload.Length > maximumMessageBytes)
+        {
+            return PayloadDecodeResults.Failure<string>(
+                payload.Length > maximumMessageBytes
+                    ? ProtocolErrorCode.TrailingPayloadBytes
+                    : ProtocolErrorCode.PayloadLengthMismatch);
+        }
+
+        if ((payload.Length & 1) != 0)
+        {
+            return PayloadDecodeResults.Failure<string>(
+                ProtocolErrorCode.PayloadLengthMismatch);
+        }
+
+        for (int offset = 0; offset < payload.Length - 2; offset += 2)
+        {
+            if (BinaryPrimitives.ReadUInt16LittleEndian(
+                    payload.Slice(offset, 2)) == 0)
+            {
+                return PayloadDecodeResults.Failure<string>(
+                    ProtocolErrorCode.InvalidFixedString);
+            }
+        }
+
+        if (BinaryPrimitives.ReadUInt16LittleEndian(payload[^2..]) != 0)
+        {
+            return PayloadDecodeResults.Failure<string>(
+                ProtocolErrorCode.InvalidFixedString);
+        }
+
+        try
+        {
+            return PayloadDecodeResults.Success(
+                LittleEndianUtf16.GetString(payload[..^2]));
+        }
+        catch (DecoderFallbackException)
+        {
+            return PayloadDecodeResults.Failure<string>(
+                ProtocolErrorCode.InvalidFixedString);
+        }
+    }
 
     private static void EnsurePayloadLength(int payloadLength)
     {

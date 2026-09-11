@@ -1,5 +1,6 @@
 using OCGForge.Ignis.Client;
 using OCGForge.Ignis.Protocol;
+using System.Text;
 
 var tests = new (string Name, Action Body)[]
 {
@@ -19,7 +20,8 @@ var tests = new (string Name, Action Body)[]
     ("transport failure mapping", TestTransportFailureMapping),
     ("explicit leave lifecycle", TestExplicitLeaveLifecycle),
     ("buffered input and serialized cancellation", TestBufferedInputAndSerializedCancellation),
-    ("I2 remediation barriers", TestI2RemediationBarriers)
+    ("I2 remediation barriers", TestI2RemediationBarriers),
+    ("STOC_CHAT_2 is state neutral and chunk safe", TestChat2IsStateNeutral)
 };
 
 int passed = 0;
@@ -1387,6 +1389,73 @@ static void TestI2RemediationBarriers()
         player.IsOccupied));
 }
 
+static void TestChat2IsStateNeutral()
+{
+    byte[] frame = RawStocFrame(
+        0xf3,
+        RawChat2Payload(
+            type: 0,
+            isTeam: 1,
+            clientName: "Opponent",
+            message: "hello"));
+
+    for (int split = 1; split < frame.Length; split++)
+    {
+        ScriptedTransport transport = new(Array.Empty<byte[]>());
+        I2SessionRunner runner = NewReadyRunner(transport);
+        try
+        {
+            I2SessionState stateBefore = runner.State;
+            int eventsBefore = runner.Events.Count;
+            bool isHostBefore = runner.Lobby.IsHost;
+            byte? positionBefore = runner.Lobby.PreDuelLobbyPosition;
+            LobbyPlayerSnapshot[] playersBefore =
+                runner.Lobby.SnapshotPlayers().ToArray();
+
+            transport.Enqueue(
+                frame[..split].ToArray(),
+                frame[split..].ToArray());
+            I2PumpResult result = runner.PumpReadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+
+            True(result.IsSuccess);
+            Equal(stateBefore, runner.State);
+            Equal(eventsBefore, runner.Events.Count);
+            Null(runner.PendingChoice);
+            Equal(isHostBefore, runner.Lobby.IsHost);
+            Equal(positionBefore, runner.Lobby.PreDuelLobbyPosition);
+            SequenceEqual(playersBefore, runner.Lobby.SnapshotPlayers());
+        }
+        finally
+        {
+            runner.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    PreDuelStateMachine machine = NewReadyMachine();
+    True(machine.ApplyPacket(
+        ValidatedStoc(
+            StocPacketType.HsPlayerChange,
+            PacketPayloadCodec.EncodeStocHsPlayerChange(
+                new StocHsPlayerChangePayload(0x1a)))).IsSuccess);
+    Equal(I2SessionState.Ready, machine.State);
+    int eventCountBeforeChat = machine.EventHistory.Count;
+    True(machine.ApplyPacket(
+        ValidatedStoc(
+            StocPacketType.Chat2,
+            RawChat2Payload(0, 1, "Opponent", "hello"))).IsSuccess);
+    Equal(I2SessionState.Ready, machine.State);
+    Equal(eventCountBeforeChat, machine.EventHistory.Count);
+    True(machine.ApplyPacket(
+        ValidatedStoc(
+            StocPacketType.HsPlayerChange,
+            PacketPayloadCodec.EncodeStocHsPlayerChange(
+                new StocHsPlayerChangePayload(0x19)))).IsSuccess);
+    True(machine.Lobby.SnapshotPlayers().Single(
+        player => player.Position == 1).IsReady);
+}
+
 static (I2ErrorCode WholeError, I2ErrorCode ByteError, string WholeWrites, string ByteWrites)
     RunReadyNotReadyRace()
 {
@@ -1784,6 +1853,33 @@ static HostInfoPayload ValidHostInfo() =>
 
 static byte[] StocFrame(StocPacketType type, byte[] payload) =>
     WireFrameCodec.EncodeStoc(type, payload);
+
+static byte[] RawStocFrame(byte type, byte[] payload)
+{
+    int packetLength = checked(1 + payload.Length);
+    byte[] frame = new byte[checked(2 + packetLength)];
+    frame[0] = (byte)packetLength;
+    frame[1] = (byte)(packetLength >> 8);
+    frame[2] = type;
+    payload.CopyTo(frame, 3);
+    return frame;
+}
+
+static byte[] RawChat2Payload(
+    byte type,
+    byte isTeam,
+    string clientName,
+    string message)
+{
+    byte[] nameBytes = FixedUtf16String.Encode(clientName, 20);
+    byte[] messageBytes = Encoding.Unicode.GetBytes(message + '\0');
+    byte[] payload = new byte[checked(2 + nameBytes.Length + messageBytes.Length)];
+    payload[0] = type;
+    payload[1] = isTeam;
+    nameBytes.CopyTo(payload, 2);
+    messageBytes.CopyTo(payload, 2 + nameBytes.Length);
+    return payload;
+}
 
 static CtosFrame ReadCtos(byte[] frame)
 {

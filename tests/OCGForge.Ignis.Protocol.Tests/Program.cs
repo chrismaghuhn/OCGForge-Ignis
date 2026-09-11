@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 
 using OCGForge.Ignis.Protocol;
 
@@ -6,6 +7,7 @@ var tests = new (string Name, Action Body)[]
 {
     ("contract constants", TestContractConstants),
     ("direction-specific packet identities", TestPacketIdentities),
+    ("STOC_CHAT_2 packet and payload", TestChat2PacketAndPayload),
     ("frame encoding and decoding", TestFrameEncodingAndDecoding),
     ("frame status and malformed headers", TestFrameStatuses),
     ("maximum frame and outgoing capacity", TestFrameCapacity),
@@ -104,7 +106,8 @@ static void TestPacketIdentities()
         (StocPacketType.TimeLimit, 0x18),
         (StocPacketType.HsPlayerEnter, 0x20),
         (StocPacketType.HsPlayerChange, 0x21),
-        (StocPacketType.HsWatchChange, 0x22)
+        (StocPacketType.HsWatchChange, 0x22),
+        (StocPacketType.Chat2, 0xf3)
     };
 
     foreach ((StocPacketType type, byte value) in stoc)
@@ -122,9 +125,87 @@ static void TestPacketIdentities()
     Equal(
         PacketTypeDisposition.ExplicitlyUnsupported,
         PacketTypeCatalog.ClassifyStoc((byte)StocPacketType.WaitingRematch));
+    Equal(
+        PacketTypeDisposition.Supported,
+        PacketTypeCatalog.ClassifyStoc(0xf3));
     Equal(PacketTypeDisposition.Unknown, PacketTypeCatalog.ClassifyCtos(0x11));
     Equal(PacketTypeDisposition.Unknown, PacketTypeCatalog.ClassifyStoc(0x11));
+    Equal(PacketTypeDisposition.Unknown, PacketTypeCatalog.ClassifyStoc(0xf4));
     Equal(PacketTypeDisposition.Unknown, PacketTypeCatalog.ClassifyStoc(0x99));
+}
+
+static void TestChat2PacketAndPayload()
+{
+    foreach ((byte RawType, StocChat2Type Type, byte IsTeam, bool? ExpectedTeam) in
+             new[]
+             {
+                 ((byte)0, StocChat2Type.Duelist, (byte)1, (bool?)true),
+                 ((byte)1, StocChat2Type.Observer, (byte)0xa5, null),
+                 ((byte)2, StocChat2Type.System, (byte)0xa5, null),
+                 ((byte)3, StocChat2Type.SystemError, (byte)0xa5, null),
+                 ((byte)4, StocChat2Type.SystemShout, (byte)0xa5, null)
+             })
+    {
+        byte[] payload = RawChat2Payload(
+            RawType,
+            IsTeam,
+            "Alice",
+            "hello");
+        PayloadDecodeResult<StocChat2Payload> direct =
+            PacketPayloadCodec.DecodeStocChat2(payload);
+        True(direct.IsSuccess);
+        Equal(Type, direct.Value.Type);
+        Equal(ExpectedTeam, direct.Value.IsTeam);
+        Equal("Alice", direct.Value.ClientName);
+        Equal("hello", direct.Value.Message);
+
+        byte[] frame = RawStocFrame(0xf3, payload);
+        FrameReadResult<ValidatedStocPacket> decoded =
+            PacketPayloadValidator.TryReadValidatedStoc(frame);
+        AssertValidatedStoc(
+            decoded,
+            frame.Length,
+            StocPacketType.Chat2,
+            PayloadContractKind.ExactTypedLayout);
+        StocChat2Payload packet =
+            (StocChat2Payload)decoded.Frame!.Payload!;
+        Equal(Type, packet.Type);
+        Equal(ExpectedTeam, packet.IsTeam);
+    }
+
+    byte[] tooShort = RawStocFrame(0xf3, new byte[43]);
+    FrameReadResult<ValidatedStocPacket> shortResult =
+        PacketPayloadValidator.TryReadValidatedStoc(tooShort);
+    Equal(FrameReadStatus.Invalid, shortResult.Status);
+    Equal(ProtocolErrorCode.PayloadLengthMismatch, shortResult.Error);
+
+    byte[] oddMessage = RawChat2Payload(0, 1, "Alice", "hello")[..^1];
+    PayloadDecodeResult<StocChat2Payload> oddResult =
+        PacketPayloadCodec.DecodeStocChat2(oddMessage);
+    Equal(ProtocolErrorCode.PayloadLengthMismatch, oddResult.Error);
+
+    byte[] missingTerminator = RawChat2Payload(0, 1, "Alice", "hello");
+    missingTerminator[^2] = 0x78;
+    PayloadDecodeResult<StocChat2Payload> missingTerminatorResult =
+        PacketPayloadCodec.DecodeStocChat2(missingTerminator);
+    Equal(
+        ProtocolErrorCode.InvalidFixedString,
+        missingTerminatorResult.Error);
+
+    byte[] embeddedNull = RawChat2Payload(0, 1, "Alice", "a\0b");
+    PayloadDecodeResult<StocChat2Payload> embeddedNullResult =
+        PacketPayloadCodec.DecodeStocChat2(embeddedNull);
+    Equal(ProtocolErrorCode.InvalidFixedString, embeddedNullResult.Error);
+
+    PayloadDecodeResult<StocChat2Payload> unknownType =
+        PacketPayloadCodec.DecodeStocChat2(
+            RawChat2Payload(5, 0, "Alice", "hello"));
+    Equal(ProtocolErrorCode.UnknownPacketType, unknownType.Error);
+
+    PayloadDecodeResult<StocChat2Payload> invalidTeam =
+        PacketPayloadCodec.DecodeStocChat2(
+            RawChat2Payload(0, 2, "Alice", "hello"));
+    Equal(ProtocolErrorCode.UnknownPacketType, invalidTeam.Error);
 }
 
 static void TestFrameEncodingAndDecoding()
@@ -1181,6 +1262,33 @@ static void AssertNeedMore<T>(FrameReadResult<T> result)
     Equal(0, result.ConsumedBytes);
     Equal(ProtocolErrorCode.None, result.Error);
     Equal<T?>(null, result.Frame);
+}
+
+static byte[] RawStocFrame(byte type, byte[] payload)
+{
+    int packetLength = checked(1 + payload.Length);
+    byte[] frame = new byte[checked(2 + packetLength)];
+    frame[0] = (byte)packetLength;
+    frame[1] = (byte)(packetLength >> 8);
+    frame[2] = type;
+    payload.CopyTo(frame, 3);
+    return frame;
+}
+
+static byte[] RawChat2Payload(
+    byte type,
+    byte isTeam,
+    string clientName,
+    string message)
+{
+    byte[] nameBytes = FixedUtf16String.Encode(clientName, 20);
+    byte[] messageBytes = Encoding.Unicode.GetBytes(message + '\0');
+    byte[] payload = new byte[checked(2 + nameBytes.Length + messageBytes.Length)];
+    payload[0] = type;
+    payload[1] = isTeam;
+    nameBytes.CopyTo(payload, 2);
+    messageBytes.CopyTo(payload, 2 + nameBytes.Length);
+    return payload;
 }
 
 static byte[] Hex(string text)

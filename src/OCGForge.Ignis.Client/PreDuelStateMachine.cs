@@ -179,6 +179,7 @@ internal sealed class PreDuelStateMachine
             StocPacketType.HsPlayerEnter => ApplyPlayerEntered(packet.Payload),
             StocPacketType.HsPlayerChange => ApplyPlayerChange(packet.Payload),
             StocPacketType.HsWatchChange => ApplyWatcherChange(packet.Payload),
+            StocPacketType.Chat2 => Succeed(),
             StocPacketType.DuelStart => ApplyDuelStart(),
             StocPacketType.SelectHand => ApplySelectHand(),
             StocPacketType.HandResult => ApplyHandResult(packet.Payload),

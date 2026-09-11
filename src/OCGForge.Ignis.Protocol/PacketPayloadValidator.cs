@@ -129,6 +129,10 @@ public static class PacketPayloadValidator
                 frame.Type,
                 PayloadContractKind.ExactTypedLayout,
                 PacketPayloadCodec.DecodeStocHsWatchChange(frame.Payload.Span)),
+            StocPacketType.Chat2 => Typed(
+                frame.Type,
+                PayloadContractKind.ExactTypedLayout,
+                PacketPayloadCodec.DecodeStocChat2(frame.Payload.Span)),
             _ => PayloadDecodeResults.Failure<ValidatedStocPacket>(
                 PacketTypeCatalog.ClassifyStoc((byte)frame.Type) ==
                     PacketTypeDisposition.ExplicitlyUnsupported

@@ -435,3 +435,23 @@ I5_IMPLEMENTATION_AUTHORIZED=NO
 The decision does not modify I4 semantics, add a response sender, or authorize
 re-admission of SELECT_SUM. Re-admission requires a separate source-backed
 contract decision.
+
+## I2 STOC_CHAT_2 ingress remediation (2026-09-11)
+
+The following clean-room facts were audited against the exact pinned EDOPro
+commit before adding the independently implemented `STOC_CHAT_2` ingress. The
+ledger records the protocol identifier, payload layout, and side-channel
+behavior only; no upstream parser or control-flow implementation is copied.
+
+| External repository | Exact commit | Source path / symbol | Fact learned | Date | Classification |
+| --- | --- | --- | --- | --- | --- |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/network.h#STOC_CHAT_2`, `STOC_Chat2` | `STOC_CHAT_2` is `0xf3`; `STOC_Chat2` carries a one-byte player type, a one-byte `is_team` field, a 20-code-unit UTF-16 client name, and a variable UTF-16 message terminated within the transmitted payload. | 2026-09-11 | numeric constant/wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/network.h#STOC_Chat2::PLAYER_TYPE` | The five chat types are duelists, observers, system, system error, and system shout; `is_team` is semantically relevant only for the duelist type. | 2026-09-11 | numeric constant/semantic field |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/generic_duel.cpp#GenericDuel::Chat` | Duelist and observer/system chat is emitted as `STOC_CHAT_2`; the transmitted message includes its UTF-16 terminator, and the chat path is separate from lobby readiness and duel-start state transitions. | 2026-09-11 | observed behavior/wire layout |
+| EDOPro | 30935e847165a9ef0e547fb51a43f36168fab7c7 | `gframe/duelclient.cpp#DuelClient::HandleSTOCPacketLanSync` | The normal client handles `STOC_CHAT_2` as a presentation/chat side channel instead of forwarding it into the ordinary asynchronous duel-packet analysis path. | 2026-09-11 | observed behavior/authority boundary |
+
+Ignis consumes a validated Chat2 frame as a state-neutral pre-duel packet. The
+decoded sender and message remain protocol-local values: they are not added to
+`I2Event`, `LobbyState`, gameplay state, public observation, decision input,
+replay identity, dataset identity, or semantic hashes. Unknown `0xf4+` values
+remain unknown, while `0xf0` through `0xf2` remain explicitly unsupported.
