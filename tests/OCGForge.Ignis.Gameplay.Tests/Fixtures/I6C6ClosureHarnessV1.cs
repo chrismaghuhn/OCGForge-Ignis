@@ -357,6 +357,8 @@ internal readonly record struct I6C6CaptureFailureDiagnosticsV1(
 
 internal static class I6C6CapturedGameplayMessageTraceV1
 {
+    private const byte MsgWaiting = 3;
+
     internal static GameplayMessageV1? TryFindMessageAtOrdinal(
         GameplayPerspectiveV1 expectedPerspective,
         ReadOnlyMemory<byte> pendingBytes,
@@ -555,6 +557,20 @@ internal static class I6C6CapturedGameplayMessageTraceV1
                 continue;
             }
 
+            if (gameMessage.Bytes.Span.Length == 1 &&
+                gameMessage.Bytes.Span[0] == MsgWaiting)
+            {
+                gameplayStarted = true;
+                if (currentOrdinal == ulong.MaxValue)
+                {
+                    return null;
+                }
+
+                currentOrdinal++;
+                readOffset = checked(readOffset + parsed.ConsumedBytes);
+                continue;
+            }
+
             GameplayMessageDecodeResult decoded = decoder.Decode(gameMessage);
             if (!decoded.IsSuccess ||
                 decoded.Message is null ||
@@ -642,6 +658,13 @@ internal static class I6C6CapturedGameplayMessageTraceV1
                     return null;
                 }
             }
+            else if (innerBytes[0] == MsgWaiting)
+            {
+                if (!IsValidMsgWaiting(innerBytes))
+                {
+                    return null;
+                }
+            }
             else
             {
                 GameplayMessageDecodeResult decoded = decoder.Decode(gameMessage);
@@ -670,6 +693,9 @@ internal static class I6C6CapturedGameplayMessageTraceV1
 
     private static bool IsValidMsgHint(ReadOnlySpan<byte> bytes) =>
         bytes.Length == 11 && bytes[2] <= 1;
+
+    private static bool IsValidMsgWaiting(ReadOnlySpan<byte> bytes) =>
+        bytes.Length == 1 && bytes[0] == MsgWaiting;
 
     private static I6C6UnknownGameplayMessageClassificationV1?
         TryClassifyMessage(
@@ -721,6 +747,29 @@ internal static class I6C6CapturedGameplayMessageTraceV1
             if (innerBytes.IsEmpty)
             {
                 return null;
+            }
+
+            if (innerBytes[0] == MsgWaiting)
+            {
+                if (!IsValidMsgWaiting(innerBytes))
+                {
+                    return null;
+                }
+
+                if (currentOrdinal == ordinal)
+                {
+                    return null;
+                }
+
+                gameplayStarted = true;
+                if (currentOrdinal == ulong.MaxValue)
+                {
+                    return null;
+                }
+
+                currentOrdinal++;
+                readOffset = checked(readOffset + parsed.ConsumedBytes);
+                continue;
             }
 
             GameplayMessageDecodeResult decoded = decoder.Decode(gameMessage);

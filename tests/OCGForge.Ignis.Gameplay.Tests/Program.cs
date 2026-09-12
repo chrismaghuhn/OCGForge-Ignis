@@ -433,6 +433,21 @@ var tests = new (string Name, Action Body)[]
     ("I6G invalid MSG_HINT player fails closed",
         I6GMsgHintIngressTests.TestInvalidMsgHintPlayerFailsClosed),
 
+    ("I6G valid MSG_WAITING is consumed before gameplay",
+        I6GMsgWaitingIngressTests.TestValidMsgWaitingIsConsumedBeforeGameplay),
+
+    ("I6G repeated MSG_WAITING markers are presentation-only",
+        I6GMsgWaitingIngressTests.TestRepeatedMsgWaitingMarkersArePresentationOnly),
+
+    ("I6G malformed MSG_WAITING fails closed",
+        I6GMsgWaitingIngressTests.TestMalformedMsgWaitingFailsClosed),
+
+    ("I6G direct decoder keeps MSG_WAITING unsupported",
+        I6GMsgWaitingIngressTests.TestDirectDecoderStillRejectsMsgWaiting),
+
+    ("I6G MSG_WAITING advances capture wire ordinal",
+        I6GMsgWaitingIngressTests.TestMsgWaitingAdvancesCaptureWireOrdinal),
+
     ("I6G player-zero STOC_TIME_LIMIT continues without mutation",
         I6GTimeLimitIngressTests.TestPlayerZeroTimeLimitContinuesWithoutMutation),
 

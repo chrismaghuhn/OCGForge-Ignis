@@ -38,7 +38,9 @@ public sealed class GameplayMirrorPumpResult
 public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
 {
     private const byte MsgHint = 2;
+    private const byte MsgWaiting = 3;
     private const int MsgHintLength = 11;
+    private const int MsgWaitingLength = 1;
     private const int MsgHintPlayerOffset = 2;
 
     private readonly GameplaySessionV1 transportSession;
@@ -402,6 +404,27 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
                         if (!messageBytes.IsEmpty && messageBytes[0] == MsgHint)
                         {
                             if (!IsValidMsgHint(messageBytes))
+                            {
+                                return await FailAsync(
+                                        GameplayErrorCode.MalformedGameMessage)
+                                    .ConfigureAwait(false);
+                            }
+
+                            if (presentationMessagesConsumed == int.MaxValue)
+                            {
+                                return await FailAsync(
+                                        GameplayErrorCode.MalformedGameMessage)
+                                    .ConfigureAwait(false);
+                            }
+
+                            presentationMessagesConsumed++;
+                            continue;
+                        }
+
+                        if (!messageBytes.IsEmpty &&
+                            messageBytes[0] == MsgWaiting)
+                        {
+                            if (messageBytes.Length != MsgWaitingLength)
                             {
                                 return await FailAsync(
                                         GameplayErrorCode.MalformedGameMessage)
