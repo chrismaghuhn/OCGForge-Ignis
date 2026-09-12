@@ -448,6 +448,14 @@ var tests = new (string Name, Action Body)[]
     ("I6G MSG_WAITING advances capture wire ordinal",
         I6GMsgWaitingIngressTests.TestMsgWaitingAdvancesCaptureWireOrdinal),
 
+    ("I6G unsupported outer packets preserve capture wire ordinal",
+        I6GUnsupportedOuterPacketDiagnosticsTests
+            .TestOuterPacketTracePreservesWireOrdinal),
+
+    ("I6G capture diagnostics expose outer packet shape",
+        I6GUnsupportedOuterPacketDiagnosticsTests
+            .TestCaptureFailureDiagnosticsExposeOuterPacketShape),
+
     ("I6G player-zero STOC_TIME_LIMIT continues without mutation",
         I6GTimeLimitIngressTests.TestPlayerZeroTimeLimitContinuesWithoutMutation),
 

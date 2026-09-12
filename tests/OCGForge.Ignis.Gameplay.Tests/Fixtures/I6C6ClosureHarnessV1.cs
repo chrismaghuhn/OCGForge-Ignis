@@ -329,7 +329,8 @@ internal readonly record struct I6C6CaptureFailureDiagnosticsV1(
     string? MirrorFailureSite = null,
     I6C6MirrorFailureInputDiagnosticsV1? MirrorFailureInput = null,
     I6C6UnknownGameplayMessageClassificationV1?
-        UnknownGameplayMessageClassification = null)
+        UnknownGameplayMessageClassification = null,
+    I6C6CapturedOuterPacketDiagnosticsV1? OuterPacketDiagnostics = null)
 {
     internal static I6C6CaptureFailureDiagnosticsV1 FromFrameSourceFailure(
         I6C6CaptureFailureStageV1 stage,
@@ -355,9 +356,62 @@ internal readonly record struct I6C6CaptureFailureDiagnosticsV1(
     }
 }
 
+internal readonly record struct I6C6CapturedOuterPacketDiagnosticsV1(
+    byte RawType,
+    StocPacketType Type,
+    PacketTypeDisposition Disposition,
+    PayloadContractKind PayloadContract,
+    int PayloadLength);
+
 internal static class I6C6CapturedGameplayMessageTraceV1
 {
     private const byte MsgWaiting = 3;
+
+    internal static I6C6CapturedOuterPacketDiagnosticsV1?
+        TryFindOuterPacketAtOrdinal(
+            GameplayPerspectiveV1 expectedPerspective,
+            ReadOnlyMemory<byte> pendingBytes,
+            IReadOnlyList<byte[]> receivedChunks,
+            ulong ordinal)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPerspective);
+        ArgumentNullException.ThrowIfNull(receivedChunks);
+
+        int totalLength = pendingBytes.Length;
+        foreach (byte[] chunk in receivedChunks)
+        {
+            ArgumentNullException.ThrowIfNull(chunk);
+            totalLength = checked(totalLength + chunk.Length);
+        }
+
+        byte[] receivedBytes = new byte[totalLength - pendingBytes.Length];
+        int writeOffset = 0;
+        foreach (byte[] chunk in receivedChunks)
+        {
+            chunk.CopyTo(receivedBytes, writeOffset);
+            writeOffset += chunk.Length;
+        }
+
+        I6C6CapturedOuterPacketDiagnosticsV1? receivedPacket =
+            TryFindOuterPacket(
+                expectedPerspective,
+                receivedBytes,
+                ordinal,
+                allowLeadingNonGameplayPackets: true);
+        if (receivedPacket is not null)
+        {
+            return receivedPacket;
+        }
+
+        byte[] bytes = new byte[pendingBytes.Length + receivedBytes.Length];
+        pendingBytes.Span.CopyTo(bytes);
+        receivedBytes.CopyTo(bytes, pendingBytes.Length);
+        return TryFindOuterPacket(
+            expectedPerspective,
+            bytes,
+            ordinal,
+            allowLeadingNonGameplayPackets: false);
+    }
 
     internal static GameplayMessageV1? TryFindMessageAtOrdinal(
         GameplayPerspectiveV1 expectedPerspective,
@@ -587,6 +641,110 @@ internal static class I6C6CapturedGameplayMessageTraceV1
                 return decoded.Message;
             }
 
+            if (currentOrdinal == ulong.MaxValue)
+            {
+                return null;
+            }
+
+            currentOrdinal++;
+            readOffset = checked(readOffset + parsed.ConsumedBytes);
+        }
+
+        return null;
+    }
+
+    private static I6C6CapturedOuterPacketDiagnosticsV1?
+        TryFindOuterPacket(
+            GameplayPerspectiveV1 expectedPerspective,
+            byte[] bytes,
+            ulong ordinal,
+            bool allowLeadingNonGameplayPackets)
+    {
+        GameplayMessageDecoderV1 decoder = new();
+        ulong currentOrdinal = 0;
+        int readOffset = 0;
+        bool gameplayStarted = false;
+        while (readOffset < bytes.Length)
+        {
+            FrameReadResult<ValidatedStocPacket> parsed =
+                PacketPayloadValidator.TryReadValidatedStoc(
+                    bytes.AsSpan(readOffset));
+            if (parsed.Status != FrameReadStatus.Success ||
+                parsed.Frame is null ||
+                parsed.ConsumedBytes <= 0)
+            {
+                return null;
+            }
+
+            ValidatedStocPacket packet = parsed.Frame;
+            if (packet.Type != StocPacketType.GameMsg)
+            {
+                if (gameplayStarted &&
+                    packet.Type == StocPacketType.TimeLimit)
+                {
+                    readOffset = checked(readOffset + parsed.ConsumedBytes);
+                    continue;
+                }
+
+                if (!gameplayStarted)
+                {
+                    if (!allowLeadingNonGameplayPackets)
+                    {
+                        return null;
+                    }
+
+                    readOffset = checked(readOffset + parsed.ConsumedBytes);
+                    continue;
+                }
+
+                return currentOrdinal == ordinal
+                    ? new I6C6CapturedOuterPacketDiagnosticsV1(
+                        (byte)packet.Type,
+                        packet.Type,
+                        PacketTypeCatalog.ClassifyStoc((byte)packet.Type),
+                        packet.PayloadContract,
+                        checked(
+                            parsed.ConsumedBytes -
+                            ProtocolContractV1.LengthPrefixSize -
+                            ProtocolContractV1.PacketTypeSize))
+                    : null;
+            }
+
+            if (packet.Payload is not StocGameMessagePayload gameMessage ||
+                gameMessage.Bytes.IsEmpty)
+            {
+                return null;
+            }
+
+            ReadOnlySpan<byte> innerBytes = gameMessage.Bytes.Span;
+            if (innerBytes[0] == 2)
+            {
+                if (!IsValidMsgHint(innerBytes))
+                {
+                    return null;
+                }
+            }
+            else if (innerBytes[0] == MsgWaiting)
+            {
+                if (!IsValidMsgWaiting(innerBytes))
+                {
+                    return null;
+                }
+            }
+            else
+            {
+                GameplayMessageDecodeResult decoded = decoder.Decode(gameMessage);
+                if (!decoded.IsSuccess ||
+                    decoded.Message is null ||
+                    (decoded.Perspective is not null &&
+                     decoded.Perspective.PlayerType !=
+                         expectedPerspective.PlayerType))
+                {
+                    return null;
+                }
+            }
+
+            gameplayStarted = true;
             if (currentOrdinal == ulong.MaxValue)
             {
                 return null;
@@ -2264,6 +2422,16 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                             captureTransport.ReceivedChunks,
                             failureOrdinal)
                     : null;
+                I6C6CapturedOuterPacketDiagnosticsV1?
+                    outerPacketDiagnostics = next.Error ==
+                        GameplayErrorCode.UnsupportedOuterPacket
+                        ? I6C6CapturedGameplayMessageTraceV1
+                            .TryFindOuterPacketAtOrdinal(
+                                first.Perspective,
+                                initialPendingBytes,
+                                captureTransport.ReceivedChunks,
+                                failureOrdinal)
+                        : null;
 
                 return Failure(
                     binding,
@@ -2277,9 +2445,10 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                         failedMessage?.Kind,
                         null,
                         null,
-                        failureClassification?.Site,
-                        failureClassification?.Input,
-                        unknownMessageClassification),
+                            failureClassification?.Site,
+                            failureClassification?.Input,
+                            unknownMessageClassification,
+                            outerPacketDiagnostics),
                     readiness.Snapshot(),
                     next.Error == GameplayErrorCode.UnknownMessageId
                         ? I6GRealI4PromptBoundaryV1.TryEvaluate(
