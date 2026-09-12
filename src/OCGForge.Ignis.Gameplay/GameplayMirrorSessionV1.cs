@@ -173,7 +173,8 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
                 mirror,
                 boundMatchContext,
                 boundPrintedProvider);
-            if (!result.IsSuccess)
+            if (!result.IsSuccess &&
+                !IsProvisionalFrameSourceFailure(result))
             {
                 currentFrameAuthority.Invalidate();
             }
@@ -577,6 +578,15 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
             ProtocolErrorCode.TruncatedFrame =>
                 GameplayErrorCode.TruncatedStream,
             _ => GameplayErrorCode.MalformedOuterFrame
+        };
+
+    private static bool IsProvisionalFrameSourceFailure(
+        PerspectiveSafeFrameSourceResultV1 result) =>
+        !result.IsSuccess &&
+        result.Error is
+        {
+            Code: PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+            Section: PerspectiveSafeSourceSectionV1.Entities
         };
 
     private static bool IsValidMsgHint(ReadOnlySpan<byte> bytes) =>

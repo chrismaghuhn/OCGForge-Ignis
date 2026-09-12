@@ -710,6 +710,14 @@ var tests = new (string Name, Action Body)[]
         I4FrameOwnedSidecarLifecycleReconciliationTests
             .TestFrameAuthorityHasSafeLifecycle),
 
+    ("I6C5 provisional frame failure preserves authority",
+        I6CPublicFrameSourceTests
+            .TestProvisionalI6C5FrameFailurePreservesAuthority),
+
+    ("I6C5 successful frame authority advances",
+        I6CPublicFrameSourceTests
+            .TestSuccessfulI6C5FrameAuthorityAdvances),
+
     ("I4 hidden opponent hand emits no sidecar entry",
         I4PrivateOccurrenceSidecarTests
             .TestHiddenOpponentHandEmitsNoSidecarEntry),

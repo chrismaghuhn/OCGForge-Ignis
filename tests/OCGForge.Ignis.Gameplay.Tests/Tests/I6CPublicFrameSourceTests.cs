@@ -1080,6 +1080,147 @@ internal static class I6CPublicFrameSourceTests
         Run("I6C5 Extra UPDATE_DATA bootstrap", AssertI6C5ExtraUpdateDataBootstrap);
     }
 
+    internal static void TestProvisionalI6C5FrameFailurePreservesAuthority()
+    {
+        (GameplaySessionV1 transportSession,
+            PerspectiveStateMirrorV1 mirror,
+            GameplayHandoffConsumerV1 consumer,
+            TestTransport transport) = CreateStartedSession(
+                0,
+                extraCount0: 2,
+                extraCount1: 0);
+        GameplayMirrorSessionV1? session = null;
+        try
+        {
+            session = new GameplayMirrorSessionV1(
+                transportSession,
+                mirror,
+                CreateValidI6C5MatchContext(),
+                CreatePrintedProviderForMirror(mirror));
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? beforeAuthority));
+            NotNull(beforeAuthority);
+            string beforeSnapshot = mirror.Snapshot.ToDeterministicString();
+            int readsBeforeFrameAttempts = transport.ReadCallCount;
+
+            PerspectiveSafeFrameSourceResultV1 firstFrame =
+                session.TryCreateI6C5Frame();
+            False(firstFrame.IsSuccess);
+            Equal(
+                PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                firstFrame.Error!.Value.Code);
+            Equal(
+                PerspectiveSafeSourceSectionV1.Entities,
+                firstFrame.Error.Value.Section);
+            Equal(beforeSnapshot, mirror.Snapshot.ToDeterministicString());
+            Equal(readsBeforeFrameAttempts, transport.ReadCallCount);
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? afterFirstFrame));
+            NotNull(afterFirstFrame);
+            Equal(
+                beforeAuthority!.FrameInstanceOrdinal,
+                afterFirstFrame!.FrameInstanceOrdinal);
+            True(afterFirstFrame.IsCurrent);
+
+            PerspectiveSafeFrameSourceResultV1 repeatedFrame =
+                session.TryCreateI6C5Frame();
+            False(repeatedFrame.IsSuccess);
+            Equal(
+                PerspectiveSafeFrameSourceErrorCodeV1.UnprovenMirrorValue,
+                repeatedFrame.Error!.Value.Code);
+            Equal(
+                PerspectiveSafeSourceSectionV1.Entities,
+                repeatedFrame.Error.Value.Section);
+            Equal(readsBeforeFrameAttempts, transport.ReadCallCount);
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? afterRepeatedFrame));
+            NotNull(afterRepeatedFrame);
+            True(afterRepeatedFrame!.IsCurrent);
+
+            GameplayMirrorPumpResult next = ApplyI6C4ThroughSession(
+                session,
+                transport,
+                new byte[] { 40, 0 });
+            True(next.IsSuccess, next.Error.ToString());
+            NotNull(next.Message);
+            Equal(GameplayMessageKindV1.NewTurn, next.Message!.Kind);
+            False(afterRepeatedFrame.IsCurrent);
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? advancedAuthority));
+            NotNull(advancedAuthority);
+            Equal(1ul, advancedAuthority!.FrameInstanceOrdinal);
+            True(advancedAuthority.IsCurrent);
+            False(string.Equals(
+                beforeSnapshot,
+                mirror.Snapshot.ToDeterministicString(),
+                StringComparison.Ordinal));
+            Equal(readsBeforeFrameAttempts + 1, transport.ReadCallCount);
+        }
+        finally
+        {
+            if (session is not null)
+            {
+                session.DisposeAsync().GetAwaiter().GetResult();
+            }
+
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    internal static void TestSuccessfulI6C5FrameAuthorityAdvances()
+    {
+        (GameplaySessionV1 transportSession,
+            PerspectiveStateMirrorV1 mirror,
+            GameplayHandoffConsumerV1 consumer,
+            TestTransport transport) = CreateStartedSession(
+                0,
+                extraCount0: 0,
+                extraCount1: 0);
+        GameplayMirrorSessionV1? session = null;
+        try
+        {
+            session = new GameplayMirrorSessionV1(
+                transportSession,
+                mirror,
+                CreateValidI6C5MatchContext(),
+                CreatePrintedProviderForMirror(mirror));
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? initialAuthority));
+            NotNull(initialAuthority);
+            PerspectiveSafeFrameSourceResultV1 frame =
+                session.TryCreateI6C5Frame();
+            True(frame.IsSuccess, frame.Error?.ToString() ?? "frame rejected");
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? afterFrame));
+            NotNull(afterFrame);
+            Equal(
+                initialAuthority!.FrameInstanceOrdinal,
+                afterFrame!.FrameInstanceOrdinal);
+            True(afterFrame.IsCurrent);
+
+            GameplayMirrorPumpResult next = ApplyI6C4ThroughSession(
+                session,
+                transport,
+                new byte[] { 40, 0 });
+            True(next.IsSuccess, next.Error.ToString());
+            False(afterFrame.IsCurrent);
+            True(session.TryGetCurrentFrameAuthority(
+                out PrivateGameplayFrameAuthorityV1? advancedAuthority));
+            NotNull(advancedAuthority);
+            Equal(1ul, advancedAuthority!.FrameInstanceOrdinal);
+            True(advancedAuthority.IsCurrent);
+        }
+        finally
+        {
+            if (session is not null)
+            {
+                session.DisposeAsync().GetAwaiter().GetResult();
+            }
+
+            consumer.DisposeAsync().GetAwaiter().GetResult();
+        }
+    }
+
     private static void Run(string name, Action test)
     {
         try
