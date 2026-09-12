@@ -662,15 +662,17 @@ internal static class I6C6RealRunEntryPointV1
             return Blocked();
         }
 
-        I6GRealRunMatchContextBindingResultV1 contextResult =
+        I6GRealRunMatchContextBindingResultV1 contextValidation =
             request.ScenarioKind == I6C6ClosureScenarioKindV1.Counter
-                ? I6GRealRunMatchContextAuthorityV1.TryCreateCounter(
-                    scenario,
-                    request.MatchContextConfiguration)
-                : I6GRealRunMatchContextAuthorityV1.TryCreate(
-                    scenario,
-                    request.MatchContextConfiguration);
-        if (!contextResult.IsSuccess || contextResult.Context is null)
+                ? I6GRealRunMatchContextAuthorityV1
+                    .ValidateCounterConfigurationForRuntime(
+                        scenario,
+                        request.MatchContextConfiguration)
+                : I6GRealRunMatchContextAuthorityV1
+                    .ValidateConfigurationForRuntime(
+                        scenario,
+                        request.MatchContextConfiguration);
+        if (!contextValidation.IsSuccess)
         {
             return Blocked();
         }
@@ -691,8 +693,7 @@ internal static class I6C6RealRunEntryPointV1
             true,
             "STATUS=I6C6_RUNTIME_INPUTS_READY",
             false,
-            false,
-            MatchContext: contextResult.Context);
+            false);
     }
 
     internal static async ValueTask<I6C6RealRunEntryPointResultV1> ExecuteAsync(
@@ -701,8 +702,7 @@ internal static class I6C6RealRunEntryPointV1
     {
         I6C6RealRunEntryPointResultV1 prepared = TryPrepare(request);
         if (!prepared.IsSuccess ||
-            request is null ||
-            prepared.MatchContext is null)
+            request is null)
         {
             return prepared;
         }
@@ -712,7 +712,7 @@ internal static class I6C6RealRunEntryPointV1
                     request.Configuration,
                     request.ScenarioKind,
                     request.Connection,
-                    prepared.MatchContext,
+                    request.MatchContextConfiguration,
                     request.PrintedProvider,
                     request.MaximumAdditionalMessages,
                     request.RpsChoice,

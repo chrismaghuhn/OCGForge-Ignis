@@ -498,6 +498,22 @@ var tests = new (string Name, Action Body)[]
         I6GRealRunMatchContextAuthorityTests
             .TestPerspectiveUsesGameplayPerspectivePlayerType),
 
+    ("I6G runtime context validation defers perspective binding",
+        I6GRealRunMatchContextAuthorityTests
+            .TestRuntimeContextValidationDoesNotRequirePerspective),
+
+    ("I6G runtime perspective binds without swapping decks",
+        I6GRealRunMatchContextAuthorityTests
+            .TestRuntimePerspectiveBindsWithoutSwappingDecks),
+
+    ("I6G runtime perspective rejects missing and invalid values",
+        I6GRealRunMatchContextAuthorityTests
+            .TestRuntimePerspectiveMustBeValid),
+
+    ("I6G late-bound Player1 context passes mirror construction",
+        I6GRealRunMatchContextAuthorityTests
+            .TestLateBoundPlayerOneContextPassesMirrorConstructor),
+
     ("I6G match context inputs fail closed when missing",
         I6GRealRunMatchContextAuthorityTests
             .TestMissingContextInputsFailClosed),

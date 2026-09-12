@@ -67,6 +67,105 @@ internal static class I6GRealRunMatchContextAuthorityV1
         return TryCreate(scenario, configuration);
     }
 
+    internal static I6GRealRunMatchContextBindingResultV1
+        ValidateConfigurationForRuntime(
+            I6C6ClosureScenarioConfigurationV1? scenario,
+            I6GRealRunMatchContextConfigurationV1? configuration)
+    {
+        if (!TryValidateRuntimeInputs(
+                scenario,
+                configuration,
+                out I6GRealRunMatchContextErrorCodeV1 error))
+        {
+            return Failure(error);
+        }
+
+        return new(
+            true,
+            I6GRealRunMatchContextErrorCodeV1.None);
+    }
+
+    internal static I6GRealRunMatchContextBindingResultV1
+        ValidateCounterConfigurationForRuntime(
+            I6C6ClosureScenarioConfigurationV1? scenario,
+            I6GRealRunMatchContextConfigurationV1? configuration)
+    {
+        if (scenario is null || configuration is null)
+        {
+            return Failure(
+                I6GRealRunMatchContextErrorCodeV1.MissingConfiguration);
+        }
+
+        if (!string.Equals(
+                scenario.ScenarioId,
+                CounterScenarioId,
+                StringComparison.Ordinal))
+        {
+            return Failure(
+                I6GRealRunMatchContextErrorCodeV1.ScenarioMismatch);
+        }
+
+        if (configuration.OpponentDecklistKnown)
+        {
+            return Failure(
+                I6GRealRunMatchContextErrorCodeV1
+                    .CounterOpponentKnowledgeForbidden);
+        }
+
+        return ValidateConfigurationForRuntime(scenario, configuration);
+    }
+
+    internal static I6GRealRunMatchContextBindingResultV1
+        TryCreateForRuntime(
+            I6C6ClosureScenarioConfigurationV1? scenario,
+            I6GRealRunMatchContextConfigurationV1? configuration,
+            GameplayPerspectiveV1? runtimePerspective)
+    {
+        I6GRealRunMatchContextBindingResultV1 validation =
+            ValidateConfigurationForRuntime(scenario, configuration);
+        if (!validation.IsSuccess)
+        {
+            return validation;
+        }
+
+        if (!TryValidateRuntimePerspective(
+                runtimePerspective,
+                out I6GRealRunMatchContextErrorCodeV1 perspectiveError))
+        {
+            return Failure(perspectiveError);
+        }
+
+        return TryCreate(
+            scenario,
+            configuration! with { Perspective = runtimePerspective });
+    }
+
+    internal static I6GRealRunMatchContextBindingResultV1
+        TryCreateCounterForRuntime(
+            I6C6ClosureScenarioConfigurationV1? scenario,
+            I6GRealRunMatchContextConfigurationV1? configuration,
+            GameplayPerspectiveV1? runtimePerspective)
+    {
+        I6GRealRunMatchContextBindingResultV1 validation =
+            ValidateCounterConfigurationForRuntime(scenario, configuration);
+        if (!validation.IsSuccess)
+        {
+            return validation;
+        }
+
+        if (!TryValidateRuntimePerspective(
+                runtimePerspective,
+                out I6GRealRunMatchContextErrorCodeV1 perspectiveError))
+        {
+            return Failure(perspectiveError);
+        }
+
+        // The configured perspective is not authoritative until MSG_START.
+        return TryCreateCounter(
+            scenario,
+            configuration! with { Perspective = runtimePerspective });
+    }
+
     internal static I6GRealRunMatchContextBindingResultV1 TryCreate(
         I6C6ClosureScenarioConfigurationV1? scenario,
         I6GRealRunMatchContextConfigurationV1? configuration)
@@ -147,6 +246,82 @@ internal static class I6GRealRunMatchContextAuthorityV1
             true,
             I6GRealRunMatchContextErrorCodeV1.None,
             context);
+    }
+
+    private static bool TryValidateRuntimeInputs(
+        I6C6ClosureScenarioConfigurationV1? scenario,
+        I6GRealRunMatchContextConfigurationV1? configuration,
+        out I6GRealRunMatchContextErrorCodeV1 error)
+    {
+        error = I6GRealRunMatchContextErrorCodeV1.None;
+        if (scenario is null || configuration is null)
+        {
+            error = I6GRealRunMatchContextErrorCodeV1.MissingConfiguration;
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(configuration.ScenarioId) ||
+            !string.Equals(
+                configuration.ScenarioId,
+                scenario.ScenarioId,
+                StringComparison.Ordinal))
+        {
+            error = I6GRealRunMatchContextErrorCodeV1.ScenarioMismatch;
+            return false;
+        }
+
+        if (!configuration.DuelFlags.HasValue)
+        {
+            error = I6GRealRunMatchContextErrorCodeV1.MissingDuelFlags;
+            return false;
+        }
+
+        if (!TryCreateDeck(
+                scenario.PrimaryDeckPath,
+                scenario.PrimaryDeckSha256,
+                configuration.OwnDecklistKnown,
+                out _,
+                out error))
+        {
+            return false;
+        }
+
+        if (!TryCreateDeck(
+                scenario.OpponentDeckPath,
+                scenario.OpponentDeckSha256,
+                configuration.OpponentDecklistKnown,
+                out _,
+                out error))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateRuntimePerspective(
+        GameplayPerspectiveV1? perspective,
+        out I6GRealRunMatchContextErrorCodeV1 error)
+    {
+        if (perspective is null)
+        {
+            error = I6GRealRunMatchContextErrorCodeV1.MissingPerspective;
+            return false;
+        }
+
+        bool valid = perspective.PlayerType <= 1 &&
+            (perspective.Kind == GameplayPerspectiveKind.SelfIsPlayer0 &&
+                perspective.PlayerType == 0 ||
+             perspective.Kind == GameplayPerspectiveKind.SelfIsPlayer1 &&
+                perspective.PlayerType == 1);
+        if (!valid)
+        {
+            error = I6GRealRunMatchContextErrorCodeV1.InvalidContext;
+            return false;
+        }
+
+        error = I6GRealRunMatchContextErrorCodeV1.None;
+        return true;
     }
 
     private static bool TryCreateDeck(

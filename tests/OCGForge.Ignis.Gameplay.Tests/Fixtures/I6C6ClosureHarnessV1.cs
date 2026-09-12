@@ -294,7 +294,8 @@ internal enum I6C6CaptureFailureStageV1 : byte
     InitialFrame = 4,
     SubsequentPump = 5,
     SubsequentFrame = 6,
-    ReadinessLimit = 7
+    ReadinessLimit = 7,
+    RuntimeContextBinding = 8
 }
 
 internal enum I6C6GameplayMessageClassV1 : byte
@@ -1972,7 +1973,8 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         I6C6OpponentRuntimeBindingV1 opponentRuntimeBinding,
         GameplayHandoffOfferV1 handoff,
         I6C6TcpCaptureTransportV1 captureTransport,
-        PerspectiveSafeMatchContextV1 matchContext,
+        I6GRealRunMatchContextConfigurationV1 matchContextConfiguration,
+        I6C6ClosureScenarioKindV1 scenarioKind,
         PerspectiveSafePrintedProviderV1 printedProvider,
         int maximumAdditionalMessages,
         CancellationToken cancellationToken,
@@ -1983,7 +1985,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         ArgumentNullException.ThrowIfNull(opponentRuntimeBinding);
         ArgumentNullException.ThrowIfNull(handoff);
         ArgumentNullException.ThrowIfNull(captureTransport);
-        ArgumentNullException.ThrowIfNull(matchContext);
+        ArgumentNullException.ThrowIfNull(matchContextConfiguration);
         ArgumentNullException.ThrowIfNull(printedProvider);
         ArgumentNullException.ThrowIfNull(setGameplayCaptureSubsite);
         if (maximumAdditionalMessages < 0)
@@ -2060,6 +2062,35 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                     null),
                 readiness.Snapshot());
         }
+
+        I6GRealRunMatchContextBindingResultV1 contextResult =
+            scenarioKind == I6C6ClosureScenarioKindV1.Counter
+                ? I6GRealRunMatchContextAuthorityV1.TryCreateCounterForRuntime(
+                    binding.Scenario,
+                    matchContextConfiguration,
+                    first.Perspective)
+                : I6GRealRunMatchContextAuthorityV1.TryCreateForRuntime(
+                    binding.Scenario,
+                    matchContextConfiguration,
+                    first.Perspective);
+        if (!contextResult.IsSuccess || contextResult.Context is null)
+        {
+            return Failure(
+                binding,
+                opponentRuntimeBinding,
+                GameplayErrorCode.InvalidState,
+                captureTransport,
+                Array.Empty<I6C6LiveGameplayObservationV1>(),
+                new(
+                    I6C6CaptureFailureStageV1.RuntimeContextBinding,
+                    0,
+                    first.Message.Kind,
+                    null,
+                    null),
+                readiness.Snapshot());
+        }
+
+        PerspectiveSafeMatchContextV1 matchContext = contextResult.Context;
 
         byte[] initialPendingBytes = first.Session.PendingBytes.ToArray();
         setGameplayCaptureSubsite(
@@ -3761,7 +3792,7 @@ internal static class I6C6ClosureHarnessV1
             I6C6ClosureHarnessConfigurationV1 configuration,
             I6C6ClosureScenarioKindV1 scenarioKind,
             ConnectionConfigurationV1 connection,
-            PerspectiveSafeMatchContextV1 matchContext,
+            I6GRealRunMatchContextConfigurationV1 matchContextConfiguration,
             PerspectiveSafePrintedProviderV1 printedProvider,
             int maximumAdditionalMessages,
             byte rpsChoice,
@@ -3771,7 +3802,7 @@ internal static class I6C6ClosureHarnessV1
             CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
-        ArgumentNullException.ThrowIfNull(matchContext);
+        ArgumentNullException.ThrowIfNull(matchContextConfiguration);
         ArgumentNullException.ThrowIfNull(printedProvider);
         ArgumentNullException.ThrowIfNull(opponentRuntimeParticipant);
         if (!realRunAuthorized)
@@ -3808,7 +3839,8 @@ internal static class I6C6ClosureHarnessV1
                     binding,
                     opponentRuntimeParticipant,
                     connection,
-                    matchContext,
+                    matchContextConfiguration,
+                    scenarioKind,
                     printedProvider,
                     maximumAdditionalMessages,
                     rpsChoice,
@@ -3845,7 +3877,8 @@ internal static class I6C6ClosureHarnessV1
             I6C6ClosureHarnessBindingV1 binding,
             I6C6OpponentRuntimeParticipantLeaseV1 opponentRuntimeParticipant,
             ConnectionConfigurationV1 connection,
-            PerspectiveSafeMatchContextV1 matchContext,
+            I6GRealRunMatchContextConfigurationV1 matchContextConfiguration,
+            I6C6ClosureScenarioKindV1 scenarioKind,
             PerspectiveSafePrintedProviderV1 printedProvider,
             int maximumAdditionalMessages,
             byte rpsChoice,
@@ -3909,7 +3942,8 @@ internal static class I6C6ClosureHarnessV1
                     binding,
                     opponentRuntimeParticipant,
                     connection,
-                    matchContext,
+                    matchContextConfiguration,
+                    scenarioKind,
                     printedProvider,
                     maximumAdditionalMessages,
                     rpsChoice,
@@ -3987,7 +4021,8 @@ internal static class I6C6ClosureHarnessV1
             I6C6ClosureHarnessBindingV1 binding,
             I6C6OpponentRuntimeParticipantLeaseV1 opponentRuntimeParticipant,
             ConnectionConfigurationV1 connection,
-            PerspectiveSafeMatchContextV1 matchContext,
+            I6GRealRunMatchContextConfigurationV1 matchContextConfiguration,
+            I6C6ClosureScenarioKindV1 scenarioKind,
             PerspectiveSafePrintedProviderV1 printedProvider,
             int maximumAdditionalMessages,
             byte rpsChoice,
@@ -4124,7 +4159,8 @@ internal static class I6C6ClosureHarnessV1
                     opponentRuntimeParticipant.Binding,
                     handoff.Offer,
                     captureTransport,
-                    matchContext,
+                    matchContextConfiguration,
+                    scenarioKind,
                     printedProvider,
                     maximumAdditionalMessages,
                     cancellationToken,
