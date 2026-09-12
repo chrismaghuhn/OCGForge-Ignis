@@ -577,6 +577,22 @@ var tests = new (string Name, Action Body)[]
     ("I6G real I4 idle prompt boundary binds every candidate",
         I6GRealI4PromptBoundaryTests.TestExistingIdleBoundaryBindsEveryCandidate),
 
+    ("I6G real I4 chain prompt boundary describes complete public domain",
+        I6GRealI4PromptBoundaryTests
+            .TestExistingChainBoundaryDescribesCompletePublicDomain),
+
+    ("I6G real I4 chain boundary rejects wrong perspective",
+        I6GRealI4PromptBoundaryTests
+            .TestChainBoundaryFailsClosedForWrongPerspective),
+
+    ("I6G real I4 chain boundary rejects unproven references",
+        I6GRealI4PromptBoundaryTests
+            .TestChainBoundaryFailsClosedForUnprovenReference),
+
+    ("I6G real I4 chain boundary rejects malformed and unsupported prompts",
+        I6GRealI4PromptBoundaryTests
+            .TestChainBoundaryRejectsMalformedAndUnsupportedFamilies),
+
     ("I6G ToEp response uses existing I4 binding",
         I6GSingleResponseProofTests.TestToEpResponseUsesExistingI4Binding),
 

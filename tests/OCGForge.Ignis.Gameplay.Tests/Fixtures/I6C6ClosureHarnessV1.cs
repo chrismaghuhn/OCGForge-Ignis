@@ -1214,7 +1214,13 @@ internal readonly record struct I6GRealI4PromptBoundaryEvidenceV1(
     bool ToBattlePhasePresent,
     bool ToEndPhasePresent,
     bool ShuffleHandPresent,
-    I6GRealI4PromptReferenceDiagnosticsV1? ReferenceDiagnostics);
+    I6GRealI4PromptReferenceDiagnosticsV1? ReferenceDiagnostics,
+    byte? PerspectivePlayer = null,
+    string? PublicCandidateDomainDigest = null,
+    bool? ChainForced = null,
+    int? ChainSpeCount = null,
+    int? ChainEntryCount = null,
+    int? NoChainCount = null);
 
 internal static class I6GRealI4PromptReferenceDiagnosticExtractorV1
 {
@@ -1679,7 +1685,24 @@ internal static class I6GRealI4PromptBoundaryV1
         IReadOnlyList<byte[]> receivedChunks,
         ulong ordinal,
         PerspectiveStateMirrorV1 mirror,
-        ulong duelFlags)
+        ulong duelFlags) =>
+        TryEvaluate(
+            expectedPerspective,
+            pendingBytes,
+            receivedChunks,
+            ordinal,
+            mirror,
+            duelFlags,
+            acceptedFrame: null);
+
+    internal static I6GRealI4PromptBoundaryEvidenceV1 TryEvaluate(
+        GameplayPerspectiveV1 expectedPerspective,
+        ReadOnlyMemory<byte> pendingBytes,
+        IReadOnlyList<byte[]> receivedChunks,
+        ulong ordinal,
+        PerspectiveStateMirrorV1 mirror,
+        ulong duelFlags,
+        PerspectiveSafeFrameV1? acceptedFrame)
     {
         ArgumentNullException.ThrowIfNull(expectedPerspective);
         ArgumentNullException.ThrowIfNull(receivedChunks);
@@ -1697,12 +1720,6 @@ internal static class I6GRealI4PromptBoundaryV1
         }
 
         byte promptId = promptBytes[0];
-        if (promptId != (byte)FlatPromptFamilyV1.MsgSelectIdleCmd)
-        {
-            return Failure(
-                promptId,
-                FlatPromptErrorCodeV1.UnsupportedPromptLayout);
-        }
 
         PublicStateProjectionResultV1 publicProjection =
             PublicStateProjectionV1.TryProject(
@@ -1719,7 +1736,7 @@ internal static class I6GRealI4PromptBoundaryV1
                 promptBytes,
                 out FlatPromptWireDraftV1? wireDraft,
                 out FlatPromptErrorCodeV1 wireError) ||
-            wireDraft is not FlatPromptIdleWireDraftV1 idleDraft)
+            wireDraft is null)
         {
             return Failure(
                 promptId,
@@ -1727,11 +1744,30 @@ internal static class I6GRealI4PromptBoundaryV1
                 publicStateProjectionPassed: true);
         }
 
-        I6GRealI4PromptReferenceDiagnosticsV1 referenceDiagnostics =
-            I6GRealI4PromptReferenceDiagnosticExtractorV1.Create(
-                idleDraft,
-                mirror.Snapshot,
-                publicProjection.Snapshot);
+        if (wireDraft is not FlatPromptIdleWireDraftV1 &&
+            wireDraft is not FlatPromptChainWireDraftV1)
+        {
+            return Failure(
+                promptId,
+                FlatPromptErrorCodeV1.UnsupportedPromptLayout,
+                publicStateProjectionPassed: true,
+                promptFamily: wireDraft.Family,
+                actingPlayer: TryGetActingPlayer(wireDraft),
+                perspectivePlayer: expectedPerspective.PlayerType);
+        }
+
+        FlatPromptIdleWireDraftV1? idleDraft =
+            wireDraft as FlatPromptIdleWireDraftV1;
+        FlatPromptChainWireDraftV1? chainDraft =
+            wireDraft as FlatPromptChainWireDraftV1;
+
+        I6GRealI4PromptReferenceDiagnosticsV1? referenceDiagnostics =
+            idleDraft is null
+                ? null
+                : I6GRealI4PromptReferenceDiagnosticExtractorV1.Create(
+                    idleDraft,
+                    mirror.Snapshot,
+                    publicProjection.Snapshot);
 
         FlatPromptSessionV1 session = new();
         FlatPromptProjectionResultV1 prompt = session.TryAcceptPrompt(
@@ -1746,6 +1782,9 @@ internal static class I6GRealI4PromptBoundaryV1
                 promptId,
                 prompt.Error,
                 publicStateProjectionPassed: true,
+                promptFamily: wireDraft.Family,
+                actingPlayer: TryGetActingPlayer(wireDraft),
+                perspectivePlayer: expectedPerspective.PlayerType,
                 referenceDiagnostics: referenceDiagnostics);
         }
 
@@ -1755,14 +1794,26 @@ internal static class I6GRealI4PromptBoundaryV1
             .ToArray();
         bool actingPlayerMatchesPerspective =
             context.ActingPlayer == expectedPerspective.PlayerType;
+        bool? chainForced = chainDraft is null
+            ? null
+            : ((FlatPromptChainPublicContextV1)context).ChainForced;
+        int? chainSpeCount = chainDraft is null
+            ? null
+            : ((FlatPromptChainPublicContextV1)context).ChainSpeCount;
+        int? chainEntryCount = chainDraft?.Entries.Count;
+        int? noChainCount = chainDraft is null
+            ? null
+            : prompt.Candidates.Count(candidate =>
+                candidate is FlatChainNoChainPublicCandidateDescriptorV1);
         if (!actingPlayerMatchesPerspective)
         {
-            return new(
+            return CreateEvidence(
                 false,
                 FlatPromptErrorCodeV1.InvalidParticipant,
                 promptId,
                 context.PromptFamily,
                 context.ActingPlayer,
+                expectedPerspective.PlayerType,
                 false,
                 true,
                 true,
@@ -1770,10 +1821,77 @@ internal static class I6GRealI4PromptBoundaryV1
                 choiceKinds,
                 true,
                 false,
-                choiceKinds.Contains(FlatPromptChoiceKindV1.ToBp),
-                choiceKinds.Contains(FlatPromptChoiceKindV1.ToEp),
-                choiceKinds.Contains(FlatPromptChoiceKindV1.ShuffleHand),
+                null,
+                chainForced,
+                chainSpeCount,
+                chainEntryCount,
+                noChainCount,
                 referenceDiagnostics);
+        }
+
+        string? publicCandidateDomainDigest = null;
+        if (chainDraft is not null)
+        {
+            if (acceptedFrame is null)
+            {
+                return CreateEvidence(
+                    false,
+                    FlatPromptErrorCodeV1.UnprovenPublicReference,
+                    promptId,
+                    context.PromptFamily,
+                    context.ActingPlayer,
+                    expectedPerspective.PlayerType,
+                    true,
+                    true,
+                    true,
+                    prompt.Candidates.Count,
+                    choiceKinds,
+                    false,
+                    false,
+                    null,
+                    chainForced,
+                    chainSpeCount,
+                    chainEntryCount,
+                    noChainCount,
+                    referenceDiagnostics);
+            }
+
+            I6GDeterministicPromptDescriptionResultV1 description =
+                I6GDeterministicEvidenceScenarioDriverV1
+                    .TryDescribeAcceptedProjection(
+                        acceptedFrame,
+                        prompt);
+            if (!description.IsSuccess ||
+                description.PublicCandidateDomainDigest is null ||
+                !description.CompleteDomain ||
+                description.CandidateCount != prompt.Candidates.Count ||
+                description.PromptFamily != context.PromptFamily ||
+                description.ActingPlayer != context.ActingPlayer)
+            {
+                return CreateEvidence(
+                    false,
+                    FlatPromptErrorCodeV1.UnprovenPublicReference,
+                    promptId,
+                    context.PromptFamily,
+                    context.ActingPlayer,
+                    expectedPerspective.PlayerType,
+                    true,
+                    true,
+                    true,
+                    prompt.Candidates.Count,
+                    choiceKinds,
+                    false,
+                    false,
+                    null,
+                    chainForced,
+                    chainSpeCount,
+                    chainEntryCount,
+                    noChainCount,
+                    referenceDiagnostics);
+            }
+
+            publicCandidateDomainDigest =
+                description.PublicCandidateDomainDigest;
         }
 
         bool allCandidatesResponseBound = true;
@@ -1793,7 +1911,7 @@ internal static class I6GRealI4PromptBoundaryV1
             }
         }
 
-        return new(
+        return CreateEvidence(
             allCandidatesResponseBound,
             allCandidatesResponseBound
                 ? FlatPromptErrorCodeV1.None
@@ -1801,6 +1919,7 @@ internal static class I6GRealI4PromptBoundaryV1
             promptId,
             context.PromptFamily,
             context.ActingPlayer,
+            expectedPerspective.PlayerType,
             true,
             true,
             true,
@@ -1808,9 +1927,11 @@ internal static class I6GRealI4PromptBoundaryV1
             choiceKinds,
             true,
             allCandidatesResponseBound,
-            choiceKinds.Contains(FlatPromptChoiceKindV1.ToBp),
-            choiceKinds.Contains(FlatPromptChoiceKindV1.ToEp),
-            choiceKinds.Contains(FlatPromptChoiceKindV1.ShuffleHand),
+            publicCandidateDomainDigest,
+            chainForced,
+            chainSpeCount,
+            chainEntryCount,
+            noChainCount,
             referenceDiagnostics);
     }
 
@@ -1818,24 +1939,86 @@ internal static class I6GRealI4PromptBoundaryV1
         byte promptId,
         FlatPromptErrorCodeV1 error,
         bool publicStateProjectionPassed = false,
-        I6GRealI4PromptReferenceDiagnosticsV1? referenceDiagnostics = null) =>
-        new(
+        I6GRealI4PromptReferenceDiagnosticsV1? referenceDiagnostics = null,
+        FlatPromptFamilyV1? promptFamily = null,
+        byte? actingPlayer = null,
+        byte? perspectivePlayer = null,
+        bool actingPlayerMatchesPerspective = false) =>
+        CreateEvidence(
             false,
             error,
             promptId,
-            null,
-            null,
-            false,
+            promptFamily,
+            actingPlayer,
+            perspectivePlayer,
+            actingPlayerMatchesPerspective,
             publicStateProjectionPassed,
             false,
             0,
             Array.Empty<FlatPromptChoiceKindV1>(),
             false,
             false,
-            false,
-            false,
-            false,
+            null,
+            null,
+            null,
+            null,
+            null,
             referenceDiagnostics);
+
+    private static I6GRealI4PromptBoundaryEvidenceV1 CreateEvidence(
+        bool isSuccess,
+        FlatPromptErrorCodeV1 error,
+        byte promptId,
+        FlatPromptFamilyV1? promptFamily,
+        byte? actingPlayer,
+        byte? perspectivePlayer,
+        bool actingPlayerMatchesPerspective,
+        bool publicStateProjectionPassed,
+        bool promptProjectionPassed,
+        int legalCandidateCount,
+        IReadOnlyList<FlatPromptChoiceKindV1> choiceKinds,
+        bool completeDomain,
+        bool allCandidatesResponseBound,
+        string? publicCandidateDomainDigest,
+        bool? chainForced,
+        int? chainSpeCount,
+        int? chainEntryCount,
+        int? noChainCount,
+        I6GRealI4PromptReferenceDiagnosticsV1? referenceDiagnostics)
+    {
+        bool idle = promptFamily == FlatPromptFamilyV1.MsgSelectIdleCmd;
+        return new(
+            isSuccess,
+            error,
+            promptId,
+            promptFamily,
+            actingPlayer,
+            actingPlayerMatchesPerspective,
+            publicStateProjectionPassed,
+            promptProjectionPassed,
+            legalCandidateCount,
+            choiceKinds,
+            completeDomain,
+            allCandidatesResponseBound,
+            idle && choiceKinds.Contains(FlatPromptChoiceKindV1.ToBp),
+            idle && choiceKinds.Contains(FlatPromptChoiceKindV1.ToEp),
+            idle && choiceKinds.Contains(FlatPromptChoiceKindV1.ShuffleHand),
+            referenceDiagnostics,
+            perspectivePlayer,
+            publicCandidateDomainDigest,
+            chainForced,
+            chainSpeCount,
+            chainEntryCount,
+            noChainCount);
+    }
+
+    private static byte? TryGetActingPlayer(FlatPromptWireDraftV1 draft) =>
+        draft switch
+        {
+            FlatPromptIdleWireDraftV1 idle => idle.ActingPlayer,
+            FlatPromptChainWireDraftV1 chain => chain.ActingPlayer,
+            _ => null
+        };
 }
 
 internal readonly record struct I6C6MirrorFailureInputDiagnosticsV1(
@@ -2512,7 +2695,10 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                             captureTransport.ReceivedChunks,
                             failureOrdinal,
                             created.Mirror,
-                            matchContext.DuelFlags)
+                            matchContext.DuelFlags,
+                            observations.Count == 0
+                                ? null
+                                : observations[^1].Frame)
                         : null);
             }
 
