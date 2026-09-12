@@ -413,6 +413,59 @@ internal static class I6C6RealRunEntryPointTests
             deckLoad.ExceptionType);
     }
 
+    internal static void TestGameplayCaptureExceptionDiagnosticsPreserveSubsite()
+    {
+        Type diagnosticsType =
+            typeof(I6C6ClosureHarnessExecutionDiagnosticsV1);
+        BindingFlags flags =
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        NotNull(diagnosticsType.GetProperty("GameplayCaptureSubsite", flags));
+
+        I6C6ClosureHarnessGameplayCaptureSubsiteV1[] cases =
+        {
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.HandoffClaim,
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.InitialGameplayPump,
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.MirrorConstruction,
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.MirrorSessionConstruction,
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.InitialFrameConstruction,
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.InitialFrameFailureDiagnostics,
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.SubsequentGameplayPump,
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.SubsequentFrameConstruction,
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.SubsequentFrameFailureDiagnostics,
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.CaptureFinalization
+        };
+
+        foreach (I6C6ClosureHarnessGameplayCaptureSubsiteV1 subsite in cases)
+        {
+            Exception exception = new ArgumentException();
+            I6C6ClosureHarnessExecutionResultV1 result =
+                I6C6ClosureHarnessV1.InvokeGameplayCapturePhaseForTest(
+                    subsite,
+                    () => throw exception);
+
+            Equal(
+                I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
+                result.ErrorCode);
+            False(result.GameplayCaptureSucceeded);
+            Null(result.Capture);
+            NotNull(result.Diagnostics);
+            Equal(
+                I6C6ClosureHarnessExecutionStageV1.UnexpectedException,
+                result.Diagnostics!.Value.Stage);
+            Equal(
+                I6C6ClosureHarnessExceptionSiteV1.GameplayCapture,
+                result.Diagnostics!.Value.ExceptionSite);
+            Equal(
+                exception.GetType().FullName,
+                result.Diagnostics!.Value.ExceptionType);
+            Equal(
+                subsite,
+                result.Diagnostics!.Value.GameplayCaptureSubsite);
+            Null(diagnosticsType.GetProperty("ExceptionMessage", flags));
+            Null(diagnosticsType.GetProperty("StackTrace", flags));
+        }
+    }
+
     internal static void TestUnexpectedExceptionDiagnosticsAreNonSemantic()
     {
         PerspectiveSafeFrameV1 frame = CreateFullFrame();

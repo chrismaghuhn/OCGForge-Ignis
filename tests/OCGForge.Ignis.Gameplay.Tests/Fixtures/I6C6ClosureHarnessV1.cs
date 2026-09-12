@@ -66,6 +66,22 @@ internal enum I6C6ClosureHarnessExceptionSiteV1 : byte
     ExternalRuntimeOwnerDisposal = 10
 }
 
+internal enum I6C6ClosureHarnessGameplayCaptureSubsiteV1 : byte
+{
+    None = 0,
+    HandoffClaim = 1,
+    InitialGameplayPump = 2,
+    MirrorConstruction = 3,
+    MirrorSessionConstruction = 4,
+    InitialFrameConstruction = 5,
+    InitialFrameFailureDiagnostics = 6,
+    ObservationConstruction = 7,
+    SubsequentGameplayPump = 8,
+    SubsequentFrameConstruction = 9,
+    SubsequentFrameFailureDiagnostics = 10,
+    CaptureFinalization = 11
+}
+
 internal enum I6C6ClosureHarnessPreDuelFailureStageV1 : byte
 {
     None = 0,
@@ -88,7 +104,9 @@ internal readonly record struct I6C6ClosureHarnessExecutionDiagnosticsV1(
         I6C6ExternalRuntimeReadinessResultV1.None,
     I6C6ClosureHarnessExceptionSiteV1 ExceptionSite =
         I6C6ClosureHarnessExceptionSiteV1.None,
-    string? ExceptionType = null)
+    string? ExceptionType = null,
+    I6C6ClosureHarnessGameplayCaptureSubsiteV1 GameplayCaptureSubsite =
+        I6C6ClosureHarnessGameplayCaptureSubsiteV1.None)
 {
     internal static I6C6ClosureHarnessExecutionDiagnosticsV1 ExternalRuntimeStart(
         I6C6ExternalRuntimeReadinessResultV1 readiness =
@@ -140,12 +158,15 @@ internal readonly record struct I6C6ClosureHarnessExecutionDiagnosticsV1(
     internal static I6C6ClosureHarnessExecutionDiagnosticsV1
         UnexpectedException(
             I6C6ClosureHarnessExceptionSiteV1 site,
-            Exception exception) =>
+            Exception exception,
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1 gameplayCaptureSubsite =
+                I6C6ClosureHarnessGameplayCaptureSubsiteV1.None) =>
         new(
             I6C6ClosureHarnessExecutionStageV1.UnexpectedException,
             ExceptionSite: site,
             ExceptionType: exception.GetType().FullName ??
-                exception.GetType().Name);
+                exception.GetType().Name,
+            GameplayCaptureSubsite: gameplayCaptureSubsite);
 
     internal static I6C6ClosureHarnessExecutionDiagnosticsV1
         DeckLoad(Exception exception) =>
@@ -1954,7 +1975,9 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         PerspectiveSafeMatchContextV1 matchContext,
         PerspectiveSafePrintedProviderV1 printedProvider,
         int maximumAdditionalMessages,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<I6C6ClosureHarnessGameplayCaptureSubsiteV1>
+            setGameplayCaptureSubsite)
     {
         ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(opponentRuntimeBinding);
@@ -1962,6 +1985,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         ArgumentNullException.ThrowIfNull(captureTransport);
         ArgumentNullException.ThrowIfNull(matchContext);
         ArgumentNullException.ThrowIfNull(printedProvider);
+        ArgumentNullException.ThrowIfNull(setGameplayCaptureSubsite);
         if (maximumAdditionalMessages < 0)
         {
             throw new ArgumentOutOfRangeException(
@@ -1969,6 +1993,8 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         }
 
         I6C6FrameReadinessTraceV1 readiness = new();
+        setGameplayCaptureSubsite(
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.HandoffClaim);
         GameplayHandoffAcquireResult acquired =
             GameplayHandoffConsumerV1.TryCreate(handoff);
         if (!acquired.IsSuccess || acquired.Consumer is null)
@@ -1989,6 +2015,8 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         }
 
         await using GameplayHandoffConsumerV1 consumer = acquired.Consumer;
+        setGameplayCaptureSubsite(
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.InitialGameplayPump);
         GameplayPumpResult first = await consumer.PumpAsync(cancellationToken)
             .ConfigureAwait(false);
         if (!first.IsSuccess ||
@@ -2011,6 +2039,8 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                 readiness.Snapshot());
         }
 
+        setGameplayCaptureSubsite(
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.MirrorConstruction);
         MirrorCreateResult created = PerspectiveStateMirrorV1.TryCreate(
             first.Message,
             first.Perspective);
@@ -2032,16 +2062,22 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         }
 
         byte[] initialPendingBytes = first.Session.PendingBytes.ToArray();
+        setGameplayCaptureSubsite(
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.MirrorSessionConstruction);
         await using GameplayMirrorSessionV1 session =
             new(
                 first.Session,
                 created.Mirror,
                 matchContext,
                 printedProvider);
+        setGameplayCaptureSubsite(
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.InitialFrameConstruction);
         PerspectiveSafeFrameSourceResultV1 initialFrame =
             session.TryCreateI6C5Frame();
         ulong wireOrdinal = 0;
 
+        setGameplayCaptureSubsite(
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.ObservationConstruction);
         readiness.RecordMessage(first.Message);
         List<I6C6LiveGameplayObservationV1> observations = new();
         bool frameReady = initialFrame.IsSuccess && initialFrame.Frame is not null;
@@ -2058,6 +2094,9 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         {
             if (!IsProvisionalFrameReadinessFailure(initialFrame))
             {
+                setGameplayCaptureSubsite(
+                    I6C6ClosureHarnessGameplayCaptureSubsiteV1
+                        .InitialFrameFailureDiagnostics);
                 return Failure(
                     binding,
                     opponentRuntimeBinding,
@@ -2072,6 +2111,9 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                     readiness.Snapshot());
             }
 
+            setGameplayCaptureSubsite(
+                I6C6ClosureHarnessGameplayCaptureSubsiteV1
+                    .ObservationConstruction);
             readiness.InitialFrameError = initialFrame.Error;
             readiness.ProvisionalNotReadyCount = 1;
             readiness.MessagesAppliedBeforeReady =
@@ -2082,6 +2124,9 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
         {
             int presentationMessagesBefore =
                 session.PresentationMessagesConsumed;
+            setGameplayCaptureSubsite(
+                I6C6ClosureHarnessGameplayCaptureSubsiteV1
+                    .SubsequentGameplayPump);
             GameplayMirrorPumpResult next = await session.PumpAsync(
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -2146,7 +2191,7 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                     next.Error,
                     captureTransport,
                     observations,
-                new(
+                    new(
                         I6C6CaptureFailureStageV1.SubsequentPump,
                         failureOrdinal,
                         failedMessage?.Kind,
@@ -2167,9 +2212,15 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                         : null);
             }
 
+            setGameplayCaptureSubsite(
+                I6C6ClosureHarnessGameplayCaptureSubsiteV1
+                    .ObservationConstruction);
             readiness.RecordMessage(next.Message);
             wireOrdinal = currentWireOrdinal;
             ulong ordinal = currentWireOrdinal;
+            setGameplayCaptureSubsite(
+                I6C6ClosureHarnessGameplayCaptureSubsiteV1
+                    .SubsequentFrameConstruction);
             PerspectiveSafeFrameSourceResultV1 frame =
                 session.TryCreateI6C5Frame();
 
@@ -2177,6 +2228,9 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
             {
                 if (frame.IsSuccess && frame.Frame is not null)
                 {
+                    setGameplayCaptureSubsite(
+                        I6C6ClosureHarnessGameplayCaptureSubsiteV1
+                            .ObservationConstruction);
                     frameReady = true;
                     readiness.MarkReady(
                         ordinal,
@@ -2189,12 +2243,18 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
 
                 if (IsProvisionalFrameReadinessFailure(frame))
                 {
+                    setGameplayCaptureSubsite(
+                        I6C6ClosureHarnessGameplayCaptureSubsiteV1
+                            .ObservationConstruction);
                     readiness.ProvisionalNotReadyCount++;
                     readiness.MessagesAppliedBeforeReady =
                         readiness.AppliedMessageKinds.Count;
                     continue;
                 }
 
+                setGameplayCaptureSubsite(
+                    I6C6ClosureHarnessGameplayCaptureSubsiteV1
+                        .SubsequentFrameFailureDiagnostics);
                 return Failure(
                     binding,
                     opponentRuntimeBinding,
@@ -2211,6 +2271,9 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
 
             if (!frame.IsSuccess || frame.Frame is null)
             {
+                setGameplayCaptureSubsite(
+                    I6C6ClosureHarnessGameplayCaptureSubsiteV1
+                        .SubsequentFrameFailureDiagnostics);
                 return Failure(
                     binding,
                     opponentRuntimeBinding,
@@ -2225,6 +2288,9 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                     readiness.Snapshot());
             }
 
+            setGameplayCaptureSubsite(
+                I6C6ClosureHarnessGameplayCaptureSubsiteV1
+                    .ObservationConstruction);
             observations.Add(
                 new(ordinal, next.Message, frame.Frame));
         }
@@ -2246,6 +2312,8 @@ internal sealed class I6C6LiveGameplayCaptureResultV1
                 readiness.Snapshot());
         }
 
+        setGameplayCaptureSubsite(
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.CaptureFinalization);
         return FromCapture(
             true,
             GameplayErrorCode.None,
@@ -3249,6 +3317,10 @@ internal static class I6C6ClosureHarnessV1
         internal I6C6ClosureHarnessExceptionSiteV1 ExceptionSite =
             I6C6ClosureHarnessExceptionSiteV1.None;
 
+        internal I6C6ClosureHarnessGameplayCaptureSubsiteV1
+            GameplayCaptureSubsite =
+                I6C6ClosureHarnessGameplayCaptureSubsiteV1.None;
+
         internal I6C6ExternalRuntimeProcessOwnerV1? ProcessOwner;
     }
 
@@ -3604,6 +3676,35 @@ internal static class I6C6ClosureHarnessV1
         UnexpectedExceptionResult(site, exception, processStarted);
 
     internal static I6C6ClosureHarnessExecutionResultV1
+        InvokeGameplayCapturePhaseForTest(
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1 subsite,
+            Action operation)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ExecutionScope scope = new()
+        {
+            ExceptionSite = I6C6ClosureHarnessExceptionSiteV1.GameplayCapture,
+            GameplayCaptureSubsite = subsite
+        };
+        try
+        {
+            operation();
+            return new(
+                I6C6ClosureHarnessErrorCodeV1.None,
+                true,
+                true);
+        }
+        catch (Exception exception)
+        {
+            return UnexpectedExceptionResult(
+                scope.ExceptionSite,
+                exception,
+                true,
+                scope.GameplayCaptureSubsite);
+        }
+    }
+
+    internal static I6C6ClosureHarnessExecutionResultV1
         PreserveCleanupFailureForTest(
             I6C6ClosureHarnessExecutionResultV1 result,
             I6C6ClosureHarnessExceptionSiteV1 cleanupSite,
@@ -3618,7 +3719,9 @@ internal static class I6C6ClosureHarnessV1
         UnexpectedExceptionResult(
             I6C6ClosureHarnessExceptionSiteV1 site,
             Exception exception,
-            bool processStarted) =>
+            bool processStarted,
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1 gameplayCaptureSubsite =
+                I6C6ClosureHarnessGameplayCaptureSubsiteV1.None) =>
         new(
             I6C6ClosureHarnessErrorCodeV1.ExecutionFailed,
             processStarted,
@@ -3626,7 +3729,8 @@ internal static class I6C6ClosureHarnessV1
             Diagnostics:
                 I6C6ClosureHarnessExecutionDiagnosticsV1.UnexpectedException(
                     site,
-                    exception));
+                    exception,
+                    gameplayCaptureSubsite));
 
     private static I6C6ClosureHarnessExecutionResultV1
         PreserveCleanupFailure(
@@ -3831,7 +3935,8 @@ internal static class I6C6ClosureHarnessV1
             result = UnexpectedExceptionResult(
                 scope.ExceptionSite,
                 exception,
-                scope.ProcessOwner is not null);
+                scope.ProcessOwner is not null,
+                scope.GameplayCaptureSubsite);
         }
 
         Exception? disposalExceptionToReport = null;
@@ -4011,6 +4116,8 @@ internal static class I6C6ClosureHarnessV1
         }
 
         scope.ExceptionSite = I6C6ClosureHarnessExceptionSiteV1.GameplayCapture;
+        scope.GameplayCaptureSubsite =
+            I6C6ClosureHarnessGameplayCaptureSubsiteV1.None;
         I6C6LiveGameplayCaptureResultV1 capture =
             await I6C6LiveGameplayCaptureResultV1.CaptureAsync(
                     binding,
@@ -4020,7 +4127,8 @@ internal static class I6C6ClosureHarnessV1
                     matchContext,
                     printedProvider,
                     maximumAdditionalMessages,
-                    cancellationToken)
+                    cancellationToken,
+                    subsite => scope.GameplayCaptureSubsite = subsite)
                 .ConfigureAwait(false);
         if (!opponentRuntimeParticipant.IsLive)
         {

@@ -370,6 +370,10 @@ var tests = new (string Name, Action Body)[]
         I6C6RealRunEntryPointTests
             .TestUnexpectedExceptionDiagnosticsPreserveBoundary),
 
+    ("I6G gameplay capture exceptions retain bounded subsites",
+        I6C6RealRunEntryPointTests
+            .TestGameplayCaptureExceptionDiagnosticsPreserveSubsite),
+
     ("I6C6 unexpected exception diagnostics are non-semantic",
         I6C6RealRunEntryPointTests
             .TestUnexpectedExceptionDiagnosticsAreNonSemantic),
