@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using OCGForge.Ignis.Gameplay;
 using OCGForge.Ignis.Protocol;
 using OCGForge.Ignis.Gameplay.Tests.Fixtures;
@@ -110,6 +111,56 @@ internal static class I6GUnsupportedOuterPacketDiagnosticsTests
                     BindingFlags.NonPublic));
         }
     }
+
+    internal static void TestUnknownMessageTraceSkipsChat2AndWaiting()
+    {
+        byte[] startFrame = GameMessage(CreateStartBytes(0));
+        byte[] gameplayFrame = GameMessage(new byte[] { 40, 0 });
+        byte[] chat2Frame = WireFrameCodec.EncodeStoc(
+            StocPacketType.Chat2,
+            ValidChat2Payload());
+        byte[] waitingFrame = GameMessage(new byte[] { 3 });
+        byte[] timeLimitFrame = WireFrameCodec.EncodeStoc(
+            StocPacketType.TimeLimit,
+            PacketPayloadCodec.EncodeStocTimeLimit(
+                new StocTimeLimitPayload(0, 120)));
+        byte[] unknownFrame = GameMessage(new byte[] { 0xfe });
+
+        I6C6UnknownGameplayMessageClassificationV1? classification =
+            I6C6CapturedGameplayMessageTraceV1.TryClassifyMessageAtOrdinal(
+                GameplayPerspectiveV1.SelfIsPlayer0,
+                startFrame,
+                new[]
+                {
+                    Join(
+                        gameplayFrame,
+                        chat2Frame,
+                        waitingFrame,
+                        timeLimitFrame,
+                        unknownFrame)
+                },
+                4);
+
+        NotNull(classification);
+        Equal((byte)0xfe, classification!.Value.InnerMessageId);
+        Equal(
+            I6C6GameplayMessageClassV1.Unknown,
+            classification.Value.MessageClass);
+        Null(classification.Value.PromptFamily);
+        Null(classification.Value.PromptPlayer);
+        Equal(
+            I6C6PromptParseResultV1.Fail,
+            classification.Value.PromptParseResult);
+    }
+
+    private static byte[] GameMessage(byte[] bytes) =>
+        WireFrameCodec.EncodeStoc(StocPacketType.GameMsg, bytes);
+
+    private static byte[] ValidChat2Payload() =>
+        Join(
+            new byte[] { (byte)StocChat2Type.System, 0 },
+            FixedUtf16String.Encode("probe", 20),
+            Encoding.Unicode.GetBytes("ignored\0"));
 
     private static object? GetProperty(
         object instance,

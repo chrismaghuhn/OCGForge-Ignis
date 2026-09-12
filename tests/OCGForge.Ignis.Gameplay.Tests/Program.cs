@@ -456,6 +456,10 @@ var tests = new (string Name, Action Body)[]
         I6GUnsupportedOuterPacketDiagnosticsTests
             .TestCaptureFailureDiagnosticsExposeOuterPacketShape),
 
+    ("I6G unknown-message trace skips Chat2 and Waiting",
+        I6GUnsupportedOuterPacketDiagnosticsTests
+            .TestUnknownMessageTraceSkipsChat2AndWaiting),
+
     ("I6G valid Chat2 is consumed before gameplay",
         I6GChat2GameplayIngressTests.TestValidChat2IsConsumedBeforeGameplay),
 

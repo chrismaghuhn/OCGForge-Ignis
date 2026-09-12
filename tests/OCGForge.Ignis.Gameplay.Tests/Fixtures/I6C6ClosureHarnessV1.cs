@@ -928,6 +928,20 @@ internal static class I6C6CapturedGameplayMessageTraceV1
                     continue;
                 }
 
+                if (gameplayStarted &&
+                    parsed.Frame.Type == StocPacketType.Chat2)
+                {
+                    if (parsed.Frame.Payload is not StocChat2Payload ||
+                        currentOrdinal == ulong.MaxValue)
+                    {
+                        return null;
+                    }
+
+                    currentOrdinal++;
+                    readOffset = checked(readOffset + parsed.ConsumedBytes);
+                    continue;
+                }
+
                 if (!allowLeadingNonGameplayPackets || gameplayStarted)
                 {
                     return null;
