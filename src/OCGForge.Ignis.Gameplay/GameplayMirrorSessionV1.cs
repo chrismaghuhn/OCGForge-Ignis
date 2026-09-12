@@ -392,6 +392,26 @@ public sealed class GameplayMirrorSessionV1 : IAsyncDisposable
                             continue;
                         }
 
+                        if (packet.Type == StocPacketType.Chat2)
+                        {
+                            if (packet.Payload is not StocChat2Payload)
+                            {
+                                return await FailAsync(
+                                        GameplayErrorCode.MalformedOuterFrame)
+                                    .ConfigureAwait(false);
+                            }
+
+                            if (presentationMessagesConsumed == int.MaxValue)
+                            {
+                                return await FailAsync(
+                                        GameplayErrorCode.MalformedOuterFrame)
+                                    .ConfigureAwait(false);
+                            }
+
+                            presentationMessagesConsumed++;
+                            continue;
+                        }
+
                         if (packet.Type != StocPacketType.GameMsg ||
                             packet.Payload is not StocGameMessagePayload gameMessage)
                         {

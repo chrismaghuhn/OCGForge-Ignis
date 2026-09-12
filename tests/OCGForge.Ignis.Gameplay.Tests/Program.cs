@@ -456,6 +456,23 @@ var tests = new (string Name, Action Body)[]
         I6GUnsupportedOuterPacketDiagnosticsTests
             .TestCaptureFailureDiagnosticsExposeOuterPacketShape),
 
+    ("I6G valid Chat2 is consumed before gameplay",
+        I6GChat2GameplayIngressTests.TestValidChat2IsConsumedBeforeGameplay),
+
+    ("I6G repeated Chat2 markers are presentation-only",
+        I6GChat2GameplayIngressTests
+            .TestRepeatedChat2MarkersArePresentationOnly),
+
+    ("I6G Chat2 between gameplay messages is state-neutral",
+        I6GChat2GameplayIngressTests
+            .TestChat2BetweenGameplayMessagesIsStateNeutral),
+
+    ("I6G malformed Chat2 fails closed",
+        I6GChat2GameplayIngressTests.TestMalformedChat2FailsClosed),
+
+    ("I6G Chat2 advances capture wire ordinal",
+        I6GChat2GameplayIngressTests.TestChat2AdvancesCaptureWireOrdinal),
+
     ("I6G player-zero STOC_TIME_LIMIT continues without mutation",
         I6GTimeLimitIngressTests.TestPlayerZeroTimeLimitContinuesWithoutMutation),
 

@@ -578,6 +578,20 @@ internal static class I6C6CapturedGameplayMessageTraceV1
                     continue;
                 }
 
+                if (gameplayStarted &&
+                    parsed.Frame.Type == StocPacketType.Chat2)
+                {
+                    if (parsed.Frame.Payload is not StocChat2Payload ||
+                        currentOrdinal == ulong.MaxValue)
+                    {
+                        return null;
+                    }
+
+                    currentOrdinal++;
+                    readOffset = checked(readOffset + parsed.ConsumedBytes);
+                    continue;
+                }
+
                 if (!allowLeadingNonGameplayPackets || gameplayStarted)
                 {
                     return null;
@@ -686,6 +700,19 @@ internal static class I6C6CapturedGameplayMessageTraceV1
                     continue;
                 }
 
+                if (gameplayStarted && packet.Type == StocPacketType.Chat2)
+                {
+                    if (packet.Payload is not StocChat2Payload ||
+                        currentOrdinal == ulong.MaxValue)
+                    {
+                        return null;
+                    }
+
+                    currentOrdinal++;
+                    readOffset = checked(readOffset + parsed.ConsumedBytes);
+                    continue;
+                }
+
                 if (!gameplayStarted)
                 {
                     if (!allowLeadingNonGameplayPackets)
@@ -784,6 +811,20 @@ internal static class I6C6CapturedGameplayMessageTraceV1
                 if (gameplayStarted &&
                     parsed.Frame.Type == StocPacketType.TimeLimit)
                 {
+                    readOffset = checked(readOffset + parsed.ConsumedBytes);
+                    continue;
+                }
+
+                if (gameplayStarted &&
+                    parsed.Frame.Type == StocPacketType.Chat2)
+                {
+                    if (parsed.Frame.Payload is not StocChat2Payload ||
+                        currentOrdinal == ulong.MaxValue)
+                    {
+                        return null;
+                    }
+
+                    currentOrdinal++;
                     readOffset = checked(readOffset + parsed.ConsumedBytes);
                     continue;
                 }
